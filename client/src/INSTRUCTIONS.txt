@@ -1,0 +1,522 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║           SISTEMA DE GESTÃO DE AUDIÊNCIAS E APRESENTAÇÕES                   ║
+║                         Para Angola                                          ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                                                              │
+│  📋 ÍNDICE                                                                   │
+│                                                                              │
+│  1. Início Rápido (5 minutos)                                               │
+│  2. Configuração Detalhada                                                   │
+│  3. Resolução de Problemas                                                   │
+│  4. Usuários Demo                                                            │
+│  5. Funcionalidades Principais                                               │
+│  6. Documentação Completa                                                    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  1. INÍCIO RÁPIDO (5 MINUTOS)                                               ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+PASSO 1: Criar Projeto Supabase
+────────────────────────────────
+1. Acesse: https://supabase.com
+2. Crie conta ou faça login
+3. Clique em "New Project"
+4. Preencha nome e senha
+5. Aguarde criação (1-2 min)
+
+
+PASSO 2: Copiar Credenciais
+────────────────────────────
+1. No painel do projeto, clique em Settings ⚙️
+2. Clique em API
+3. Copie:
+   
+   Project URL:
+   https://xyzabc123def.supabase.co
+   
+   ↓ Extraia o ID:
+   xyzabc123def
+   
+   anon/public key:
+   eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+   (Bem longo, começa com eyJ)
+
+
+PASSO 3: Configurar Sistema
+────────────────────────────
+1. Abra: /utils/supabase/info.tsx
+2. Cole suas credenciais:
+
+   export const projectId = 'xyzabc123def';
+   export const publicAnonKey = 'eyJ...';
+
+3. Salve o arquivo (Ctrl+S)
+
+
+PASSO 4: Deploy do Servidor
+────────────────────────────
+Abra o terminal e execute:
+
+   npm install -g supabase
+   supabase login
+   supabase link --project-ref xyzabc123def
+   supabase functions deploy make-server-8b82752b
+
+
+PASSO 5: Testar
+────────────────────────────
+1. Abra Console do navegador (F12)
+2. Cole e execute:
+
+   fetch('https://xyzabc123def.supabase.co/functions/v1/make-server-8b82752b/health')
+     .then(r => r.json())
+ .then(console.log);
+
+3. Deve retornar: {status: "ok"}
+
+
+✅ PRONTO! Faça login com:
+──────────────────────────
+Email: admin@sistema.com
+Senha: 123456
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  2. CONFIGURAÇÃO DETALHADA                                                  ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+ARQUIVOS IMPORTANTES:
+─────────────────────
+
+📄 /utils/supabase/info.tsx
+   → Credenciais do Supabase
+   → OBRIGATÓRIO configurar!
+
+📄 /supabase/functions/server/index.tsx
+   → Servidor backend (Hono)
+   → Já configurado, fazer deploy
+
+📄 /App.tsx
+   → Componente principal
+   → Não modificar
+
+📄 /styles/globals.css
+   → Estilos e tema
+   → Pode personalizar cores
+
+
+VARIÁVEIS DE AMBIENTE (Supabase):
+─────────────────────────────────
+No painel Supabase > Settings > Secrets:
+
+✓ SUPABASE_URL              (Auto)
+✓ SUPABASE_ANON_KEY         (Auto)
+✓ SUPABASE_SERVICE_ROLE_KEY (Auto)
+✓ SUPABASE_DB_URL           (Auto)
+✓ SENDGRID_API_KEY          (Configurado)
+
+
+ESTRUTURA DE DADOS (KV Store):
+──────────────────────────────
+user_profile:*          → Perfis de usuários
+user_email_lookup:*     → Email → ID lookup
+presentation:*          → Cartas de apresentação
+audience:*              → Pedidos de audiência
+notification:*          → Notificações
+message:*               → Mensagens internas
+audit_log:*             → Logs de auditoria
+document:*              → Metadados de documentos
+
+
+STORAGE (Arquivos):
+───────────────────
+Bucket: make-8b82752b-documents
+→ Criado automaticamente
+→ Privado (URLs assinadas)
+→ Documentos uploadados pelos usuários
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  3. RESOLUÇÃO DE PROBLEMAS                                                  ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+PROBLEMA: Erro 401 (Não autorizado)
+───────────────────────────────────
+CAUSA: Credenciais incorretas
+
+SOLUÇÃO:
+1. Verifique /utils/supabase/info.tsx
+2. Confirme Project ID e Anon Key
+3. Salve o arquivo
+4. Recarregue página (F5)
+
+Consulte: TROUBLESHOOTING-401.md
+
+
+PROBLEMA: Erro 404 (Não encontrado)
+───────────────────────────────────
+CAUSA: Servidor não deployado
+
+SOLUÇÃO:
+supabase functions deploy make-server-8b82752b
+
+Verifique: supabase functions list
+
+
+PROBLEMA: "User profile not found"
+──────────────────────────────────
+CAUSA: Usuários demo não criados
+
+SOLUÇÃO (No console do navegador):
+fetch('https://SEU_PROJECT_ID.supabase.co/functions/v1/make-server-8b82752b/initialize', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer SUA_ANON_KEY',
+    'Content-Type': 'application/json'
+  }
+})
+
+
+PROBLEMA: Erro de CORS
+──────────────────────
+CAUSA: CORS não configurado
+
+SOLUÇÃO:
+1. Verifique se index.tsx tem: app.use("*", cors())
+2. Redeploy: supabase functions deploy make-server-8b82752b
+
+
+DIAGNÓSTICO AUTOMÁTICO:
+───────────────────────
+1. Abra: DIAGNOSTIC-SCRIPT.js
+2. Substitua credenciais no topo do arquivo
+3. Cole todo o código no Console (F12)
+4. Pressione Enter
+5. Aguarde resultados
+
+Consulte: CHECK-SYSTEM.md
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  4. USUÁRIOS DEMO                                                           ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ADMINISTRADOR                                                            │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Email:    admin@sistema.com                                              │
+│ Senha:    123456                                                         │
+│ Nome:     Administrador Sistema                                          │
+│                                                                          │
+│ PERMISSÕES:                                                              │
+│ ✓ Acesso total ao sistema                                               │
+│ ✓ Gerenciar usuários                                                     │
+│ ✓ Aprovar/Rejeitar solicitações                                         │
+│ ✓ Agendar audiências                                                     │
+│ ✓ Visualizar auditoria                                                   │
+│ ✓ Configurar sistema                                                     │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ATENDENTE                                                                │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Email:    atendente@sistema.com                                          │
+│ Senha:    123456                                                         │
+│ Nome:     Maria Atendente                                                │
+│                                                                          │
+│ PERMISSÕES:                                                              │
+│ ✓ Visualizar todas solicitações                                         │
+│ ✓ Aprovar/Rejeitar pedidos                                              │
+│ ✓ Agendar audiências                                                     │
+│ ✓ Acessar agenda completa                                                │
+│ ✗ Gerenciar usuários                                                     │
+│ ✗ Acessar auditoria                                                      │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│ USUÁRIO                                                                  │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Email:    usuario@empresa.com                                            │
+│ Senha:    123456                                                         │
+│ Nome:     João Usuário                                                   │
+│                                                                          │
+│ PERMISSÕES:                                                              │
+│ ✓ Criar cartas de apresentação                                          │
+│ ✓ Criar pedidos de audiência                                            │
+│ ✓ Visualizar próprias solicitações                                      │
+│ ✓ Enviar mensagens                                                       │
+│ ✗ Ver solicitações de outros                                            │
+│ ✗ Aprovar/Rejeitar                                                       │
+│ ✗ Agendar reuniões                                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  5. FUNCIONALIDADES PRINCIPAIS                                              ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+DASHBOARD
+─────────
+→ Estatísticas em tempo real
+→ Gráficos de desempenho
+→ Visão geral das solicitações
+→ Indicadores por status
+
+
+CARTA DE APRESENTAÇÃO
+─────────────────────
+→ Formulário completo
+→ Dados da empresa
+→ Finalidade da visita
+→ Informações de contacto
+→ Upload de documentos
+→ Área de negócio
+
+
+PEDIDO DE AUDIÊNCIA (NOVO FLUXO)
+─────────────────────────────────
+USUÁRIO:
+→ Preenche motivo e descrição
+→ Informa dados pessoais
+→ Upload de documento (opcional)
+→ NÃO define detalhes da reunião
+
+ADMIN/ATENDENTE:
+→ Revisa o pedido
+→ Aprova ou rejeita
+→ Após aprovar: abre modal de agendamento
+→ Define tipo (online/presencial)
+→ Define data, hora, duração
+→ Para online: plataforma e link
+→ Para presencial: local
+
+
+GERENCIAMENTO
+──────────────
+→ Lista todas solicitações
+→ Filtros por status e tipo
+→ Aprovação/Rejeição
+→ Modal de agendamento
+→ Histórico completo
+→ Busca avançada
+
+
+AGENDA
+──────
+→ Calendário visual
+→ Lista de reuniões
+→ Detalhes completos
+→ Links de reunião online
+→ Informações de local
+→ Status das audiências
+
+
+MENSAGENS
+─────────
+→ Comunicação interna
+→ Enviar para usuários
+→ Anexar documentos
+→ Notificações em tempo real
+→ Histórico de conversas
+
+
+USUÁRIOS
+────────
+→ Cadastro de novos usuários
+→ 3 níveis de permissão
+→ Aprovação de atendentes
+→ Gestão de perfis
+→ Ativação/Desativação
+
+
+AUDITORIA
+─────────
+→ Log de todas ações
+→ Rastreamento de mudanças
+→ Análise de segurança
+→ Filtros avançados
+→ Exportação de relatórios
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  6. DOCUMENTAÇÃO COMPLETA                                                   ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+README.md
+→ Visão geral do sistema
+→ Arquitetura
+→ Tecnologias
+
+
+QUICK-START.md
+→ Início rápido em 5 minutos
+→ Passo a passo visual
+→ Solução de problemas rápidos
+
+
+README-SETUP.md
+→ Configuração completa
+→ Deploy detalhado
+→ Variáveis de ambiente
+→ Banco de dados
+
+
+TROUBLESHOOTING-401.md
+→ Resolver erros 401
+→ Diagnóstico passo a passo
+→ Soluções detalhadas
+→ Scripts de teste
+
+
+CHECK-SYSTEM.md
+→ Verificação do sistema
+→ Testes automatizados
+→ Checklist completo
+→ Interpretação de resultados
+
+
+README-AUTHENTICATION.md
+→ Sistema de autenticação
+→ Gestão de sessões
+→ Permissões
+→ Segurança
+
+
+README-AUDIENCE-WORKFLOW.md
+→ Fluxo de audiências
+→ Novo processo
+→ Modal de agendamento
+→ Notificações
+
+
+README-USER-REGISTRATION.md
+→ Cadastro de usuários
+→ Aprovação de atendentes
+→ Validações
+→ Tipos de conta
+
+
+README-DOCUMENT-UPLOAD.md
+→ Upload de documentos
+→ Storage do Supabase
+→ URLs assinadas
+→ Segurança
+
+
+README-ADVANCED-FEATURES.md
+→ Recursos avançados
+→ Mensagens internas
+→ Push notifications
+→ Auditoria
+
+
+DIAGNOSTIC-SCRIPT.js
+→ Script de diagnóstico
+→ Teste automatizado
+→ Resultados visuais
+→ Colar no console
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  FORMATO DE TELEFONE (ANGOLA)                                               ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Padrão:  +244 XXX XXX XXX
+Exemplo: +244 923 000 000
+
+→ Formatação automática no cadastro
+→ Validação no frontend e backend
+→ 9 dígitos após +244
+→ Espaços entre grupos
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  TECNOLOGIAS                                                                ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+FRONTEND:
+→ React 18 + TypeScript
+→ Tailwind CSS 4.0
+→ shadcn/ui (componentes)
+→ Lucide React (ícones)
+→ Recharts (gráficos)
+→ React Hook Form
+→ Zod (validação)
+→ date-fns
+→ Sonner (toasts)
+
+BACKEND:
+→ Supabase Edge Functions
+→ Hono (framework)
+→ Deno runtime
+→ SendGrid (emails)
+
+BANCO:
+→ Supabase KV Store
+→ Supabase Storage
+→ Supabase Auth
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  PRÓXIMOS PASSOS                                                            ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+1. Configure as credenciais em /utils/supabase/info.tsx
+2. Faça deploy do servidor
+3. Execute o script de diagnóstico
+4. Faça login com usuário demo
+5. Explore o sistema
+6. Crie usuários reais
+7. Configure SendGrid
+8. Personalize cores e logo
+9. Teste todas funcionalidades
+10. Deploy em produção
+
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  SUPORTE                                                                    ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Para dúvidas e problemas:
+
+1. Consulte a documentação nos arquivos README-*.md
+2. Execute CHECK-SYSTEM.md para verificação
+3. Veja TROUBLESHOOTING-401.md para erros
+4. Use DIAGNOSTIC-SCRIPT.js para diagnóstico
+
+
+════════════════════════════════════════════════════════════════════════════════
+
+SISTEMA DE GESTÃO DE AUDIÊNCIAS E APRESENTAÇÕES
+Versão 1.0.0 | Outubro 2025
+Desenvolvido para Angola
+
+════════════════════════════════════════════════════════════════════════════════

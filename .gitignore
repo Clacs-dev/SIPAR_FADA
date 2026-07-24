@@ -1,0 +1,28 @@
+# Dependency directories
+node_modules/
+jspdf/
+dist/
+build/
+.env
+
+# Local Databases
+server/*.db
+server/*.db-journal
+server/prisma/dev.db
+server/prisma/dev.db-journal
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store

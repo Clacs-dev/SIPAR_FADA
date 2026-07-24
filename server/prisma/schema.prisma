@@ -1,0 +1,772 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  password     String
+  name         String
+  role         String
+  organization String?
+  phone        String?
+  department   String?
+  position     String?
+  address      String?
+  document     String?
+  status       String    @default("active")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLogin    DateTime?
+
+  organizedMeetings     InternalMeeting[] @relation("Organizer")
+  participatedMeetings  InternalMeeting[] @relation("Participant")
+  meetingParticipations InternalMeetingParticipant[]
+
+  presentations  Presentation[]
+  audiences      Audience[]
+  pedidos        Pedido[]
+  actas          Acta[]
+  oficios        Oficio[]
+  facturas       Factura[]
+  viaturas       Viatura[]
+  contratos      Contrato[]
+  reclamacoes    Reclamacao[]
+  fornecedores   Fornecedor[]
+  planejamentos  Planejamento[]
+  procurements   Procurement[]
+  operadores     Operador[]
+  comunicacoes   Comunicacao[]
+  pedidoViaturas PedidoViatura[]
+  utilizacoesViatura UtilizacaoViatura[]
+  manutencoesViatura ManutencaoViatura[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+  uploadedFiles  UploadedFile[]
+  sentMessages   Message[] @relation("MessageFrom")
+  receivedMessages Message[] @relation("MessageTo")
+  pushSubscriptions PushSubscription[]
+}
+
+model InternalMeeting {
+  id            String   @id @default(uuid())
+  organizerId   String
+  participantId String?
+  title         String
+  description   String?
+  meetingDate   String
+  startTime     String
+  endTime       String
+  meetingType   String
+  location      String?
+  platform      String?
+  meetingLink   String?
+  priority      String   @default("normal")
+  status        String   @default("pendente")
+  tipoReuniao   String   @default("ordinaria")
+  orgao         String?
+  pontosAgenda  String   @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organizer     User                         @relation("Organizer", fields: [organizerId], references: [id], onDelete: Cascade)
+  participant   User?                        @relation("Participant", fields: [participantId], references: [id], onDelete: SetNull)
+  participantes InternalMeetingParticipant[]
+  actas         Acta[]
+}
+
+model InternalMeetingParticipant {
+  id        String   @id @default(uuid())
+  meetingId String
+  userId    String?
+  name      String
+  email     String?
+  role      String?
+  cargo     String?
+  department String?
+  presente  Boolean  @default(false)
+  data      String   @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meeting InternalMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Presentation {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  company       String?
+  nif           String?
+  purpose       String?
+  department    String?
+  desiredDate   String?
+  contactName   String?
+  contactEmail  String?
+  contactPhone  String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Audience {
+  id             String   @id
+  createdById    String?
+  createdByName  String?
+  status         String   @default("pendente")
+  requestorName  String?
+  requestorEmail String?
+  requestorPhone String?
+  organization   String?
+  nif            String?
+  purpose        String?
+  department     String?
+  desiredDate    String?
+  participants   Int?
+  data           String   @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Pedido {
+  id              String    @id
+  numero          String?   @unique
+  createdById     String?
+  createdByName   String?
+  titulo          String
+  descricao       String
+  importancia     String
+  categoria       String?
+  direcao         String?
+  funcao          String?
+  status          String    @default("pendente")
+  atribuidoAId    String?
+  atribuidoANome  String?
+  abertoEm        DateTime?
+  resolvidoEm     DateTime?
+  fechadoEm       DateTime?
+  solucao         String?
+  anexos          String    @default("[]")
+  data            String    @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Acta {
+  id                String   @id
+  numero            String?
+  createdById        String?
+  createdByName      String?
+  internalMeetingId  String?
+  status            String   @default("rascunho")
+  assunto           String?
+  dataReuniao       String?
+  horaInicio        String?
+  horaFim           String?
+  local             String?
+  tipoReuniao       String?
+  modalidade        String?
+  departamento      String?
+  conteudo          String?
+  decisoes          String?
+  participantes     String   @default("[]")
+  pontosAgenda      String   @default("[]")
+  anexos            String   @default("[]")
+  data              String   @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  internalMeeting InternalMeeting? @relation(fields: [internalMeetingId], references: [id], onDelete: SetNull)
+}
+
+model Oficio {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  numero        String?
+  assunto       String?
+  destinatario  String?
+  departamento  String?
+  prioridade    String?
+  conteudo      String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Factura {
+  id            String    @id
+  createdById   String?
+  createdByName String?
+  status        String    @default("pendente")
+  numero        String?
+  fornecedor    String?
+  nif           String?
+  valor         Float?
+  moeda         String?
+  dataEmissao   String?
+  dataVencimento String?
+  descricao     String?
+  anexos        String    @default("[]")
+  paidAt        DateTime?
+  data          String    @default("{}")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Viatura {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("disponivel")
+  plate         String?
+  brand         String?
+  model         String?
+  year          Int?
+  type          String?
+  currentKm     Int?
+  assignedTo    String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Contrato {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  numero        String?
+  fornecedor    String?
+  objeto        String?
+  valor         Float?
+  dataInicio    String?
+  dataFim       String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Reclamacao {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  codigo        String?
+  titulo        String?
+  descricao     String?
+  categoria     String?
+  prioridade    String?
+  solicitante   String?
+  contacto      String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Fornecedor {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("active")
+  nome          String?
+  email         String?
+  nif           String?
+  telefone      String?
+  endereco      String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Planejamento {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  tipo          String?
+  titulo        String?
+  descricao     String?
+  valor         Float?
+  dataInicio    String?
+  dataFim       String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Procurement {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  tipo          String?
+  numero        String?
+  fornecedorId  String?
+  fornecedor    String?
+  valor         Float?
+  descricao     String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Operador {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("active")
+  nome          String?
+  email         String?
+  telefone      String?
+  area          String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Comunicacao {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  titulo        String?
+  assunto       String?
+  mensagem      String?
+  destinatarios String   @default("[]")
+  prioridade    String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model PedidoViatura {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  viaturaId     String?
+  motivo        String?
+  destino       String?
+  dataInicio    String?
+  dataFim       String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model UtilizacaoViatura {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("em_curso")
+  viaturaId     String?
+  motorista     String?
+  destino       String?
+  motivo        String?
+  dataInicio    String?
+  dataFim       String?
+  kmInicio      Int?
+  kmFim         Int?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model ManutencaoViatura {
+  id            String   @id
+  createdById   String?
+  createdByName String?
+  status        String   @default("pendente")
+  viaturaId     String?
+  tipo          String?
+  descricao     String?
+  fornecedor    String?
+  valor         Float?
+  dataInicio    String?
+  dataFim       String?
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model UploadedFile {
+  id           String   @id
+  userId       String?
+  originalName String
+  filename     String
+  path         String
+  url          String
+  mimetype     String
+  size         Int
+  module       String?
+  resourceId   String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id         String   @id
+  userId     String?
+  email      String
+  type       String
+  resourceId String?
+  status     String?
+  message    String
+  read       Boolean  @default(false)
+  metadata   String   @default("{}")
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id           String   @id
+  userId       String?
+  userEmail    String?
+  userRole     String?
+  action       String
+  severity     String   @default("info")
+  resource     String?
+  resourceId   String?
+  ipAddress    String?
+  userAgent    String?
+  success      Boolean?
+  errorMessage String?
+  metadata     String   @default("{}")
+  oldValue     String?
+  newValue     String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model Message {
+  id            String   @id @default(uuid())
+  fromUserId    String
+  toUserId      String
+  subject       String
+  content       String
+  messageType   String   @default("internal")
+  priority      String   @default("medium")
+  status        String   @default("unread")
+  relatedToType String?
+  relatedToId   String?
+  readAt        DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  fromUser User @relation("MessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("MessageTo", fields: [toUserId], references: [id], onDelete: Cascade)
+}
+
+model DocumentSequence {
+  id        String   @id @default(uuid())
+  module    String
+  year      Int
+  month     Int      @default(0)
+  prefix    String
+  current   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([module, year, month, prefix])
+}
+
+model DocumentHistory {
+  id             String   @id @default(uuid())
+  module         String
+  resourceId     String
+  action         String
+  statusFrom     String?
+  statusTo       String?
+  userId         String?
+  userName       String?
+  userEmail      String?
+  userRole       String?
+  comment        String?
+  metadata       String   @default("{}")
+  oldValue       String?
+  newValue       String?
+  createdAt      DateTime @default(now())
+
+  @@index([module, resourceId])
+}
+
+model ApprovalWorkflow {
+  id             String   @id @default(uuid())
+  module         String
+  resourceId     String
+  status         String   @default("pending")
+  currentLevel   Int      @default(1)
+  totalLevels    Int      @default(1)
+  requestedById  String?
+  requestedByName String?
+  requestedAt    DateTime @default(now())
+  completedAt    DateTime?
+  metadata       String   @default("{}")
+  steps          ApprovalStep[]
+
+  @@index([module, resourceId])
+}
+
+model ApprovalStep {
+  id             String   @id @default(uuid())
+  workflowId     String
+  level          Int
+  status         String   @default("pending")
+  approverId     String?
+  approverName   String?
+  approverEmail  String?
+  approverRole   String?
+  decision       String?
+  comment        String?
+  decidedAt      DateTime?
+  metadata       String   @default("{}")
+  createdAt      DateTime @default(now())
+
+  workflow ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId, level])
+}
+
+model ValidationRule {
+  id             String   @id @default(uuid())
+  module         String
+  status         String?
+  field          String
+  required       Boolean  @default(true)
+  message        String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([module, status])
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String?
+  endpoint  String   @unique
+  auth      String
+  p256dh     String
+  userAgent String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+model PurchaseQuotation {
+  id            String   @id @default(uuid())
+  procurementId String?
+  fornecedorId  String?
+  fornecedor    String
+  email         String?
+  valor         Float
+  moeda         String   @default("AOA")
+  prazoEntrega  String?
+  validade      String?
+  status        String   @default("recebida")
+  selected      Boolean  @default(false)
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([procurementId])
+}
+
+model PurchaseOrder {
+  id            String   @id @default(uuid())
+  numero        String?  @unique
+  procurementId String?
+  quotationId   String?
+  fornecedorId  String?
+  fornecedor    String
+  valor         Float
+  moeda         String   @default("AOA")
+  status        String   @default("emitida")
+  prazoEntrega  String?
+  localEntrega  String?
+  recebidoEm    DateTime?
+  recebidoPorId String?
+  recebidoPorNome String?
+  itens         String   @default("[]")
+  anexos        String   @default("[]")
+  data          String   @default("{}")
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([procurementId])
+}
+
+model Budget {
+  id            String   @id @default(uuid())
+  numero        String?  @unique
+  ano           Int
+  periodo       String   @default("anual")
+  department    String?
+  titulo        String
+  status        String   @default("rascunho")
+  totalOrcado   Float    @default(0)
+  totalComprometido Float @default(0)
+  totalRealizado Float   @default(0)
+  data          String   @default("{}")
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  lines      BudgetLine[]
+  executions BudgetExecution[]
+}
+
+model BudgetLine {
+  id            String   @id @default(uuid())
+  budgetId      String
+  categoria     String
+  subcategoria  String?
+  descricao     String?
+  valorOrcado   Float
+  valorComprometido Float @default(0)
+  valorRealizado Float   @default(0)
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  executions BudgetExecution[]
+
+  @@index([budgetId])
+}
+
+model BudgetExecution {
+  id            String   @id @default(uuid())
+  budgetId      String
+  budgetLineId  String?
+  tipo          String   @default("realizado")
+  valor         Float
+  descricao     String?
+  origemModulo  String?
+  origemId      String?
+  dataMovimento String
+  createdById   String?
+  createdByName String?
+  data          String   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budgetLine BudgetLine? @relation(fields: [budgetLineId], references: [id], onDelete: SetNull)
+
+  @@index([budgetId])
+  @@index([budgetLineId])
+}
+
+model AccountPayable {
+  id            String   @id @default(uuid())
+  numero        String?  @unique
+  fornecedor    String
+  descricao     String
+  valor         Float
+  moeda         String   @default("AOA")
+  dataVencimento String
+  status        String   @default("pendente")
+  pagoEm        DateTime?
+  origemModulo  String?
+  origemId      String?
+  data          String   @default("{}")
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model AccountReceivable {
+  id            String   @id @default(uuid())
+  numero        String?  @unique
+  cliente       String
+  descricao     String
+  valor         Float
+  moeda         String   @default("AOA")
+  dataVencimento String
+  status        String   @default("pendente")
+  recebidoEm    DateTime?
+  origemModulo  String?
+  origemId      String?
+  data          String   @default("{}")
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model FinancialReport {
+  id            String   @id @default(uuid())
+  tipo          String
+  periodoInicio String?
+  periodoFim    String?
+  department    String?
+  status        String   @default("gerado")
+  payload       String   @default("{}")
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

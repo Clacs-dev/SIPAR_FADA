@@ -1,0 +1,1155 @@
+import { useState, useEffect } from "react";
+import { 
+  Receipt, 
+  Plus, 
+  Search,
+  LayoutGrid,
+  List,
+  Clock,
+  CheckCircle,
+  DollarSign,
+  FileText,
+  Filter
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Badge } from "../ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { FacturasDashboard } from "./facturas-dashboard";
+import { FacturaForm } from "./factura-form";
+import { FacturaDetails } from "./factura-details";
+import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
+import { useAuth } from "../auth/auth-context";
+import { DepartmentFilter } from "../common/department-filter";
+import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { toast } from "sonner@2.0.3";
+
+export function FacturasMain() {
+  const { user, accessToken } = useAuth();
+  const [view, setView] = useState<'list' | 'form' | 'details'>('list');
+  const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [filters, setFilters] = useState<FacturaFilters>({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
+  const [facturas, setFacturas] = useState<Factura[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Buscar facturas do backend
+  useEffect(() => {
+    const fetchFacturas = async () => {
+      if (!accessToken) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const response = await fetch(
+          `${API_BASE_URL}/facturas`,
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Erro ao carregar facturas');
+        }
+
+        const data = await response.json();
+ console.log('Facturas carregadas:', data);
+        
+        // A resposta vem como { success: true, facturas: [...] }
+        const facturasData = data.facturas || [];
+        setFacturas(facturasData);
+      } catch (err) {
+ console.error('Erro ao buscar facturas:', err);
+        setError(err instanceof Error ? err.message : 'Erro ao carregar facturas');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchFacturas();
+  }, [accessToken]);
+
+  // Dados de exemplo - Fornecedores
+  const fornecedores: Fornecedor[] = [
+    {
+      id: '1',
+      nome: 'SONANGOL - Sociedade Nacional de Combustíveis',
+      nif: '5000000000',
+      email: 'faturacao@sonangol.co.ao',
+      telefone: '+244 222 000 000',
+      morada: 'Rua Rainha Ginga, Luanda',
+      iban: 'AO06 0000 0000 0000 0000 0000 0',
+    },
+    {
+      id: '2',
+      nome: 'Empresa de Distribuição de Energia',
+      nif: '5000000001',
+      email: 'comercial@ede.ao',
+      telefone: '+244 222 111 111',
+      morada: 'Avenida 4 de Fevereiro, Luanda',
+    },
+    {
+      id: '3',
+      nome: 'Papelaria Central Lda',
+      nif: '5000000002',
+      email: 'vendas@papelariacentral.ao',
+      telefone: '+244 222 222 222',
+      morada: 'Rua do Comércio, Luanda',
+    },
+  ];
+
+  // Dados de exemplo - Estatísticas
+  const stats: FacturaStats = {
+    total_facturas: 18,
+    total_valor: 12500000,
+    total_pago: 7800000,
+    total_pendente: 4700000,
+    registadas: 3,
+    em_validacao: 4,
+    aprovadas: 6,
+    rejeitadas: 1,
+    pagas: 4,
+    vencidas: 2,
+    a_vencer_30dias: 5,
+    por_fornecedor: [
+      { fornecedor_nome: 'SONANGOL', total: 6, valor: 5200000 },
+      { fornecedor_nome: 'Empresa de Distribuição de Energia', total: 5, valor: 3800000 },
+      { fornecedor_nome: 'Papelaria Central Lda', total: 4, valor: 2500000 },
+    ],
+  };
+
+ console.log(' Dashboard de Facturas - User Role:', user?.role);
+ console.log(' Dashboard de Facturas - ActiveTab:', activeTab);
+ console.log(' Dashboard de Facturas - Stats:', stats);
+
+  // Helper functions
+  const getFornecedorNome = (factura: Factura) => {
+    if (factura.fornecedor?.nome) {
+      return factura.fornecedor.nome;
+    }
+    const fornecedor = fornecedores.find(f => f.id === factura.fornecedor_id);
+    return fornecedor?.nome || 'Fornecedor Desconhecido';
+  };
+
+  const getStatusBadge = (status: string) => {
+    const badges = {
+      rascunho: { label: 'Rascunho', color: 'bg-gray-500' },
+      pendente: { label: 'Pendente', color: 'bg-blue-500' },
+      aprovado: { label: 'Aprovado', color: 'bg-green-500' },
+      rejeitado: { label: 'Rejeitado', color: 'bg-red-500' },
+      cancelado: { label: 'Cancelado', color: 'bg-gray-700' },
+      pago: { label: 'Pago', color: 'bg-green-700' },
+    };
+    const badge = badges[status as keyof typeof badges] || badges.pendente;
+    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+  };
+
+  const formatCurrency = (value: number, moeda: string = 'AOA') => {
+    return new Intl.NumberFormat('pt-AO', {
+      style: 'currency',
+      currency: moeda,
+      minimumFractionDigits: 2,
+    }).format(value);
+  };
+
+  const filteredFacturas = facturas.filter(factura => {
+    const fornecedorNome = getFornecedorNome(factura);
+    
+    if (searchTerm && 
+        !factura.numero.toLowerCase().includes(searchTerm.toLowerCase()) &&
+        !factura.numero_fornecedor.toLowerCase().includes(searchTerm.toLowerCase()) &&
+        !fornecedorNome.toLowerCase().includes(searchTerm.toLowerCase())) {
+      return false;
+    }
+    if (filters.status && factura.status !== filters.status) return false;
+    if (filters.fornecedor_id && factura.fornecedor_id !== filters.fornecedor_id) return false;
+    return true;
+  });
+
+  const handleSaveFactura = async (facturaData: Partial<Factura>) => {
+    if (!accessToken) {
+ console.error('Token de acesso não disponível');
+      setError('Não foi possível autenticar. Por favor, faça login novamente.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+ console.log('Enviando factura para o backend:', facturaData);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(facturaData),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao guardar factura');
+      }
+
+      const data = await response.json();
+ console.log('Factura guardada com sucesso:', data);
+ console.log('Estrutura da resposta:', JSON.stringify(data, null, 2));
+
+      // Recarregar a lista de facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+ console.log('Facturas após recarregar:', facturasData);
+ console.log('Número de facturas:', facturasData.facturas?.length || 0);
+        setFacturas(facturasData.facturas || []);
+      } else {
+ console.error('Erro ao recarregar facturas:', facturasResponse.status);
+      }
+
+      // Voltar para a lista
+      setView('list');
+      setSelectedFactura(null);
+    } catch (err) {
+ console.error('Erro ao guardar factura:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao guardar factura');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleValidate = async (comentario: string) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+ console.log('Validando factura:', selectedFactura.id, comentario);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/validate`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ comentario }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao validar factura');
+      }
+
+      const data = await response.json();
+ console.log('Factura validada com sucesso:', data);
+
+      // Recarregar facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+
+      // Voltar para lista
+      setView('list');
+      setSelectedFactura(null);
+      toast.success('Factura validada com sucesso!');
+    } catch (err) {
+ console.error('Erro ao validar factura:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao validar factura');
+      toast.error(err instanceof Error ? err.message : 'Erro ao validar factura');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApprove = async (comentario: string) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+ console.log('Aprovando factura:', selectedFactura.id, comentario);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/approve`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ comentario }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao aprovar factura');
+      }
+
+      const data = await response.json();
+ console.log('Factura aprovada com sucesso:', data);
+
+      // Recarregar facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+
+      // Voltar para lista
+      setView('list');
+      setSelectedFactura(null);
+    } catch (err) {
+ console.error('Erro ao aprovar factura:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao aprovar factura');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReject = async (motivo: string) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+ console.log('Rejeitando factura:', selectedFactura.id, motivo);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/reject`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ reason: motivo }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao rejeitar factura');
+      }
+
+      const data = await response.json();
+ console.log('Factura rejeitada com sucesso:', data);
+
+      // Recarregar facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+
+      // Voltar para lista
+      setView('list');
+      setSelectedFactura(null);
+    } catch (err) {
+ console.error('Erro ao rejeitar factura:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao rejeitar factura');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePay = async (metodo: string, referencia: string, comprovativo?: File) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      let comprovantivoUrl = '';
+
+      // Upload do comprovativo se fornecido
+      if (comprovativo) {
+ console.log('Fazendo upload do comprovativo...');
+        
+        const formData = new FormData();
+        formData.append('file', comprovativo);
+
+        const uploadResponse = await fetch(
+          `${API_BASE_URL}/facturas/upload`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+            },
+            body: formData,
+          }
+        );
+
+        if (!uploadResponse.ok) {
+          throw new Error('Erro ao fazer upload do comprovativo');
+        }
+
+        const uploadData = await uploadResponse.json();
+        comprovantivoUrl = uploadData.data?.url || '';
+ console.log('Comprovativo uploaded:', comprovantivoUrl);
+      }
+
+ console.log('Registando pagamento:', selectedFactura.id, metodo, referencia);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/pay`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            data_pagamento: new Date().toISOString(),
+            metodo_pagamento: metodo,
+            referencia_pagamento: referencia,
+            comprovativo_url: comprovantivoUrl,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao registar pagamento');
+      }
+
+      const data = await response.json();
+ console.log('Pagamento registado com sucesso:', data);
+
+      toast.success('✅ Pagamento registado com sucesso!');
+
+      // Recarregar facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+
+      // Voltar para lista
+      setView('list');
+      setSelectedFactura(null);
+    } catch (err) {
+ console.error('Erro ao registar pagamento:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao registar pagamento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitToBanco = async (banco: string, referencia: string) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      toast.error('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+ console.log('Submetendo factura ao banco:', selectedFactura.id, banco, referencia);
+
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/submit-banco`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            banco_destino: banco,
+            referencia_submissao: referencia,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Erro ao submeter factura ao banco');
+      }
+
+      const data = await response.json();
+ console.log('Factura submetida ao banco com sucesso:', data);
+
+      // Recarregar facturas
+      const facturasResponse = await fetch(
+        `${API_BASE_URL}/facturas`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+
+      // Voltar para lista
+      setView('list');
+      setSelectedFactura(null);
+      toast.success('Factura submetida ao banco com sucesso!');
+    } catch (err) {
+ console.error('Erro ao submeter factura ao banco:', err);
+      setError(err instanceof Error ? err.message : 'Erro ao submeter factura ao banco');
+      toast.error(err instanceof Error ? err.message : 'Erro ao submeter factura ao banco');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Permissões baseadas no novo sistema de departamentos
+  const userRole = user?.role;
+  
+  // COMPRAS: Pode validar facturas (pendente → validado)
+  const isCompras = userRole === 'compras';
+  
+  // GABINETES EXECUTIVOS: Podem aprovar facturas (validado → aprovado)
+  const isGabineteExecutivo = [
+    'gabinete_pca', 
+    'gabinete_pce', 
+    'gabinete_administrador', 
+    'gabinete_director', 
+    'gestao'
+  ].includes(userRole || '');
+  
+  // FINANCEIRO: Pode marcar como paga (aprovado → pago) com upload obrigatório
+  const isFinanceiro = userRole === 'financeiro';
+  
+  // EXTERNO: Fornecedores podem submeter e visualizar suas próprias facturas
+  const isExterno = userRole === 'externo';
+
+  // Definir permissões
+  const canValidate = isCompras; // Apenas Compras valida
+  const canApprove = isGabineteExecutivo; // Apenas Gabinetes Executivos aprovam
+  const canPay = isFinanceiro; // Apenas Financeiro marca como pago
+  const canView = isCompras || isFinanceiro || isGabineteExecutivo || isExterno; // Incluir externos
+  const canCreate = isExterno; // Fornecedores externos podem criar facturas
+
+  // Bloquear acesso para utilizadores sem permissão
+  if (!canView) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Card className="max-w-md">
+          <CardContent className="pt-6 text-center">
+            <Receipt className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Acesso Restrito</h2>
+            <p className="text-muted-foreground">
+              O módulo de Facturas está disponível apenas para os departamentos de Compras, Financeiro e Gabinetes Executivos.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (view === 'form') {
+    return (
+      <FacturaForm
+        factura={selectedFactura || undefined}
+        fornecedores={fornecedores}
+        onSave={handleSaveFactura}
+        onCancel={() => {
+          setView('list');
+          setSelectedFactura(null);
+        }}
+      />
+    );
+  }
+
+  if (view === 'details' && selectedFactura) {
+    return (
+      <FacturaDetails
+        factura={selectedFactura}
+        canValidate={canValidate}
+        canApprove={canApprove}
+        canPay={canPay}
+        userRole={userRole || 'externo'}
+        onBack={() => {
+          setView('list');
+          setSelectedFactura(null);
+        }}
+        onEdit={() => setView('form')}
+        onValidate={handleValidate}
+        onApprove={handleApprove}
+        onReject={handleReject}
+        onPay={handlePay}
+        onSubmitToBanco={handleSubmitToBanco}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="flex items-center gap-2">
+            <Receipt className="h-6 w-6" />
+            Facturas
+          </h1>
+          <p className="text-muted-foreground">
+            {isExterno 
+              ? 'Gerir e acompanhar suas facturas submetidas' 
+              : 'Gestão financeira de facturas e pagamentos'
+            }
+          </p>
+        </div>
+        {(isFinanceiro || user?.role === 'admin' || canCreate) && (
+          <Button onClick={() => setView('form')}>
+            <Plus className="mr-2 h-4 w-4" />
+            Nova Factura
+          </Button>
+        )}
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+            <p className="text-muted-foreground">A carregar facturas...</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Error */}
+      {error && !loading && (
+        <Card className="border-red-500">
+          <CardContent className="py-6 text-center">
+            <p className="text-red-600 font-semibold mb-2">Erro ao carregar facturas</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Content */}
+      {!loading && !error && (
+        <>
+          {/* Tabs - Com filtros avançados para Admin, Compras, Financeiro e Gabinetes Executivos */}
+          {(user?.role === 'admin' || user?.role === 'compras' || user?.role === 'Compras' || user?.department === 'Compras' || isFinanceiro || isGabineteExecutivo) ? (
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+              <TabsList>
+                <TabsTrigger value="dashboard">
+                  <LayoutGrid className="mr-2 h-4 w-4" />
+                  Dashboard
+                </TabsTrigger>
+                <TabsTrigger value="todas">
+                  <List className="mr-2 h-4 w-4" />
+                  Todas ({facturas.length})
+                </TabsTrigger>
+                <TabsTrigger value="pendentes">
+                  <Clock className="mr-2 h-4 w-4" />
+                  Pendentes ({facturas.filter(f => f.status === 'pendente').length})
+                </TabsTrigger>
+                <TabsTrigger value="validados">
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Validados ({facturas.filter(f => f.status === 'validado').length})
+                </TabsTrigger>
+                <TabsTrigger value="aprovadas">
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Aprovados ({facturas.filter(f => f.status === 'aprovado').length})
+                </TabsTrigger>
+                <TabsTrigger value="submetido_banco">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Submetido ao Banco ({facturas.filter(f => f.status === 'submetido_ao_banco').length})
+                </TabsTrigger>
+                <TabsTrigger value="pagamentos">
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Pagos ({facturas.filter(f => f.status === 'pago').length})
+                </TabsTrigger>
+              </TabsList>
+
+            {/* Dashboard */}
+            <TabsContent value="dashboard">
+              <FacturasDashboard stats={stats} />
+            </TabsContent>
+
+            {/* Todas */}
+            <TabsContent value="todas" className="space-y-4">
+              {/* Filtros */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Input
+                        placeholder="Pesquisar por número, fornecedor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        icon={<Search className="h-4 w-4" />}
+                      />
+                    </div>
+                    <select
+                      className="px-3 py-2 border border-input rounded-md bg-background"
+                      value={filters.status || ''}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value as any })}
+                    >
+                      <option value="">Todos os estados</option>
+                      <option value="rascunho">Rascunho</option>
+                      <option value="pendente">Pendente</option>
+                      <option value="validado">Validado</option>
+                      <option value="aprovado">Aprovado</option>
+                      <option value="submetido_ao_banco">Submetido ao Banco</option>
+                      <option value="rejeitado">Rejeitado</option>
+                      <option value="cancelado">Cancelado</option>
+                      <option value="pago">Pago</option>
+                    </select>
+                    <select
+                      className="px-3 py-2 border border-input rounded-md bg-background"
+                      value={filters.fornecedor_id || ''}
+                      onChange={(e) => setFilters({ ...filters, fornecedor_id: e.target.value })}
+                    >
+                      <option value="">Todos os fornecedores</option>
+                      {fornecedores.map(f => (
+                        <option key={f.id} value={f.id}>{f.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Lista */}
+              <div className="grid gap-4">
+                {filteredFacturas.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Receipt className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">
+                        Nenhuma factura encontrada
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredFacturas.map((factura) => (
+                    <Card
+                      key={factura.id}
+                      className="hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedFactura(factura);
+                        setView('details');
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{factura.numero}</Badge>
+                              {getStatusBadge(factura.status)}
+                              <Badge variant="outline">{factura.moeda}</Badge>
+                            </div>
+                            <p className="text-sm mb-2">
+                              <strong className="text-base">{getFornecedorNome(factura)}</strong>
+                            </p>
+                            <CardTitle className="text-lg mb-3">{factura.descricao}</CardTitle>
+                            <div className="mt-2 space-y-1.5">
+                              <p className="text-sm text-muted-foreground">
+                                <strong>Código do Fornecedor:</strong> {factura.numero_fornecedor}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                <strong>Data de Registo:</strong> {new Date(factura.created_at || factura.data_registo || new Date()).toLocaleDateString('pt-PT')}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                <strong>Data de Emissão:</strong> {new Date(factura.data_emissao).toLocaleDateString('pt-PT')}
+                              </p>
+                              <p className="text-sm text-muted-foreground">
+                                <strong>Data de Vencimento:</strong> {new Date(factura.data_vencimento).toLocaleDateString('pt-PT')}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(factura.total, factura.moeda)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {factura.itens?.length || 0} item(ns)
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Pendentes */}
+            <TabsContent value="pendentes" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => f.status === 'pendente').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Clock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura pendente</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => f.status === 'pendente').map((factura) => (
+                  <Card
+                    key={factura.id}
+                    className="hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => {
+                      setSelectedFactura(factura);
+                      setView('details');
+                    }}
+                  >
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline">{factura.numero}</Badge>
+                            {getStatusBadge(factura.status)}
+                          </div>
+                          <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            {getFornecedorNome(factura)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-primary">
+                            {formatCurrency(factura.total, factura.moeda)}
+                          </p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Validados */}
+            <TabsContent value="validados" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => f.status === 'validado').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura validada</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => f.status === 'validado').map((factura) => (
+                    <Card
+                      key={factura.id}
+                      className="hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedFactura(factura);
+                        setView('details');
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{factura.numero}</Badge>
+                              {getStatusBadge(factura.status)}
+                            </div>
+                            <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              {getFornecedorNome(factura)} •{' '}
+                              Validado por {factura.validado_por_nome || 'N/A'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(factura.total, factura.moeda)}
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Aprovadas */}
+            <TabsContent value="aprovadas" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => f.status === 'aprovado').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura aprovada</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => f.status === 'aprovado').map((factura) => (
+                  <Card
+                    key={factura.id}
+                    className="hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => {
+                      setSelectedFactura(factura);
+                      setView('details');
+                    }}
+                  >
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline">{factura.numero}</Badge>
+                            {getStatusBadge(factura.status)}
+                          </div>
+                          <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            {getFornecedorNome(factura)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-primary">
+                            {formatCurrency(factura.total, factura.moeda)}
+                          </p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Submetido ao Banco */}
+            <TabsContent value="submetido_banco" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => f.status === 'submetido_ao_banco').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura submetida ao banco</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => f.status === 'submetido_ao_banco').map((factura) => (
+                    <Card
+                      key={factura.id}
+                      className="hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedFactura(factura);
+                        setView('details');
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{factura.numero}</Badge>
+                              {getStatusBadge(factura.status)}
+                            </div>
+                            <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              {getFornecedorNome(factura)} •{' '}
+                              Submetido ao {factura.banco_destino || 'Banco'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(factura.total, factura.moeda)}
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+
+            {/* Pagamentos */}
+            <TabsContent value="pagamentos" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => f.status === 'pago').length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura paga</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => f.status === 'pago').map((factura) => (
+                  <Card
+                    key={factura.id}
+                    className="hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => {
+                      setSelectedFactura(factura);
+                      setView('details');
+                    }}
+                  >
+                    <CardHeader>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline">{factura.numero}</Badge>
+                            {getStatusBadge(factura.status)}
+                          </div>
+                          <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            {getFornecedorNome(factura)} •{' '}
+                            Pago em {new Date(factura.pago_at!).toLocaleDateString('pt-PT')}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-bold text-green-600">
+                            {formatCurrency(factura.total, factura.moeda)}
+                          </p>
+                        </div>
+                      </div>
+                    </CardHeader>
+                  </Card>
+                  ))
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+          ) : (
+            // Visualização simplificada para utilizadores externos
+            <div className="space-y-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Pesquisar por número, descrição..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      icon={<Search className="h-4 w-4" />}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="grid gap-4">
+                {filteredFacturas.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <Receipt className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">
+                        Nenhuma factura encontrada
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredFacturas.map((factura) => (
+                    <Card
+                      key={factura.id}
+                      className="hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedFactura(factura);
+                        setView('details');
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{factura.numero}</Badge>
+                              {getStatusBadge(factura.status)}
+                              <Badge variant="outline">{factura.moeda}</Badge>
+                            </div>
+                            <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                            <div className="mt-2 space-y-1">
+                              <p className="text-sm text-muted-foreground">
+                                <strong>Vencimento:</strong> {new Date(factura.data_vencimento).toLocaleDateString('pt-PT')}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(factura.total, factura.moeda)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {factura.itens?.length || 0} item(ns)
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
