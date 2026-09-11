@@ -1,12 +1,41 @@
 import { Router, Response, NextFunction } from 'express';
+import { requireLicenseModule } from '../middlewares/license';
 import { AuthenticatedRequest, requireAuth } from '../middlewares/auth';
 import prisma from '../config/database';
 import { auditService } from '../services/audit.service';
 import { notifications } from '../services/notification.service';
 import { MeetingLinkService } from '../services/meeting-link.service';
+import { emailService } from '../services/email.service';
 import logger from '../config/logger';
 
 const router = Router();
+router.use(requireLicenseModule('internal_meetings'));
+
+function convitedadoExternoEmailHtml(nomeParticipante: string, organizadorNome: string, meeting: any) {
+  const quando = meeting.meetingDate
+    ? `${meeting.meetingDate}${meeting.startTime ? ` às ${meeting.startTime}` : ''}`
+    : 'data a confirmar';
+  const onde = meeting.meetingType === 'online'
+    ? (meeting.meetingLink ? `Online: ${meeting.meetingLink}` : 'Reunião online (link a enviar)')
+    : (meeting.location || 'Local a confirmar');
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto;">
+      <h2 style="color: #1e293b;">Convite para reunião - FADA</h2>
+      <p>Olá <strong>${nomeParticipante || 'Convidado'}</strong>,</p>
+      <p>
+        <strong>${organizadorNome}</strong> convidou-o(a) para a reunião "<strong>${meeting.title}</strong>",
+        no Fundo de Apoio ao Desenvolvimento Agrário (FADA).
+      </p>
+      <div style="background: #f1f5f9; border-radius: 8px; padding: 16px; margin: 20px 0;">
+        <p style="margin: 4px 0;"><strong>Quando:</strong> ${quando}</p>
+        <p style="margin: 4px 0;"><strong>Onde:</strong> ${onde}</p>
+      </div>
+      <p style="font-size: 12px; color: #888; margin-top: 24px;">
+        Este convite foi enviado porque foi indicado como participante externo desta reunião.
+      </p>
+    </div>
+  `;
+}
 
 function safeJsonParse(value: any, fallback: any) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -16,6 +45,32 @@ function safeJsonParse(value: any, fallback: any) {
   } catch {
     return fallback;
   }
+}
+
+function toMinutes(time: string): number {
+  const [h, m] = String(time).split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function hasOverlap(startA: string, endA: string, startB: string, endB: string) {
+  return toMinutes(startA) < toMinutes(endB) && toMinutes(startB) < toMinutes(endA);
+}
+
+/**
+ * Verifica se a sala escolhida ja esta ocupada nesse dia/horario por outra reuniao.
+ */
+async function findRoomConflict(roomId: string, meetingDate: string, startTime: string, endTime: string, excludeMeetingId?: string) {
+  const meetings = await prisma.internalMeeting.findMany({
+    where: {
+      roomId,
+      meetingDate,
+      status: { notIn: ['cancelado', 'rejeitado'] },
+      ...(excludeMeetingId ? { id: { not: excludeMeetingId } } : {}),
+    },
+    select: { id: true, title: true, startTime: true, endTime: true },
+  });
+
+  return meetings.find((m) => hasOverlap(startTime, endTime, m.startTime, m.endTime)) || null;
 }
 
 /**
@@ -171,7 +226,8 @@ router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Respo
       where: {
         OR: [
           { organizerId: user.id },
-          { participantId: user.id }
+          { participantId: user.id },
+          { participantes: { some: { userId: user.id } } },
         ]
       },
       include: {
@@ -201,6 +257,7 @@ router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Respo
           end_time: m.endTime,
           meeting_type: m.meetingType,
           location: m.location,
+          room_id: m.roomId,
           platform: m.platform,
           meeting_link: m.meetingLink,
           priority: m.priority,
@@ -252,21 +309,42 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
     const pontosAgenda = body.pontos_agenda || body.agendaPoints || [];
     const meetingType = body.meeting_type || body.meetingType;
     const platform = body.platform || null;
+    const roomId = body.room_id || body.roomId || null;
+    const meetingDate = body.meeting_date || body.meetingDate;
+    const startTime = body.start_time || body.startTime;
+    const endTime = body.end_time || body.endTime;
+
+    if (roomId) {
+      const conflict = await findRoomConflict(roomId, meetingDate, startTime, endTime);
+      if (conflict) {
+        return res.status(409).json({
+          error: 'ROOM_CONFLICT',
+          message: `A sala ja esta reservada nesse horario pela reuniao "${conflict.title}" (${conflict.startTime}-${conflict.endTime})`,
+        });
+      }
+    }
     const meetingLink = body.meeting_link || body.meetingLink || (
       meetingType === 'online'
         ? await MeetingLinkService.create({
             title: body.title,
             description: body.description,
-            date: body.meeting_date || body.meetingDate,
-            time: body.start_time || body.startTime,
-            endTime: body.end_time || body.endTime,
+            date: meetingDate,
+            time: startTime,
+            endTime,
             platform,
             organizerEmail: user.email,
             attendees: participantes.map((p: any) => p.email).filter(Boolean),
           })
         : null
     );
-    
+
+    if (meetingType === 'online' && !meetingLink) {
+      return res.status(422).json({
+        error: 'MEETING_PLATFORM_NOT_CONFIGURED',
+        message: 'Nenhuma plataforma de reunião está configurada (nem API real, nem link fixo). Peça ao administrador do sistema para configurar em Configurações → Integrações antes de agendar reuniões online.',
+      });
+    }
+
     // Preparar dados para o banco
     const meeting = await prisma.internalMeeting.create({
       data: {
@@ -274,11 +352,12 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
         participantId: body.participant_id || body.participantId || null,
         title: body.title,
         description: body.description || null,
-        meetingDate: body.meeting_date || body.meetingDate,
-        startTime: body.start_time || body.startTime,
-        endTime: body.end_time || body.endTime,
+        meetingDate,
+        startTime,
+        endTime,
         meetingType,
         location: body.location || null,
+        roomId,
         platform,
         meetingLink,
         priority: body.priority || 'normal',
@@ -320,7 +399,9 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
       });
     }
 
-    // Criar notificações para participantes
+    // Notificar participantes: utilizadores reais recebem notificacao interna,
+    // participantes externos (sem conta na plataforma) recebem um convite por
+    // e-mail, ja que nunca vao fazer login para ver notificacoes internas.
     for (const p of participantes) {
       const pId = String(p.user_id || p.usuario_id || p.userId || p.id || '');
       if (validParticipantUserIds.has(pId)) {
@@ -333,6 +414,12 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
             meeting.id
           );
         }
+      } else if (p.email) {
+        await emailService.sendEmail({
+          to: p.email,
+          subject: `Convite para reunião: ${meeting.title}`,
+          html: convitedadoExternoEmailHtml(p.nome || p.name, user.name, meeting),
+        }).catch((error) => logger.error(`Falha ao enviar convite de reuniao a ${p.email}:`, error));
       }
     }
 
@@ -371,6 +458,7 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
       end_time: meeting.endTime,
       meeting_type: meeting.meetingType,
       location: meeting.location,
+      room_id: meeting.roomId,
       platform: meeting.platform,
       meeting_link: meeting.meetingLink,
       priority: meeting.priority,
@@ -424,6 +512,22 @@ router.put('/:id', requireAuth as any, async (req: AuthenticatedRequest, res: Re
     if (body.end_time !== undefined) updateData.endTime = body.end_time;
     if (body.endTime !== undefined) updateData.endTime = body.endTime;
     if (body.pontos_agenda !== undefined) updateData.pontosAgenda = JSON.stringify(body.pontos_agenda);
+    if (body.room_id !== undefined) updateData.roomId = body.room_id || null;
+    if (body.roomId !== undefined) updateData.roomId = body.roomId || null;
+
+    const nextRoomId = updateData.roomId !== undefined ? updateData.roomId : existingMeeting.roomId;
+    if (nextRoomId) {
+      const nextDate = updateData.meetingDate || existingMeeting.meetingDate;
+      const nextStart = updateData.startTime || existingMeeting.startTime;
+      const nextEnd = updateData.endTime || existingMeeting.endTime;
+      const conflict = await findRoomConflict(nextRoomId, nextDate, nextStart, nextEnd, meetingId);
+      if (conflict) {
+        return res.status(409).json({
+          error: 'ROOM_CONFLICT',
+          message: `A sala ja esta reservada nesse horario pela reuniao "${conflict.title}" (${conflict.startTime}-${conflict.endTime})`,
+        });
+      }
+    }
 
     const updated = await prisma.internalMeeting.update({
       where: { id: meetingId },
@@ -442,6 +546,7 @@ router.put('/:id', requireAuth as any, async (req: AuthenticatedRequest, res: Re
       end_time: updated.endTime,
       meeting_type: updated.meetingType,
       location: updated.location,
+      room_id: updated.roomId,
       platform: updated.platform,
       meeting_link: updated.meetingLink,
       priority: updated.priority,

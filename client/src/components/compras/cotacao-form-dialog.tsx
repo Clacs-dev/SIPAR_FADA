@@ -268,7 +268,7 @@ export function CotacaoFormDialog({
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Resumo do Pedido */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="bg-tone-info-soft border border-tone-info/30 rounded-lg p-4">
             <h3 className="font-semibold text-sm mb-2">Informações do Pedido</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
               <div>
@@ -298,7 +298,7 @@ export function CotacaoFormDialog({
           </div>
 
           {/* Resumo da Cotação */}
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <div className="bg-tone-success-soft border border-tone-success/30 rounded-lg p-4">
             <h3 className="font-semibold text-sm mb-2">Resumo da Sua Cotação</h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -309,7 +309,7 @@ export function CotacaoFormDialog({
               </div>
               <div>
                 <span className="text-muted-foreground text-sm">Valor Total Estimado:</span>
-                <p className="font-semibold text-lg text-green-700">
+                <p className="font-semibold text-lg text-tone-success">
                   {valorTotal.toLocaleString('pt-AO')} AOA
                 </p>
               </div>
@@ -354,14 +354,14 @@ export function CotacaoFormDialog({
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="sim" id={`${item.id}-sim`} />
                         <Label htmlFor={`${item.id}-sim`} className="cursor-pointer">
-                          <CheckCircle2 className="h-4 w-4 inline mr-1 text-green-600" />
+                          <CheckCircle2 className="h-4 w-4 inline mr-1 text-tone-success" />
                           Sim, tenho disponível
                         </Label>
                       </div>
                       <div className="flex items-center space-x-2">
                         <RadioGroupItem value="nao" id={`${item.id}-nao`} />
                         <Label htmlFor={`${item.id}-nao`} className="cursor-pointer">
-                          <XCircle className="h-4 w-4 inline mr-1 text-red-600" />
+                          <XCircle className="h-4 w-4 inline mr-1 text-tone-danger" />
                           Não, não possuo
                         </Label>
                       </div>
@@ -439,26 +439,26 @@ export function CotacaoFormDialog({
 
                       {/* Subtotal */}
                       {resposta.preco_unitario && resposta.quantidade_disponivel && (
-                        <div className="bg-green-50 p-3 rounded-lg space-y-2">
+                        <div className="bg-tone-success-soft p-3 rounded-lg space-y-2">
                           <div className="grid grid-cols-2 gap-4 text-sm">
                             <div>
                               <span className="text-muted-foreground">Subtotal (sem IV):</span>
-                              <p className="font-medium text-green-700">
+                              <p className="font-medium text-tone-success">
                                 {(resposta.preco_unitario * resposta.quantidade_disponivel).toLocaleString('pt-AO')} AOA
                               </p>
                             </div>
                             {resposta.iv_percentagem && resposta.iv_percentagem > 0 && (
                               <div>
                                 <span className="text-muted-foreground">IV ({resposta.iv_percentagem}%):</span>
-                                <p className="font-medium text-orange-700">
+                                <p className="font-medium text-tone-warn">
                                   {((resposta.preco_unitario * resposta.quantidade_disponivel) * (resposta.iv_percentagem / 100)).toLocaleString('pt-AO')} AOA
                                 </p>
                               </div>
                             )}
                           </div>
-                          <div className="pt-2 border-t border-green-200">
+                          <div className="pt-2 border-t border-tone-success/30">
                             <span className="text-sm text-muted-foreground">Total do Item (com IV):</span>
-                            <p className="font-semibold text-lg text-green-700">
+                            <p className="font-semibold text-lg text-tone-success">
                               {(() => {
                                 const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
                                 const iv = subtotal * ((resposta.iv_percentagem || 0) / 100);
@@ -506,9 +506,9 @@ export function CotacaoFormDialog({
 
             {/* Sub-formulário de Prestações */}
             {condicoesPagamento.includes("prestacoes") && (
-              <div className="border border-purple-200 rounded-lg p-4 space-y-3 bg-purple-50">
+              <div className="border border-tone-accent/30 rounded-lg p-4 space-y-3 bg-tone-accent-soft">
                 <div className="flex items-center justify-between">
-                  <Label className="text-purple-900">Detalhes das Prestações</Label>
+                  <Label className="text-tone-accent">Detalhes das Prestações</Label>
                   <Button
                     type="button"
                     size="sm"
@@ -522,7 +522,7 @@ export function CotacaoFormDialog({
                 </div>
 
                 {prestacoes.length === 0 ? (
-                  <p className="text-sm text-purple-700 italic">
+                  <p className="text-sm text-tone-accent italic">
                     Nenhuma prestação adicionada. Clique em "Adicionar Prestação" para especificar o plano de pagamento.
                   </p>
                 ) : (
@@ -558,7 +558,7 @@ export function CotacaoFormDialog({
                           size="sm"
                           variant="ghost"
                           onClick={() => handleRemovePrestacao(prestacao.id)}
-                          className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="h-9 px-2 text-tone-danger hover:text-tone-danger hover:bg-tone-danger-soft"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -567,9 +567,9 @@ export function CotacaoFormDialog({
 
                     {/* Total das Prestações */}
                     <div className={`text-sm font-medium p-2 rounded ${
-                      totalPrestacoes === 100 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
+                      totalPrestacoes === 100
+                        ? 'bg-tone-success-soft text-tone-success'
+                        : 'bg-tone-warn-soft text-tone-warn'
                     }`}>
                       Total: {totalPrestacoes.toFixed(2)}% 
                       {totalPrestacoes !== 100 && ` (Faltam ${(100 - totalPrestacoes).toFixed(2)}% para completar 100%)`}
@@ -646,7 +646,7 @@ export function CotacaoFormDialog({
                         className="flex items-center justify-between bg-gray-50 border rounded-lg p-3"
                       >
                         <div className="flex items-center gap-3">
-                          <FileText className="h-5 w-5 text-blue-600" />
+                          <FileText className="h-5 w-5 text-tone-info" />
                           <div>
                             <p className="text-sm font-medium">{anexo.name}</p>
                             <p className="text-xs text-muted-foreground">
@@ -659,7 +659,7 @@ export function CotacaoFormDialog({
                           variant="ghost"
                           size="sm"
                           onClick={() => handleRemoveAnexo(idx)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="text-tone-danger hover:text-tone-danger hover:bg-tone-danger-soft"
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -672,11 +672,11 @@ export function CotacaoFormDialog({
           </div>
 
           {/* Avisos */}
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex gap-3">
-            <AlertCircle className="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-yellow-900">
+          <div className="bg-tone-warn-soft border border-tone-warn/30 rounded-lg p-4 flex gap-3">
+            <AlertCircle className="h-5 w-5 text-tone-warn flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-tone-warn">
               <p className="font-medium mb-1">Antes de submeter:</p>
-              <ul className="list-disc list-inside space-y-1 text-yellow-800">
+              <ul className="list-disc list-inside space-y-1 text-tone-warn">
                 <li>Verifique todos os preços e quantidades</li>
                 <li>A cotação será analisada junto com outras submissões</li>
                 <li>Você receberá notificação por email sobre o resultado</li>

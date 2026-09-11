@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { AuthenticatedRequest, requireAuth } from '../middlewares/auth';
+import { AuthenticatedRequest, requireAuth, requireSystemAdmin } from '../middlewares/auth';
 import { notifications } from '../services/notification.service';
 import { PushService } from '../services/push.service';
 import prisma from '../config/database';
@@ -48,7 +48,7 @@ router.post('/send-to-user', requireAuth as any, async (req: AuthenticatedReques
   res.status(200).json({ success: true, ...result });
 });
 
-router.post('/send-to-role', requireAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/send-to-role', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response) => {
   const role = req.body.role;
   if (!role) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Role ausente' });
   const result = await PushService.sendToRole(role, {
@@ -60,7 +60,7 @@ router.post('/send-to-role', requireAuth as any, async (req: AuthenticatedReques
   res.status(200).json({ success: true, ...result });
 });
 
-router.post('/broadcast', requireAuth as any, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/broadcast', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response) => {
   const result = await PushService.broadcast({
     title: req.body.title || 'SIPAR20',
     body: req.body.message || req.body.body || 'Nova notificacao',

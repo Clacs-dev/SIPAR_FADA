@@ -14,6 +14,7 @@ export interface Despacho {
   despachado_por_cargo: string;
   departamento: string;
   created_at: string;
+  assinatura_url?: string;
 }
 
 export interface Resposta {
@@ -41,6 +42,7 @@ export interface Delegacao {
   delegado_por_nome: string;
   departamento: string;
   created_at: string;
+  assinatura_url?: string;
 }
 
 export interface Anexo {
@@ -60,6 +62,8 @@ export interface Comunicacao {
   assunto: string;
   departamento_origem: string;
   departamento_destino: string;
+  departamento_destino_id?: string;
+  destinatario_id?: string;
   destinatario_nome: string;
   destinatario_cargo: string;
   conteudo: string;

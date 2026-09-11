@@ -26,7 +26,8 @@ import {
   UserPlus,
   Edit,
   Trash2,
-  Loader2
+  Loader2,
+  Search
 } from "lucide-react";
 import {
   AlertDialog,
@@ -48,13 +49,21 @@ import {
 } from "../ui/dialog";
 import { Textarea } from "../ui/textarea";
 
+// Formata uma data com segurança: devolve '-' em vez de rebentar com
+// "RangeError: Invalid time value" quando o valor vem vazio/malformado.
+function formatSafeDate(value: any, pattern: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return format(date, pattern, { locale: ptBR });
+}
+
 export function ComunicacoesMain() {
   const { user } = useAuth();
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedComunicacao, setSelectedComunicacao] = useState<Comunicacao | null>(null);
   const [activeTab, setActiveTab] = useState('todas');
   const [filters, setFilters] = useState<ComunicacaoFilters>({});
-  const [searchTerm, setSearchTerm] = useState('');
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [comunicacaoToShare, setComunicacaoToShare] = useState<string | null>(null);
 
@@ -127,6 +136,7 @@ export function ComunicacoesMain() {
   const [delegarDialogOpen, setDelegarDialogOpen] = useState(false);
   const [comunicacaoToDelegar, setComunicacaoToDelegar] = useState<Comunicacao | null>(null);
   const [delegadoParaId, setDelegadoParaId] = useState('');
+  const [delegarSearch, setDelegarSearch] = useState('');
   const [motivoDelegacao, setMotivoDelegacao] = useState('');
   const [delegandoComunicacao, setDelegandoComunicacao] = useState(false);
 
@@ -151,6 +161,7 @@ export function ComunicacoesMain() {
       if (success) {
         setDelegarDialogOpen(false);
         setDelegadoParaId('');
+        setDelegarSearch('');
         setMotivoDelegacao('');
         setComunicacaoToDelegar(null);
         await fetchComunicacoes(filters);
@@ -194,8 +205,6 @@ export function ComunicacoesMain() {
     if (selectedComunicacao) {
       const updatedComunicacao = comunicacoes.find(c => c.id === selectedComunicacao.id);
       if (updatedComunicacao) {
- console.log(' Atualizando comunicação selecionada:', updatedComunicacao.id);
- console.log(' Despachos atualizados:', updatedComunicacao.despachos);
         setSelectedComunicacao(updatedComunicacao);
       }
     }
@@ -207,7 +216,6 @@ export function ComunicacoesMain() {
       setLoadingUtilizadores(true);
       fetchUtilizadoresDepartamento()
         .then((utilizadores) => {
- console.log(' Utilizadores do departamento carregados:', utilizadores.length);
           setUtilizadoresDepartamento(utilizadores);
         })
         .catch((error) => {
@@ -220,13 +228,22 @@ export function ComunicacoesMain() {
     }
   }, [delegarDialogOpen, utilizadoresDepartamento.length, fetchUtilizadoresDepartamento]);
 
+  const delegadoSelecionado = utilizadoresDepartamento.find((u) => u.id === delegadoParaId) || null;
+  const delegarMatches = (() => {
+    const term = delegarSearch.trim().toLowerCase();
+    if (!term) return [];
+    return utilizadoresDepartamento
+      .filter((u) =>
+        u.nome.toLowerCase().includes(term) ||
+        u.email.toLowerCase().includes(term) ||
+        (u.cargo || '').toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  })();
+
   const filteredComunicacoes = comunicacoes.filter(comunicacao => {
     if (!comunicacao || typeof comunicacao !== 'object') return false;
-    
-    if (searchTerm && !comunicacao.assunto.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !comunicacao.numero.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
+
     if (filters.status && comunicacao.status !== filters.status) return false;
     if (filters.prioridade && comunicacao.prioridade !== filters.prioridade) return false;
     return true;
@@ -234,13 +251,13 @@ export function ComunicacoesMain() {
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pendente: { label: 'Pendente', color: 'bg-yellow-500' },
-      em_analise: { label: 'Em Análise', color: 'bg-blue-500' },
-      despachado: { label: 'Despachado', color: 'bg-green-500' },
-      arquivado: { label: 'Arquivado', color: 'bg-gray-600' },
+      pendente: { label: 'Pendente', color: 'var(--tone-warn)' },
+      em_analise: { label: 'Em Análise', color: 'var(--tone-info)' },
+      despachado: { label: 'Despachado', color: 'var(--tone-success)' },
+      arquivado: { label: 'Arquivado', color: 'var(--tone-neutral)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const getPrioridadeIcon = (prioridade: string) => {
@@ -278,20 +295,14 @@ export function ComunicacoesMain() {
   const handleDespachar = async (despacho: string) => {
     if (!selectedComunicacao) return;
     
- console.log(' [MAIN] handleDespachar chamado');
- console.log(' [MAIN] Comunicação ID:', selectedComunicacao.id);
- console.log(' [MAIN] Despacho:', despacho);
     
     const success = await despacharComunicacao(selectedComunicacao.id, { texto_despacho: despacho });
- console.log(' [MAIN] Resultado do despacho:', success);
     
     if (success) {
- console.log(' [MAIN] Despacho adicionado, recarregando dados...');
       await fetchComunicacoes(filters);
       setTimeout(() => {
         const updatedComunicacao = comunicacoes.find(c => c.id === selectedComunicacao.id);
         if (updatedComunicacao) {
- console.log(' [MAIN] Comunicação atualizada com despachos:', updatedComunicacao.despachos);
           setSelectedComunicacao(updatedComunicacao);
         }
       }, 100);
@@ -448,13 +459,6 @@ export function ComunicacoesMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex gap-4 mb-4">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Pesquisar por assunto ou número..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
                 <select
                   className="px-3 py-2 border border-input rounded-md bg-background"
                   value={filters.status || ''}
@@ -525,7 +529,7 @@ export function ComunicacoesMain() {
                         </>
                       )}
                       <span>•</span>
-                      <span>{format(new Date(comunicacao.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                      <span>{formatSafeDate(comunicacao.created_at, "dd/MM/yyyy HH:mm")}</span>
                       {comunicacao.despachos && comunicacao.despachos.length > 0 && (
                         <>
                           <span>•</span>
@@ -592,13 +596,6 @@ export function ComunicacoesMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex gap-4 mb-4">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Pesquisar por assunto ou número..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
                 <select
                   className="px-3 py-2 border border-input rounded-md bg-background"
                   value={filters.status || ''}
@@ -667,7 +664,7 @@ export function ComunicacoesMain() {
                         </>
                       )}
                       <span>•</span>
-                      <span>{format(new Date(comunicacao.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                      <span>{formatSafeDate(comunicacao.created_at, "dd/MM/yyyy HH:mm")}</span>
                       {comunicacao.despachos && comunicacao.despachos.length > 0 && (
                         <>
                           <span>•</span>
@@ -726,13 +723,6 @@ export function ComunicacoesMain() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex gap-4 mb-4">
-                <div className="flex-1">
-                  <Input
-                    placeholder="Pesquisar por assunto ou número..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
                 <select
                   className="px-3 py-2 border border-input rounded-md bg-background"
                   value={filters.status || ''}
@@ -795,7 +785,7 @@ export function ComunicacoesMain() {
                     <div className="flex items-center gap-4 text-sm text-muted-foreground mt-3">
                       <span>De: {comunicacao.departamento_origem}</span>
                       <span>•</span>
-                      <span>{format(new Date(comunicacao.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}</span>
+                      <span>{formatSafeDate(comunicacao.created_at, "dd/MM/yyyy HH:mm")}</span>
                       {comunicacao.despachos && comunicacao.despachos.length > 0 && (
                         <>
                           <span>•</span>
@@ -869,7 +859,7 @@ export function ComunicacoesMain() {
                       <span>•</span>
                       <span>Para: {comunicacao.departamento_destino}</span>
                       <span>•</span>
-                      <span>Arquivado em: {format(new Date(comunicacao.arquivado_em!), "dd/MM/yyyy", { locale: ptBR })}</span>
+                      <span>Arquivado em: {formatSafeDate(comunicacao.arquivado_em, "dd/MM/yyyy")}</span>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -1004,20 +994,68 @@ export function ComunicacoesMain() {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium mb-2 block">Delegar Para *</label>
-              <select
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                value={delegadoParaId}
-                onChange={(e) => setDelegadoParaId(e.target.value)}
-              >
-                <option value="">Seleccione um utilizador...</option>
-                {loadingUtilizadores && <option value="loading">A carregar...</option>}
-                {utilizadoresDepartamento.map((utilizador) => (
-                  <option key={utilizador.id} value={utilizador.id}>{utilizador.nome}</option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1">
-                Apenas utilizadores do departamento {user?.departamento}
-              </p>
+              {loadingUtilizadores ? (
+                <p className="text-sm text-muted-foreground p-3 border rounded-md">A carregar utilizadores...</p>
+              ) : delegadoSelecionado ? (
+                <div className="flex items-center justify-between p-3 border rounded-md bg-muted/50">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{delegadoSelecionado.nome}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {delegadoSelecionado.email} · {delegadoSelecionado.cargo}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDelegadoParaId('');
+                      setDelegarSearch('');
+                    }}
+                  >
+                    Alterar
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="Pesquisar por nome, e-mail ou cargo..."
+                    value={delegarSearch}
+                    onChange={(e) => setDelegarSearch(e.target.value)}
+                    className="pl-10"
+                    autoComplete="off"
+                  />
+                  {delegarSearch.trim().length > 0 && (
+                    <div className="mt-2 border rounded-md max-h-56 overflow-y-auto bg-background">
+                      {delegarMatches.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          Nenhum utilizador encontrado
+                        </p>
+                      ) : (
+                        delegarMatches.map((utilizador) => (
+                          <button
+                            type="button"
+                            key={utilizador.id}
+                            onClick={() => {
+                              setDelegadoParaId(utilizador.id);
+                              setDelegarSearch('');
+                            }}
+                            className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent transition-colors border-b last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{utilizador.nome}</p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {utilizador.email} · {utilizador.cargo}
+                              </p>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">Motivo da Delegação *</label>
@@ -1030,11 +1068,12 @@ export function ComunicacoesMain() {
             </div>
           </div>
           <DialogFooter>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setDelegarDialogOpen(false);
                 setDelegadoParaId('');
+                setDelegarSearch('');
                 setMotivoDelegacao('');
               }}
             >

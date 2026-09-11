@@ -5,6 +5,7 @@ import { Badge } from '../ui/badge';
 import { Alert, AlertDescription } from '../ui/alert';
 import { ScrollArea } from '../ui/scroll-area';
 import { useAuth } from '../auth/auth-context';
+import { hasPermission } from '../auth/permissions';
 import { toast } from 'sonner@2.0.3';
 import { Mail, Send, CheckCircle, XCircle, Clock, BarChart3, TestTube, AlertTriangle } from 'lucide-react';
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
@@ -38,7 +39,7 @@ export function EmailManagement() {
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   useEffect(() => {
-    if (user?.role === 'admin' && accessToken) {
+    if (user && hasPermission(user.role, 'MANAGE_SETTINGS') && accessToken) {
       loadEmailStats();
     }
   }, [user, accessToken]);
@@ -113,26 +114,26 @@ export function EmailManagement() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'sent':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-tone-success" />;
       case 'failed':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-tone-danger" />;
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
+        return <Clock className="h-4 w-4 text-tone-gold" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-600" />;
+        return <Clock className="h-4 w-4 text-tone-neutral" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'sent':
-        return 'bg-green-100 text-green-800';
+        return 'bg-tone-success-soft text-tone-success';
       case 'failed':
-        return 'bg-red-100 text-red-800';
+        return 'bg-tone-danger-soft text-tone-danger';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-tone-gold-soft text-tone-gold';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-tone-neutral-soft text-tone-neutral';
     }
   };
 
@@ -140,7 +141,7 @@ export function EmailManagement() {
     return new Date(dateString).toLocaleString('pt-BR');
   };
 
-  if (user?.role !== 'admin') {
+  if (!user || !hasPermission(user.role, 'MANAGE_SETTINGS')) {
     return (
       <div className="space-y-6">
         <Alert>
@@ -167,7 +168,7 @@ export function EmailManagement() {
         <div>
           <h1>Gerenciamento de Email</h1>
           <p className="text-muted-foreground">
-            Configuração e monitoramento do serviço de email (SendGrid)
+            Monitoramento do serviço de e-mail (Gmail/SMTP)
           </p>
         </div>
         
@@ -185,9 +186,9 @@ export function EmailManagement() {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 {testResult.success ? (
-                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <CheckCircle className="h-4 w-4 text-tone-success" />
                 ) : (
-                  <XCircle className="h-4 w-4 text-red-600" />
+                  <XCircle className="h-4 w-4 text-tone-danger" />
                 )}
                 <span className="font-medium">{testResult.message}</span>
               </div>
@@ -224,12 +225,12 @@ export function EmailManagement() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-tone-success" />
               Enviados
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.sent}</div>
+            <div className="text-2xl font-bold text-tone-success">{stats.sent}</div>
             <p className="text-xs text-muted-foreground">
               {stats.total > 0 ? Math.round((stats.sent / stats.total) * 100) : 0}% de sucesso
             </p>
@@ -239,12 +240,12 @@ export function EmailManagement() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <XCircle className="h-4 w-4 text-red-600" />
+              <XCircle className="h-4 w-4 text-tone-danger" />
               Falharam
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.failed}</div>
+            <div className="text-2xl font-bold text-tone-danger">{stats.failed}</div>
             <p className="text-xs text-muted-foreground">
               {stats.total > 0 ? Math.round((stats.failed / stats.total) * 100) : 0}% de falha
             </p>
@@ -272,7 +273,7 @@ export function EmailManagement() {
         <CardHeader>
           <CardTitle>Status da Configuração</CardTitle>
           <CardDescription>
-            Informações sobre a configuração atual do SendGrid
+            Informações sobre a configuração atual de envio de e-mail
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -280,18 +281,11 @@ export function EmailManagement() {
             <div>
               <h4 className="font-medium mb-2">Serviço de Email</h4>
               <div className="flex items-center gap-2">
-                <Badge className="bg-blue-100 text-blue-800">SendGrid</Badge>
+                <Badge className="bg-tone-info-soft text-tone-info">Gmail / SMTP</Badge>
                 <span className="text-sm text-muted-foreground">
-                  API configurada via variável de ambiente
+                  Gerido em Configurações → Integrações
                 </span>
               </div>
-            </div>
-            
-            <div>
-              <h4 className="font-medium mb-2">Email Remetente</h4>
-              <p className="text-sm text-muted-foreground">
-                sistema@apresentacoes.gov.br
-              </p>
             </div>
           </div>
 
@@ -299,20 +293,16 @@ export function EmailManagement() {
             <h4 className="font-medium mb-2">Recursos Disponíveis</h4>
             <div className="grid gap-2 md:grid-cols-2">
               <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <CheckCircle className="h-4 w-4 text-tone-success" />
                 <span className="text-sm">Templates HTML</span>
               </div>
               <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <span className="text-sm">Tracking de entrega</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <CheckCircle className="h-4 w-4 text-tone-success" />
                 <span className="text-sm">Logs detalhados</span>
               </div>
               <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <span className="text-sm">Fallback para simulação</span>
+                <CheckCircle className="h-4 w-4 text-tone-success" />
+                <span className="text-sm">Fallback para logs em desenvolvimento</span>
               </div>
             </div>
           </div>
@@ -361,7 +351,7 @@ export function EmailManagement() {
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>{formatDate(email.timestamp)}</span>
                         {email.error && (
-                          <span className="text-red-600">Erro: {email.error}</span>
+                          <span className="text-tone-danger">Erro: {email.error}</span>
                         )}
                       </div>
                     </div>
@@ -394,10 +384,10 @@ export function EmailManagement() {
                       <div className="text-sm text-muted-foreground">
                         Total: {data.total}
                       </div>
-                      <div className="text-sm text-green-600">
+                      <div className="text-sm text-tone-success">
                         Enviados: {data.sent}
                       </div>
-                      <div className="text-sm text-red-600">
+                      <div className="text-sm text-tone-danger">
                         Falhas: {data.failed}
                       </div>
                     </div>

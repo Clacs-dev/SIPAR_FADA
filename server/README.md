@@ -89,21 +89,55 @@ Principais endpoints:
 
 ## Instalar e preparar banco
 
+O schema agora tem historico de migracoes real em `prisma/migrations/` (baseline criado
+em 2026-09-09). **Nunca uses `prisma db push` contra uma base de dados com dados reais** —
+sem historico de migracao, nao ha forma de rever nem reverter a alteracao antes de a
+aplicar. `db push` continua util para prototipagem rapida num `dev.db` descartavel.
+
 ```bash
 cd server
 npm install
 npx prisma generate
-npx prisma db push
-npm run db:seed
+npx prisma migrate deploy   # aplica as migracoes existentes (novo cliente/instalacao)
+npm run db:seed             # so em desenvolvimento — bloqueado se NODE_ENV=production
+```
+
+Ao alterar `schema.prisma`, gera uma migracao nova em vez de `db push`:
+
+```bash
+npx prisma migrate dev --name descricao_da_alteracao
 ```
 
 No Windows com PowerShell restrito, use os binarios `.cmd`:
 
 ```bash
 .\node_modules\.bin\prisma.cmd generate
-.\node_modules\.bin\prisma.cmd db push
+.\node_modules\.bin\prisma.cmd migrate deploy
 npm.cmd run db:seed
 ```
+
+## Cópia de segurança da base de dados
+
+Cada instalação guarda os seus dados num único ficheiro SQLite local
+(`server/prisma/dev.db`) — não há servidor central nem replicação. **Sem
+cópia de segurança, um disco corrompido ou uma migração mal executada apaga
+os dados de forma permanente e irrecuperável.**
+
+- Manual: "Diagnóstico do Sistema → Cópias de Segurança" no ecrã de admin
+  (`admin_sistema`) cria e permite descarregar uma cópia a qualquer momento.
+  São mantidas as 30 cópias mais recentes no servidor.
+- Automático (recomendado): agendar uma tarefa periódica que copie
+  `server/prisma/dev.db` para outro disco/local de rede. No Windows, via
+  Agendador de Tarefas, um exemplo de ação (`Iniciar um programa`):
+  ```
+  Programa: powershell.exe
+  Argumentos: -Command "Copy-Item 'C:\caminho\para\server\prisma\dev.db' 'D:\backups\sipar\dev-$(Get-Date -Format yyyyMMdd-HHmmss).db'"
+  ```
+  Configure a tarefa para correr diariamente e escreva num disco/pasta
+  **diferente** do disco onde a aplicação corre.
+- Sempre que uma cópia for feita, verifique periodicamente que consegue de
+  facto restaurá-la (copiar o ficheiro de volta para `prisma/dev.db` com o
+  servidor parado) — uma cópia nunca testada não é uma estratégia de backup.
 
 ## Rodar em desenvolvimento
 
@@ -128,9 +162,28 @@ API padrao:
 - `http://localhost:5000/api/v1`
 - `http://localhost:5000/api/v1`
 
-Health check:
+Health check (verifica ligação real à base de dados — devolve 503, não 200, se a BD estiver inacessível):
 
 - `GET http://localhost:5000/api/health`
+
+## Supervisão de processo em produção
+
+Esta aplicação corre on-premise, um servidor central por cliente (ex.: um servidor para toda a FADA — ver
+[`../docs/developer/architecture.md`](../docs/developer/architecture.md) para o
+diagrama completo): o backend Express tem de ficar sempre ativo nessa máquina central, incluindo depois de
+reiniciar o computador ou depois de um crash — se cair, **todos** os utilizadores (em todos os PCs Tauri
+ligados a ela) ficam sem acesso.
+
+Scripts prontos a correr ficam em [`scripts/`](scripts/):
+
+- **Windows**: `scripts/install-windows-service.ps1` — regista `dist/index.js` como Serviço do Windows via
+  [NSSM](https://nssm.cc/) (descarregar uma vez, não vem por npm), com reinício automático em falha, arranque
+  com o sistema, e logs próprios em `logs/service-*.log`. Correr como Administrador a partir de `server/`:
+  `.\scripts\install-windows-service.ps1`.
+- **Linux**: `scripts/sipar-fada-backend.service` — unidade `systemd` pronta a copiar para
+  `/etc/systemd/system/`, com `Restart=on-failure`. Ver instruções no cabeçalho do próprio ficheiro.
+
+Ambos usam `GET /api/health` (acima) como verificação de saúde real.
 
 ## Credenciais de teste
 

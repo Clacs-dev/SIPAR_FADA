@@ -1,17 +1,89 @@
-import { Router } from 'express';
-import { ModuleRoutesHelper, ModuleConfig, STATUS } from '../utils/module-routes-helper';
-import { requireAuth } from '../middlewares/auth';
+import { Router, Response, NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
+import { ModuleRoutesHelper, ModuleConfig, STATUS, resolveFornecedorBankInfo, recordToResource } from '../utils/module-routes-helper';
+import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
+import { requireLicenseModule } from '../middlewares/license';
 import { MeetingLinkService } from '../services/meeting-link.service';
+import { emailService } from '../services/email.service';
+import { fornecedorCredentialsEmailHtml, cotacaoConviteEmailHtml, actaAprovadaEmailHtml } from '../services/email-templates';
+import { notifications } from '../services/notification.service';
+import { SequenceService } from '../services/sequence.service';
+import logger from '../config/logger';
 import prisma from '../config/database';
 
 const router = Router();
+
+// Limite dedicado para os endpoints publicos/nao-autenticados de submissao
+// (/publica) - mais apertado que o limite global, ja que nao exigem nenhuma
+// credencial e sao um alvo obvio de spam/abuso.
+const publicSubmissionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Demasiados pedidos a partir deste IP. Tente novamente mais tarde.' },
+});
+
+/**
+ * Gera uma password temporaria legivel (ex: "Kx7m-Pq2r") para novas contas de fornecedor.
+ */
+function generateTempPassword(): string {
+  const raw = crypto.randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '');
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}${Math.floor(Math.random() * 10)}`;
+}
+
+/**
+ * Garante que o fornecedor tem uma conta de utilizador (role externo) associada para poder
+ * submeter facturas/cotações, criando-a se necessário e enviando as credenciais por e-mail.
+ * Reutiliza a conta existente se já houver um utilizador com o mesmo e-mail.
+ */
+async function ensureFornecedorAccount(fornecedorId: string, nome: string, email?: string | null) {
+  if (!email) return null;
+
+  const normalizedEmail = email.toLowerCase().trim();
+  let user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  const tempPassword = generateTempPassword();
+
+  if (!user) {
+    const hashed = await bcrypt.hash(tempPassword, 10);
+    user = await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        password: hashed,
+        name: nome || 'Fornecedor',
+        role: 'externo',
+        organization: nome || null,
+        department: 'Fornecedor',
+        position: 'Fornecedor Externo',
+        status: 'active',
+      },
+    });
+
+    await prisma.fornecedor.update({ where: { id: fornecedorId }, data: { userId: user.id } }).catch(() => null);
+
+    await emailService.sendEmail({
+      to: normalizedEmail,
+      subject: 'As suas credenciais de acesso ao Portal de Fornecedores - FADA',
+      html: fornecedorCredentialsEmailHtml(nome || 'Fornecedor', normalizedEmail, tempPassword),
+    }).catch((error) => logger.error('Falha ao enviar e-mail de credenciais ao fornecedor:', error));
+
+    return { userId: user.id, created: true };
+  }
+
+  // Ja existe uma conta com este e-mail: apenas liga o fornecedor a ela, sem alterar a password.
+  await prisma.fornecedor.update({ where: { id: fornecedorId }, data: { userId: user.id } }).catch(() => null);
+  return { userId: user.id, created: false };
+}
 
 function safeParse(value: any, fallback: any = {}) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value !== 'string') return value;
   try {
     return JSON.parse(value);
-  } catch {
+  } catch (error) {
+    logger.warn('Falha ao interpretar JSON, a usar valor por omissão', { error: (error as Error).message, preview: value.slice(0, 100) });
     return fallback;
   }
 }
@@ -26,6 +98,59 @@ function numberValue(value: any, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+/**
+ * Assinatura digital reutilizada em qualquer accao do sistema que deva ficar
+ * assinada (despacho, delegacao/redelegacao, aprovacao, etc.): usa sempre a
+ * imagem de assinatura carregada pelo proprio utilizador em "Meu Perfil",
+ * nunca uma assinatura desenhada/gerada na hora. Lanca um erro amigavel se o
+ * utilizador ainda nao carregou a sua assinatura.
+ */
+async function requireSignature(userId: string) {
+  const signer = await prisma.user.findUnique({ where: { id: userId } });
+  if (!signer?.signatureImage) {
+    const error: any = new Error('Carregue a sua assinatura em "Meu Perfil" antes de continuar.');
+    error.status = 400;
+    error.code = 'SIGNATURE_REQUIRED';
+    throw error;
+  }
+  return {
+    user_id: signer.id,
+    nome: signer.name,
+    cargo: signer.position || signer.role,
+    assinatura_url: signer.signatureImage,
+    assinado_em: new Date().toISOString(),
+  };
+}
+
+// Vocabulario canonico e UNICO do fluxo real de Pedido de Compra (o que o
+// frontend de Compras efetivamente usa via /procurement/pedidos/*). Existe um
+// vocabulario diferente em BusinessRulesService.RULES.procurement, herdado do
+// CRUD generico deste mesmo modulo — mas o frontend nunca chama esse caminho
+// (confirmado: client/src/hooks/use-procurement.tsx so usa /pedidos, /ordens,
+// /fornecedores, /stats). Nao unificar os dois aqui para nao arriscar dados
+// historicos ja gravados com o vocabulario antigo; este array e a fonte de
+// verdade para o que o PUT /pedidos/:id pode aceitar como novo status.
+const PROCUREMENT_PEDIDO_STATUSES = [
+  'criado', 'aguardando_cotacoes', 'em_cotacao', 'em_analise',
+  'validado', 'concluido', 'ordem_emitida', 'cancelado',
+];
+
+// Fonte unica de "papel de assinatura" -> role exigido para assinar. Cada
+// documento (Ordem de Pagamento, Acta) so aceita um subconjunto destes papeis
+// (ver ALLOWED_SIGNATURE_PAPEIS abaixo), mas todos resolvem o role a partir
+// deste unico mapa - evita que "presidente" acabe a apontar para roles
+// diferentes em documentos diferentes por deriva entre copias duplicadas.
+const SIGNATURE_ROLE_MAP: Record<string, string> = {
+  presidente: 'gabinete_pca',
+  administrador: 'gabinete_administrador',
+  secretario: 'secretaria',
+};
+
+const ALLOWED_SIGNATURE_PAPEIS: Record<string, string[]> = {
+  ordemPagamento: ['presidente', 'administrador'],
+  acta: ['presidente', 'secretario'],
+};
 
 function procurementToPedido(record: any, cotacoes: any[] = []) {
   const data = safeParse(record?.data, {});
@@ -62,6 +187,8 @@ function fornecedorToResource(record: any) {
     telefone: record.telefone,
     endereco: record.endereco,
     situacao: record.status === 'inactive' ? 'inativo' : record.status || data.situacao || 'ativo',
+    user_id: record.userId || null,
+    tem_conta: !!record.userId,
     created_by_id: record.createdById,
     created_by_name: record.createdByName,
     created_at: record.createdAt?.toISOString?.() || record.createdAt,
@@ -84,6 +211,75 @@ function cotacaoToResource(record: any) {
   };
 }
 
+function facturaToResource(record: any) {
+  const data = safeParse(record?.data, {});
+  return {
+    ...data,
+    id: record.id,
+    numero: record.numero,
+    status: record.status,
+    fornecedor: record.fornecedor,
+    nif: record.nif,
+    valor: record.valor,
+    moeda: record.moeda,
+    dataEmissao: record.dataEmissao,
+    dataVencimento: record.dataVencimento,
+    descricao: record.descricao,
+    anexos: safeParse(record.anexos, []),
+    numero_ordem: record.numeroOrdem,
+    numero_ordem_pagamento: record.numeroOrdemPagamento,
+    created_by_id: record.createdById,
+    created_by_name: record.createdByName,
+    created_at: record.createdAt?.toISOString?.() || record.createdAt,
+    updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
+  };
+}
+
+/**
+ * Calcula os scores comparativos de cada cotacao de um pedido (preco,
+ * atendimento aos itens pedidos e prazo de entrega), relativos as restantes
+ * cotacoes recebidas para o mesmo pedido. Sem isto os campos score_preco/
+ * percentual_atendimento/score_prazo mostrados no ecra de comparacao ficavam
+ * sempre a 0, por nunca serem calculados em lado nenhum.
+ */
+function computeCotacaoScores(cotacoes: any[], totalItensPedido: number) {
+  const precosValidos = cotacoes.map((c) => c.valor_total ?? c.valor).filter((v) => typeof v === 'number' && v > 0);
+  const menorPreco = precosValidos.length > 0 ? Math.min(...precosValidos) : 0;
+
+  const prazosMedios = cotacoes.map((cotacao) => {
+    const itens = Array.isArray(cotacao.itens_resposta) ? cotacao.itens_resposta : [];
+    const prazos = itens
+      .map((item: any) => Number(item.prazo_entrega_dias))
+      .filter((prazo: number) => Number.isFinite(prazo) && prazo > 0);
+    return prazos.length > 0 ? prazos.reduce((sum: number, prazo: number) => sum + prazo, 0) / prazos.length : null;
+  });
+  const menorPrazo = prazosMedios.some((p) => p !== null)
+    ? Math.min(...(prazosMedios.filter((p): p is number => p !== null)))
+    : null;
+
+  return cotacoes.map((cotacao, index) => {
+    const itens = Array.isArray(cotacao.itens_resposta) ? cotacao.itens_resposta : [];
+    const itensDisponiveis = itens.filter((item: any) => item.disponivel === 'sim').length;
+    const percentual_atendimento = totalItensPedido > 0
+      ? Math.min(100, Math.round((itensDisponiveis / totalItensPedido) * 100))
+      : (itens.length > 0 ? Math.round((itensDisponiveis / itens.length) * 100) : 0);
+
+    const valorCotacao = cotacao.valor_total ?? cotacao.valor;
+    const score_preco = menorPreco > 0 && valorCotacao > 0
+      ? Math.round((menorPreco / valorCotacao) * 100)
+      : 0;
+
+    const prazoMedio = prazosMedios[index];
+    const score_prazo = menorPrazo !== null && prazoMedio !== null && prazoMedio > 0
+      ? Math.round((menorPrazo / prazoMedio) * 100)
+      : 0;
+
+    const score_total = Math.round(score_preco * 0.5 + percentual_atendimento * 0.3 + score_prazo * 0.2);
+
+    return { ...cotacao, percentual_atendimento, score_preco, score_prazo, score_total };
+  });
+}
+
 function ordemToResource(record: any, procurement?: any) {
   const data = safeParse(record?.data, {});
   return {
@@ -99,104 +295,6 @@ function ordemToResource(record: any, procurement?: any) {
     itens: safeParse(record.itens, []),
     created_by_id: record.createdById,
     created_by_name: record.createdByName,
-    created_at: record.createdAt?.toISOString?.() || record.createdAt,
-    updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
-  };
-}
-
-function budgetToOrcamento(record: any) {
-  const data = safeParse(record?.data, {});
-  return {
-    ...data,
-    id: record.id,
-    numero: record.numero,
-    ano_fiscal: record.ano,
-    periodo: record.periodo,
-    departamento: record.department,
-    valor_previsto: record.totalOrcado || data.valor_previsto || 0,
-    valor_aprovado: record.totalOrcado || data.valor_aprovado,
-    valor_reservado: record.totalComprometido || data.valor_reservado || 0,
-    status: record.status,
-    categorias: data.categorias || data.lines || [],
-    elaborado_por: record.createdByName,
-    created_at: record.createdAt?.toISOString?.() || record.createdAt,
-    updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
-  };
-}
-
-function payableToConta(record: any) {
-  const data = safeParse(record?.data, {});
-  return {
-    ...data,
-    id: record.id,
-    numero: record.numero,
-    fornecedor: record.fornecedor,
-    descricao: record.descricao,
-    valor: record.valor,
-    moeda: record.moeda,
-    data_vencimento: record.dataVencimento,
-    status: record.status === 'pago' ? 'paga' : record.status,
-    categoria: data.categoria || record.origemModulo || 'geral',
-    centro_custo: data.centro_custo || data.centroCusto,
-    created_at: record.createdAt?.toISOString?.() || record.createdAt,
-    updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
-  };
-}
-
-function receivableToConta(record: any) {
-  const data = safeParse(record?.data, {});
-  return {
-    ...data,
-    id: record.id,
-    numero: record.numero,
-    cliente: record.cliente,
-    descricao: record.descricao,
-    valor: record.valor,
-    moeda: record.moeda,
-    data_vencimento: record.dataVencimento,
-    status: record.status,
-    categoria: data.categoria || record.origemModulo || 'geral',
-    created_at: record.createdAt?.toISOString?.() || record.createdAt,
-    updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
-  };
-}
-
-function reportToRelatorio(record: any) {
-  const payload = safeParse(record?.payload, {});
-  return {
-    ...safeParse(record?.data, {}),
-    id: record.id,
-    numero: record.id,
-    tipo: record.tipo,
-    titulo: record.tipo,
-    periodo_inicio: record.periodoInicio,
-    periodo_fim: record.periodoFim,
-    departamento: record.department,
-    dados: payload,
-    status: 'rascunho',
-    elaborado_por: record.createdByName,
-    created_at: record.createdAt?.toISOString?.() || record.createdAt,
-  };
-}
-
-function metaToResource(record: any) {
-  const data = safeParse(record?.data, {});
-  return {
-    ...data,
-    id: record.id,
-    numero: data.numero || record.id,
-    titulo: record.titulo,
-    descricao: record.descricao,
-    tipo: data.tipo_meta || record.tipo || 'outra',
-    valor_alvo: record.valor || data.valor_alvo || 0,
-    valor_atual: data.valor_atual || 0,
-    percentual_progresso: data.percentual_progresso || 0,
-    data_inicio: record.dataInicio || data.data_inicio,
-    data_fim: record.dataFim || data.data_fim,
-    departamento: data.departamento || record.createdByName || '',
-    status: record.status || data.status || 'planejada',
-    prioridade: data.prioridade || 'media',
-    criado_por: record.createdByName,
     created_at: record.createdAt?.toISOString?.() || record.createdAt,
     updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
   };
@@ -234,21 +332,6 @@ const modules: ModuleConfig[] = [
     rejectAction: 'reject'
   },
   {
-    name: 'oficio',
-    displayName: 'Oficio',
-    model: 'oficio',
-    path: '/oficios',
-    collectionKey: 'oficios',
-    itemKey: 'oficio',
-    permissionModule: 'oficios',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
     name: 'factura',
     displayName: 'Factura',
     model: 'factura',
@@ -256,81 +339,6 @@ const modules: ModuleConfig[] = [
     collectionKey: 'facturas',
     itemKey: 'factura',
     permissionModule: 'invoices',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'viatura',
-    displayName: 'Viatura',
-    model: 'viatura',
-    path: '/frotas',
-    collectionKey: 'viaturas',
-    itemKey: 'viatura',
-    permissionModule: 'fleet',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'utilizacao_viatura',
-    displayName: 'Utilizacao de Viatura',
-    model: 'utilizacaoViatura',
-    path: '/frotas/utilizacoes',
-    collectionKey: 'utilizacoes',
-    itemKey: 'utilizacao',
-    permissionModule: 'fleet',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'manutencao_viatura',
-    displayName: 'Manutencao de Viatura',
-    model: 'manutencaoViatura',
-    path: '/frotas/manutencoes',
-    collectionKey: 'manutencoes',
-    itemKey: 'manutencao',
-    permissionModule: 'fleet',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'contrato',
-    displayName: 'Contrato',
-    model: 'contrato',
-    path: '/contratos',
-    collectionKey: 'contratos',
-    itemKey: 'contrato',
-    permissionModule: 'documents',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'reclamacao',
-    displayName: 'Reclamacao',
-    model: 'reclamacao',
-    path: '/reclamacoes',
-    collectionKey: 'reclamacoes',
-    itemKey: 'reclamacao',
-    permissionModule: 'documents',
     createAction: 'create',
     readAction: 'read_all',
     updateAction: 'update',
@@ -354,21 +362,6 @@ const modules: ModuleConfig[] = [
     rejectAction: 'reject'
   },
   {
-    name: 'planejamento',
-    displayName: 'Planejamento',
-    model: 'planejamento',
-    path: '/planejamento',
-    collectionKey: 'planejamentos',
-    itemKey: 'planejamento',
-    permissionModule: 'schedule',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
     name: 'procurement',
     displayName: 'Procurement',
     model: 'procurement',
@@ -376,21 +369,6 @@ const modules: ModuleConfig[] = [
     collectionKey: 'procurements',
     itemKey: 'procurement',
     permissionModule: 'finance',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
-  },
-  {
-    name: 'operador',
-    displayName: 'Operador',
-    model: 'operador',
-    path: '/operadores',
-    collectionKey: 'operadores',
-    itemKey: 'operador',
-    permissionModule: 'fleet',
     createAction: 'create',
     readAction: 'read_all',
     updateAction: 'update',
@@ -427,21 +405,6 @@ const modules: ModuleConfig[] = [
     deleteAction: 'delete',
     approveAction: 'approve',
     rejectAction: 'reject'
-  },
-  {
-    name: 'pedido_viatura',
-    displayName: 'Pedido de Viatura',
-    model: 'pedidoViatura',
-    path: '/frotas/pedidos-viatura',
-    collectionKey: 'pedidos',
-    itemKey: 'pedido',
-    permissionModule: 'fleet',
-    createAction: 'create',
-    readAction: 'read_all',
-    updateAction: 'update',
-    deleteAction: 'delete',
-    approveAction: 'approve',
-    rejectAction: 'reject'
   }
 ];
 
@@ -463,10 +426,12 @@ function registerCrud(config: ModuleConfig) {
     return next;
   };
 
-  router.post(config.path, requireAuth as any, (req, res, next) => ModuleRoutesHelper.create(req, res, next, config));
-  router.get(config.path, requireAuth as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
-  router.get(`${config.path}/list`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
-  router.get(`${config.path}/stats/geral`, requireAuth as any, async (req, res, next) => {
+  const requireLicense = requireLicenseModule(config.permissionModule);
+
+  router.post(config.path, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.create(req, res, next, config));
+  router.get(config.path, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
+  router.get(`${config.path}/list`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
+  router.get(`${config.path}/stats/geral`, requireAuth as any, requireLicense as any, async (req, res, next) => {
     try {
       await ModuleRoutesHelper.list(req as any, {
         status: () => ({
@@ -491,21 +456,36 @@ function registerCrud(config: ModuleConfig) {
   router.get(`${config.path}/alertas/vencimento`, requireAuth as any, (req, res) => res.status(200).json({ alertas: [] }));
   router.post(`${config.path}/upload`, (req, res) => res.status(200).json({ success: true, url: null, message: 'Use /storage/upload para anexos.' }));
   router.post(`${config.path}/upload-anexo`, (req, res) => res.status(200).json({ success: true, url: null, message: 'Use /storage/upload para anexos.' }));
-  router.post(`${config.path}/publica`, (req, res, next) => {
-    (req as any).user = { id: 'publico', email: 'publico@sipar20.local', name: 'Publico', role: 'admin' };
-    return ModuleRoutesHelper.create(req as any, res, next, config);
-  });
-  router.get(`${config.path}/rastreio/:codigo`, (req, res, next) => {
-    (req as any).user = { id: 'publico', email: 'publico@sipar20.local', name: 'Publico', role: 'admin' };
-    return ModuleRoutesHelper.list(req as any, res, next, config);
+  // Submissao publica sem login: restrita aos dois modulos que realmente
+  // fazem sentido como formulario publico (carta de apresentacao / pedido de
+  // audiencia). O pseudo-utilizador usa o role "publico", que so tem
+  // permissao de CRIACAO nestes dois modulos (ver prisma/seed-rbac.ts) -
+  // nunca um role administrativo, para nao herdar acidentalmente acesso
+  // alargado se um role com esse nome for criado no futuro via a UI de Roles.
+  if (config.name === 'presentation' || config.name === 'audience') {
+    router.post(`${config.path}/publica`, publicSubmissionLimiter, (req, res, next) => {
+      (req as any).user = { id: 'publico', email: 'publico@sipar20.local', name: 'Publico', role: 'publico' };
+      return ModuleRoutesHelper.create(req as any, res, next, config);
+    });
+  } else {
+    router.post(`${config.path}/publica`, (_req, res) => {
+      res.status(404).json({ error: 'NOT_FOUND', message: 'Submissao publica nao disponivel para este modulo.' });
+    });
+  }
+
+  // Rastreio publico por codigo: nunca implementado de facto (ignorava o
+  // parametro e devolvia a listagem completa do modulo sem autenticacao) -
+  // desativado ate existir uma implementacao real de lookup por codigo unico.
+  router.get(`${config.path}/rastreio/:codigo`, (_req, res) => {
+    res.status(501).json({ error: 'NOT_IMPLEMENTED', message: 'Rastreio publico por codigo ainda nao implementado.' });
   });
 
   if (config.name === 'procurement') {
-    router.get(`${config.path}/stats`, requireAuth as any, async (_req, res, next) => {
+    router.get(`${config.path}/stats`, requireAuth as any, requireLicense as any, async (_req, res, next) => {
       try {
         const [pedidos, fornecedores, ordens] = await Promise.all([
-          prisma.procurement.findMany(),
-          prisma.fornecedor.findMany(),
+          prisma.procurement.findMany({ where: { deletedAt: null } }),
+          prisma.fornecedor.findMany({ where: { deletedAt: null } }),
           prisma.purchaseOrder.findMany(),
         ]);
         const porStatus = pedidos.reduce((acc: Record<string, number>, pedido) => {
@@ -540,9 +520,9 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.get(`${config.path}/pedidos`, requireAuth as any, async (_req, res, next) => {
+    router.get(`${config.path}/pedidos`, requireAuth as any, requireLicense as any, async (_req, res, next) => {
       try {
-        const records = await prisma.procurement.findMany({ orderBy: { createdAt: 'desc' } });
+        const records = await prisma.procurement.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } });
         const quotations = await prisma.purchaseQuotation.findMany();
         const pedidos = records.map((record) => procurementToPedido(
           record,
@@ -554,11 +534,11 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.post(`${config.path}/pedidos`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/pedidos`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.procurement.create({
           data: {
-            id: `procurement_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            id: crypto.randomUUID(),
             numero: req.body.numero || `PED-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
             tipo: req.body.tipo || 'pedido_compra',
             descricao: req.body.descricao || req.body.titulo || '',
@@ -575,7 +555,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.get(`${config.path}/pedidos/:pedidoId`, requireAuth as any, async (req, res, next) => {
+    router.get(`${config.path}/pedidos/:pedidoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!record) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
@@ -586,11 +566,17 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.put(`${config.path}/pedidos/:pedidoId`, requireAuth as any, async (req, res, next) => {
+    router.put(`${config.path}/pedidos/:pedidoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
         const data = { ...safeParse(existing.data, {}), ...req.body };
+        if (req.body?.status && !PROCUREMENT_PEDIDO_STATUSES.includes(req.body.status)) {
+          return res.status(400).json({
+            error: 'INVALID_STATUS',
+            message: `Status "${req.body.status}" invalido para pedido de compra. Valores aceites: ${PROCUREMENT_PEDIDO_STATUSES.join(', ')}`,
+          });
+        }
         const updated = await prisma.procurement.update({
           where: { id: existing.id },
           data: {
@@ -606,10 +592,14 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.delete(`${config.path}/pedidos/:pedidoId`, requireAuth as any, async (req, res, next) => {
+    router.delete(`${config.path}/pedidos/:pedidoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
-        await prisma.procurement.delete({ where: { id: req.params.pedidoId } });
-        return res.status(200).json({ success: true });
+        const user = (req as any).user;
+        await prisma.procurement.update({
+          where: { id: req.params.pedidoId },
+          data: { deletedAt: new Date(), deletedById: user?.id, deletedByName: user?.name },
+        });
+        return res.status(200).json({ success: true, message: 'Pedido de compra movido para a lixeira' });
       } catch (error) {
         next(error);
       }
@@ -624,21 +614,69 @@ function registerCrud(config: ModuleConfig) {
       }
     };
 
-    router.post(`${config.path}/pedidos/:pedidoId/publicar`, requireAuth as any, setPedidoStatus('aguardando_cotacoes'));
-    router.post(`${config.path}/pedidos/:pedidoId/cancelar`, requireAuth as any, setPedidoStatus('cancelado'));
-    router.post(`${config.path}/pedidos/:pedidoId/analisar`, requireAuth as any, setPedidoStatus('em_analise'));
-    router.post(`${config.path}/pedidos/:pedidoId/confirmar-recebimento`, requireAuth as any, setPedidoStatus('concluido'));
-
-    router.get(`${config.path}/pedidos/:pedidoId/cotacoes`, requireAuth as any, async (req, res, next) => {
+    // Publicar pedido: alem de mudar o estado, convida por e-mail apenas os
+    // fornecedores cuja lista de categorias inclua a categoria deste pedido -
+    // nao todos os fornecedores activos. Um pedido sem categoria definida
+    // (dados antigos) continua a notificar toda a gente, por seguranca.
+    router.post(`${config.path}/pedidos/:pedidoId/publicar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        const updated = await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'aguardando_cotacoes' } });
+        const pedidoData = safeParse(updated.data, {});
+        const categoria = pedidoData.categoria;
+
+        const todosFornecedores = await prisma.fornecedor.findMany({ where: { status: 'ativo', email: { not: null }, deletedAt: null } });
+        const fornecedores = categoria
+          ? todosFornecedores.filter((fornecedor) => {
+              const fData = safeParse(fornecedor.data, {});
+              const categorias: string[] = Array.isArray(fData.categorias_produto) ? fData.categorias_produto : [];
+              return categorias.includes(categoria);
+            })
+          : todosFornecedores;
+
+        await Promise.all(fornecedores.map((fornecedor) => {
+          if (!fornecedor.email) return Promise.resolve();
+          return emailService.sendEmail({
+            to: fornecedor.email,
+            subject: `Novo pedido de cotação - ${updated.numero || updated.id}`,
+            html: cotacaoConviteEmailHtml(fornecedor.nome || 'Fornecedor', updated.descricao || 'Pedido de compra', updated.numero || updated.id, updated.valor || undefined, categoria),
+          }).catch((error) => logger.error(`Falha ao enviar convite de cotacao a ${fornecedor.email}:`, error));
+        }));
+        return res.status(200).json({
+          pedido: procurementToPedido(updated),
+          fornecedores_notificados: fornecedores.length,
+          categoria: categoria || null,
+        });
+      } catch (error) {
+        next(error);
+      }
+    });
+    router.post(`${config.path}/pedidos/:pedidoId/cancelar`, requireAuth as any, requireLicense as any, setPedidoStatus('cancelado'));
+    router.post(`${config.path}/pedidos/:pedidoId/analisar`, requireAuth as any, requireLicense as any, setPedidoStatus('em_analise'));
+    router.post(`${config.path}/pedidos/:pedidoId/confirmar-recebimento`, requireAuth as any, requireLicense as any, setPedidoStatus('concluido'));
+
+    // Ordenadas por valor (mais barata primeiro) e marcadas com um ranking, para
+    // sugerir a melhor oferta a quem for decidir a aprovacao.
+    router.get(`${config.path}/pedidos/:pedidoId/cotacoes`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const pedido = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+        const pedidoData = safeParse(pedido?.data, {});
+        const itensPedido = pedidoData.itens || pedidoData.items;
+        const totalItensPedido = Array.isArray(itensPedido) ? itensPedido.length : 0;
+
         const cotacoes = await prisma.purchaseQuotation.findMany({ where: { procurementId: req.params.pedidoId }, orderBy: { valor: 'asc' } });
-        return res.status(200).json({ cotacoes: cotacoes.map(cotacaoToResource) });
+        const comScores = computeCotacaoScores(cotacoes.map(cotacaoToResource), totalItensPedido);
+        const resources = comScores.map((cotacao, index) => ({
+          ...cotacao,
+          ranking: index + 1,
+          melhor_oferta: index === 0,
+        }));
+        return res.status(200).json({ cotacoes: resources });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/pedidos/:pedidoId/cotacoes`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/pedidos/:pedidoId/cotacoes`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const cotacao = await prisma.purchaseQuotation.create({
           data: {
@@ -652,80 +690,249 @@ function registerCrud(config: ModuleConfig) {
             data: stringify(req.body),
           }
         });
-        await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'em_cotacao' } }).catch(() => null);
+        await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'em_cotacao' } })
+          .catch((error) => logger.warn(`Falha ao sincronizar status do pedido ${req.params.pedidoId} para "em_cotacao" apos nova cotacao:`, error));
         return res.status(201).json({ cotacao: cotacaoToResource(cotacao) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/pedidos/:pedidoId/aprovar`, requireAuth as any, async (req, res, next) => {
+    // Validacao (Compras): confere as cotacoes recebidas antes de seguir para aprovacao.
+    // Sem isto, "aprovar" podia ser chamado directamente sem nenhuma cotacao analisada.
+    router.post(`${config.path}/pedidos/:pedidoId/validar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
-        const cotacao = req.body.cotacao_id
-          ? await prisma.purchaseQuotation.findUnique({ where: { id: req.body.cotacao_id } })
-          : null;
-        const updated = await prisma.procurement.update({
-          where: { id: req.params.pedidoId },
-          data: {
-            status: 'aprovado',
-            fornecedorId: cotacao?.fornecedorId || null,
-            fornecedor: cotacao?.fornecedor || null,
-            valor: cotacao?.valor || undefined,
-          }
-        });
+        const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+
+        if (!['aguardando_cotacoes', 'em_cotacao'].includes(existing.status)) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: `Pedido com estado "${existing.status}" nao pode ser validado. E necessario estar em cotacao.`,
+          });
+        }
+
+        const cotacoes = await prisma.purchaseQuotation.count({ where: { procurementId: req.params.pedidoId } });
+        if (cotacoes === 0) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'E necessario pelo menos uma cotacao recebida para validar o pedido' });
+        }
+
+        const updated = await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'validado' } });
         return res.status(200).json({ pedido: procurementToPedido(updated) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/pedidos/:pedidoId/emitir-ordem`, requireAuth as any, async (req, res, next) => {
+    // Aprovar a cotacao escolhida: fecha o fluxo de analise do pedido (so pode ser
+    // chamado depois de "Analisar", que coloca o pedido em "em_analise" - o mesmo
+    // fluxo que a tela de Compras usa: aguardando_cotacoes -> em_cotacao ->
+    // em_analise -> concluido) e, so nesse momento, emite automaticamente a ordem
+    // de compra ligada a esta cotacao - e essa ordem, quando marcada como recebida,
+    // e que gera a factura em Gestao de Pagamento como pendente de aprovacao.
+    router.post(`${config.path}/pedidos/:pedidoId/aprovar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+
+        if (existing.status !== 'em_analise') {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: `Pedido com estado "${existing.status}" nao pode ser aprovado. E necessario coloca-lo em analise primeiro.`,
+          });
+        }
+
+        const cotacao = req.body.cotacao_id
+          ? await prisma.purchaseQuotation.findUnique({ where: { id: req.body.cotacao_id } })
+          : null;
+        if (!cotacao) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'cotacao_id e obrigatorio para aprovar o pedido' });
+        }
+
+        const ordemSequencia = await SequenceService.next('purchaseOrder');
+
+        // Aprovar o pedido e emitir a ordem de compra tem de ser atomico: uma
+        // falha a meio nao pode deixar o pedido "concluido" sem nenhuma ordem
+        // de compra correspondente (ou vice-versa).
+        const [concluido, ordem] = await prisma.$transaction(async (tx) => {
+          const updatedPedido = await tx.procurement.update({
+            where: { id: req.params.pedidoId },
+            data: {
+              status: 'concluido',
+              fornecedorId: cotacao.fornecedorId || null,
+              fornecedor: cotacao.fornecedor || null,
+              valor: cotacao.valor || undefined,
+            }
+          });
+
+          const novaOrdem = await tx.purchaseOrder.create({
+            data: {
+              numero: ordemSequencia?.value || `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+              procurementId: updatedPedido.id,
+              quotationId: cotacao.id,
+              fornecedorId: updatedPedido.fornecedorId,
+              fornecedor: updatedPedido.fornecedor || 'Fornecedor',
+              valor: updatedPedido.valor || 0,
+              itens: stringify(safeParse(updatedPedido.data, {}).itens, []),
+              data: stringify({}),
+              createdById: (req as any).user?.id,
+              createdByName: (req as any).user?.name,
+            }
+          });
+
+          return [updatedPedido, novaOrdem];
+        });
+
+        return res.status(200).json({ pedido: procurementToPedido(concluido), ordem: ordemToResource(ordem, concluido) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    router.post(`${config.path}/pedidos/:pedidoId/emitir-ordem`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const pedido = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!pedido) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
-        const ordem = await prisma.purchaseOrder.create({
-          data: {
-            numero: `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-            procurementId: pedido.id,
-            fornecedorId: pedido.fornecedorId,
-            fornecedor: pedido.fornecedor || 'Fornecedor',
-            valor: pedido.valor || 0,
-            itens: stringify(safeParse(pedido.data, {}).itens, []),
-            data: stringify(req.body),
-            createdById: (req as any).user?.id,
-            createdByName: (req as any).user?.name,
-          }
+        const ordemSequencia = await SequenceService.next('purchaseOrder');
+        const [ordem, updated] = await prisma.$transaction(async (tx) => {
+          const novaOrdem = await tx.purchaseOrder.create({
+            data: {
+              numero: ordemSequencia?.value || `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+              procurementId: pedido.id,
+              fornecedorId: pedido.fornecedorId,
+              fornecedor: pedido.fornecedor || 'Fornecedor',
+              valor: pedido.valor || 0,
+              itens: stringify(safeParse(pedido.data, {}).itens, []),
+              data: stringify(req.body),
+              createdById: (req as any).user?.id,
+              createdByName: (req as any).user?.name,
+            }
+          });
+          const updatedPedido = await tx.procurement.update({ where: { id: pedido.id }, data: { status: 'ordem_emitida' } });
+          return [novaOrdem, updatedPedido];
         });
-        const updated = await prisma.procurement.update({ where: { id: pedido.id }, data: { status: 'ordem_emitida' } });
         return res.status(201).json({ ordem: ordemToResource(ordem, pedido), pedido: procurementToPedido(updated) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.put(`${config.path}/ordens/:ordemId/status`, requireAuth as any, async (req, res, next) => {
+    router.put(`${config.path}/ordens/:ordemId/status`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
-        const ordem = await prisma.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: req.body.status || 'emitida' } });
-        return res.status(200).json({ ordem: ordemToResource(ordem) });
+        const nextStatus = req.body.status || 'emitida';
+
+        if (nextStatus !== 'recebida') {
+          const ordem = await prisma.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: nextStatus } });
+          return res.status(200).json({ ordem: ordemToResource(ordem), factura: null });
+        }
+
+        // Sincronizacao Procurement -> Gestao de Pagamento: ao confirmar a receção, gera
+        // automaticamente uma factura ligada a esta ordem de compra (se ainda nao existir
+        // nenhuma para esta ordem). Entra directamente como "validado": ja passou pela
+        // sequencia de cotacao/validacao/aprovacao do Procurement, por isso so fica
+        // pendente da aprovacao final em Gestao de Pagamento, sem repetir a validacao.
+        //
+        // A leitura de dados de apoio (pedido de origem, dados bancarios, numero de
+        // sequencia) corre antes da transacao; a actualizacao da ordem + criacao da
+        // factura correm dentro dela, para nunca ficar uma ordem "recebida" sem a
+        // factura correspondente se o processo falhar a meio.
+        const ordemAtual = await prisma.purchaseOrder.findUnique({ where: { id: req.params.ordemId } });
+        if (!ordemAtual) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de compra nao encontrada' });
+
+        const facturaExistente = await prisma.factura.findFirst({ where: { purchaseOrderId: ordemAtual.id } });
+        const itens = safeParse(ordemAtual.itens, []);
+
+        if (!facturaExistente) {
+          // A descricao da factura tem de reflectir o que foi de facto pedido/cotado
+          // (registado pelas Compras no pedido de compra), nao um texto generico com o
+          // numero da ordem - cada factura e especifica ao servico/bem adquirido.
+          const pedidoOrigem = ordemAtual.procurementId
+            ? await prisma.procurement.findUnique({ where: { id: ordemAtual.procurementId } })
+            : null;
+          const descricaoItens = Array.isArray(itens) && itens.length > 0
+            ? itens.map((item: any) => item.descricao || item.nome).filter(Boolean).join(', ')
+            : null;
+          const descricaoFactura = pedidoOrigem?.descricao || descricaoItens
+            || `Factura referente a Ordem de Compra ${ordemAtual.numero || ordemAtual.id}`;
+
+          // As coordenadas bancarias da factura vem sempre do fornecedor real (conta de
+          // utilizador ligada ou registo de Fornecedor), nunca de um valor estatico.
+          const bancoInfo = await resolveFornecedorBankInfo(
+            { purchaseOrderId: ordemAtual.id, fornecedor: ordemAtual.fornecedor },
+            { fornecedor_id: ordemAtual.fornecedorId }
+          ).catch(() => null);
+
+          const facturaSequencia = await SequenceService.next('factura');
+
+          const [ordem, factura] = await prisma.$transaction(async (tx) => {
+            const updatedOrdem = await tx.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: nextStatus } });
+            const novaFactura = await tx.factura.create({
+              data: {
+                id: crypto.randomUUID(),
+                status: 'validado',
+                numero: facturaSequencia?.value || `FT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+                fornecedor: updatedOrdem.fornecedor,
+                valor: updatedOrdem.valor,
+                moeda: updatedOrdem.moeda || 'AOA',
+                descricao: descricaoFactura,
+                purchaseOrderId: updatedOrdem.id,
+                numeroOrdem: updatedOrdem.numero,
+                createdById: updatedOrdem.createdById || (req as any).user?.id,
+                createdByName: updatedOrdem.createdByName || (req as any).user?.name,
+                data: stringify({ itens, fornecedor_id: updatedOrdem.fornecedorId, origem: 'procurement', ...(bancoInfo || {}) }),
+              }
+            });
+            return [updatedOrdem, novaFactura];
+          });
+
+          return res.status(200).json({ ordem: ordemToResource(ordem), factura });
+        }
+
+        const ordem = await prisma.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: nextStatus } });
+        return res.status(200).json({ ordem: ordemToResource(ordem), factura: null });
       } catch (error) {
         next(error);
       }
     });
 
-    router.get(`${config.path}/fornecedores`, requireAuth as any, async (_req, res, next) => {
+    router.get(`${config.path}/ordens`, requireAuth as any, requireLicense as any, async (_req, res, next) => {
       try {
-        const records = await prisma.fornecedor.findMany({ orderBy: { createdAt: 'desc' } });
+        const ordens = await prisma.purchaseOrder.findMany({ orderBy: { createdAt: 'desc' } });
+        return res.status(200).json({ ordens: ordens.map((ordem) => ordemToResource(ordem)) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    router.get(`${config.path}/ordens/:ordemId/facturas`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const facturas = await prisma.factura.findMany({ where: { purchaseOrderId: req.params.ordemId }, orderBy: { createdAt: 'desc' } });
+        const valorFacturado = facturas
+          .filter((f) => f.status !== 'rejeitado' && f.status !== 'cancelado')
+          .reduce((sum, f) => sum + (f.valor || 0), 0);
+        return res.status(200).json({
+          facturas: facturas.map((f) => ({ id: f.id, numero: f.numero, status: f.status, valor: f.valor, moeda: f.moeda, created_at: f.createdAt })),
+          valor_facturado: valorFacturado,
+        });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    router.get(`${config.path}/fornecedores`, requireAuth as any, requireLicense as any, async (_req, res, next) => {
+      try {
+        const records = await prisma.fornecedor.findMany({ where: { deletedAt: null }, orderBy: { createdAt: 'desc' } });
         return res.status(200).json({ fornecedores: records.map(fornecedorToResource) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/fornecedores`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/fornecedores`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.create({
           data: {
-            id: `fornecedor_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            id: crypto.randomUUID(),
             nome: req.body.nome,
             email: req.body.email || null,
             nif: req.body.nif || null,
@@ -737,17 +944,19 @@ function registerCrud(config: ModuleConfig) {
             createdByName: (req as any).user?.name,
           }
         });
-        return res.status(201).json({ fornecedor: fornecedorToResource(record) });
+        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email);
+        const updated = account ? await prisma.fornecedor.findUnique({ where: { id: record.id } }) : record;
+        return res.status(201).json({ fornecedor: fornecedorToResource(updated || record) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/fornecedores/auto-create`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/fornecedores/auto-create`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.create({
           data: {
-            id: `fornecedor_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+            id: crypto.randomUUID(),
             nome: req.body.nome || req.body.name || 'Fornecedor',
             email: req.body.email || null,
             nif: req.body.nif || null,
@@ -759,13 +968,15 @@ function registerCrud(config: ModuleConfig) {
             createdByName: (req as any).user?.name,
           }
         });
-        return res.status(201).json({ fornecedor: fornecedorToResource(record) });
+        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email);
+        const updated = account ? await prisma.fornecedor.findUnique({ where: { id: record.id } }) : record;
+        return res.status(201).json({ fornecedor: fornecedorToResource(updated || record) });
       } catch (error) {
         next(error);
       }
     });
 
-    router.get(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, async (req, res, next) => {
+    router.get(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
         if (!record) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
@@ -775,7 +986,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.put(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, async (req, res, next) => {
+    router.put(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const existing = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
@@ -798,16 +1009,20 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.delete(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, async (req, res, next) => {
+    router.delete(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
-        await prisma.fornecedor.delete({ where: { id: req.params.fornecedorId } });
-        return res.status(200).json({ success: true });
+        const user = (req as any).user;
+        await prisma.fornecedor.update({
+          where: { id: req.params.fornecedorId },
+          data: { deletedAt: new Date(), deletedById: user?.id, deletedByName: user?.name },
+        });
+        return res.status(200).json({ success: true, message: 'Fornecedor movido para a lixeira' });
       } catch (error) {
         next(error);
       }
     });
 
-    router.post(`${config.path}/fornecedores/:fornecedorId/ativar`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/fornecedores/:fornecedorId/ativar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'ativo' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
@@ -816,7 +1031,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.post(`${config.path}/fornecedores/:fornecedorId/desativar`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/fornecedores/:fornecedorId/desativar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'inativo' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
@@ -825,7 +1040,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.post(`${config.path}/fornecedores/:fornecedorId/bloquear`, requireAuth as any, async (req, res, next) => {
+    router.post(`${config.path}/fornecedores/:fornecedorId/bloquear`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'bloqueado' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
@@ -834,232 +1049,588 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.post(`${config.path}/fornecedores/:fornecedorId/enviar-credenciais`, requireAuth as any, (_req, res) => {
-      return res.status(200).json({ success: true, message: 'Credenciais registadas para envio.' });
+    router.post(`${config.path}/fornecedores/:fornecedorId/enviar-credenciais`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const fornecedor = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
+        if (!fornecedor) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+        if (!fornecedor.email) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Este fornecedor nao tem e-mail registado' });
+        }
+
+        const normalizedEmail = fornecedor.email.toLowerCase().trim();
+        const tempPassword = generateTempPassword();
+        const hashed = await bcrypt.hash(tempPassword, 10);
+
+        let user = fornecedor.userId ? await prisma.user.findUnique({ where: { id: fornecedor.userId } }) : null;
+        if (!user) user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+        if (user) {
+          user = await prisma.user.update({ where: { id: user.id }, data: { password: hashed, status: 'active' } });
+        } else {
+          user = await prisma.user.create({
+            data: {
+              email: normalizedEmail,
+              password: hashed,
+              name: fornecedor.nome || 'Fornecedor',
+              role: 'externo',
+              organization: fornecedor.nome || null,
+              department: 'Fornecedor',
+              position: 'Fornecedor Externo',
+              status: 'active',
+            },
+          });
+        }
+
+        await prisma.fornecedor.update({ where: { id: fornecedor.id }, data: { userId: user.id } });
+
+        await emailService.sendEmail({
+          to: normalizedEmail,
+          subject: 'As suas credenciais de acesso ao Portal de Fornecedores - FADA',
+          html: fornecedorCredentialsEmailHtml(fornecedor.nome || 'Fornecedor', normalizedEmail, tempPassword),
+        });
+
+        return res.status(200).json({ success: true, message: 'Credenciais reenviadas por e-mail com sucesso.' });
+      } catch (error) {
+        next(error);
+      }
     });
   }
 
-  if (config.name === 'planejamento') {
-    router.get(`${config.path}/orcamentos`, requireAuth as any, async (_req, res, next) => {
+  if (config.name === 'factura') {
+    // Gera (ou actualiza) os dados da Ordem de Pagamento associada a uma factura aprovada.
+    router.post(`${config.path}/:id/ordem-pagamento`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
-        const records = await prisma.budget.findMany({ orderBy: { createdAt: 'desc' } });
-        return res.status(200).json({ orcamentos: records.map(budgetToOrcamento) });
-      } catch (error) {
-        next(error);
-      }
-    });
+        const existing = await prisma.factura.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Factura nao encontrada' });
+        if (existing.status !== 'aprovado' && !existing.numeroOrdemPagamento) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'A factura precisa estar aprovada para gerar a Ordem de Pagamento' });
+        }
 
-    router.post(`${config.path}/orcamentos`, requireAuth as any, async (req, res, next) => {
-      try {
-        const categorias = Array.isArray(req.body.categorias) ? req.body.categorias : [];
-        const totalOrcado = numberValue(req.body.valor_previsto || req.body.valor_aprovado || req.body.totalOrcado, 0);
-        const record = await prisma.budget.create({
-          data: {
-            numero: req.body.numero || `ORC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-            ano: Number(req.body.ano_fiscal || req.body.ano || new Date().getFullYear()),
-            periodo: req.body.periodo || String(new Date().getFullYear()),
-            department: req.body.departamento || req.body.department || null,
-            titulo: req.body.titulo || `Orcamento ${new Date().getFullYear()}`,
-            status: req.body.status || 'rascunho',
-            totalOrcado,
-            data: stringify({ ...req.body, categorias }),
-            createdById: (req as any).user?.id,
-            createdByName: (req as any).user?.name,
-          }
-        });
-        return res.status(201).json({ orcamento: budgetToOrcamento(record) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.get(`${config.path}/contas-pagar`, requireAuth as any, async (_req, res, next) => {
-      try {
-        const records = await prisma.accountPayable.findMany({ orderBy: { createdAt: 'desc' } });
-        return res.status(200).json({ contas_pagar: records.map(payableToConta) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.post(`${config.path}/contas-pagar`, requireAuth as any, async (req, res, next) => {
-      try {
-        const record = await prisma.accountPayable.create({
-          data: {
-            numero: req.body.numero || `CP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-            fornecedor: req.body.fornecedor || req.body.fornecedor_nome || 'Fornecedor',
-            descricao: req.body.descricao || req.body.titulo || '',
-            valor: numberValue(req.body.valor),
-            moeda: req.body.moeda || 'AOA',
-            dataVencimento: req.body.data_vencimento || req.body.dataVencimento || new Date().toISOString().slice(0, 10),
-            origemModulo: req.body.categoria || 'planejamento',
-            data: stringify(req.body),
-            createdById: (req as any).user?.id,
-            createdByName: (req as any).user?.name,
-          }
-        });
-        return res.status(201).json({ conta_pagar: payableToConta(record) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.get(`${config.path}/contas-receber`, requireAuth as any, async (_req, res, next) => {
-      try {
-        const records = await prisma.accountReceivable.findMany({ orderBy: { createdAt: 'desc' } });
-        return res.status(200).json({ contas_receber: records.map(receivableToConta) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.get(`${config.path}/relatorios`, requireAuth as any, async (_req, res, next) => {
-      try {
-        const records = await prisma.financialReport.findMany({ orderBy: { createdAt: 'desc' } });
-        return res.status(200).json({ relatorios: records.map(reportToRelatorio) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.post(`${config.path}/relatorios`, requireAuth as any, async (req, res, next) => {
-      try {
-        const [budgets, payables, receivables] = await Promise.all([
-          prisma.budget.findMany(),
-          prisma.accountPayable.findMany(),
-          prisma.accountReceivable.findMany(),
-        ]);
-        const payload = {
-          orcamentos: budgets.length,
-          contas_pagar_total: payables.reduce((sum, item) => sum + item.valor, 0),
-          contas_receber_total: receivables.reduce((sum, item) => sum + item.valor, 0),
-          ...req.body.dados,
-        };
-        const record = await prisma.financialReport.create({
-          data: {
-            tipo: req.body.tipo || 'consolidado',
-            periodoInicio: req.body.periodo_inicio || req.body.periodoInicio || null,
-            periodoFim: req.body.periodo_fim || req.body.periodoFim || null,
-            department: req.body.departamento || req.body.department || null,
-            payload: stringify(payload),
-            createdById: (req as any).user?.id,
-            createdByName: (req as any).user?.name,
-          }
-        });
-        return res.status(201).json({ relatorio: reportToRelatorio(record) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.get(`${config.path}/metas`, requireAuth as any, async (_req, res, next) => {
-      try {
-        const records = await prisma.planejamento.findMany({ where: { tipo: 'meta' }, orderBy: { createdAt: 'desc' } });
-        return res.status(200).json({ metas: records.map(metaToResource) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.post(`${config.path}/metas`, requireAuth as any, async (req, res, next) => {
-      try {
-        const record = await prisma.planejamento.create({
-          data: {
-            id: `meta_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-            tipo: 'meta',
-            titulo: req.body.titulo,
-            descricao: req.body.descricao || '',
-            valor: numberValue(req.body.valor_alvo || req.body.valor),
-            dataInicio: req.body.data_inicio || req.body.dataInicio || null,
-            dataFim: req.body.data_fim || req.body.dataFim || null,
-            status: req.body.status || 'planejada',
-            data: stringify(req.body),
-            createdById: (req as any).user?.id,
-            createdByName: (req as any).user?.name,
-          }
-        });
-        return res.status(201).json({ meta: metaToResource(record) });
-      } catch (error) {
-        next(error);
-      }
-    });
-
-    router.post(`${config.path}/metas/:metaId/progresso`, requireAuth as any, async (req, res, next) => {
-      try {
-        const existing = await prisma.planejamento.findUnique({ where: { id: req.params.metaId } });
-        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Meta nao encontrada' });
         const data = safeParse(existing.data, {});
-        const progresso = Array.isArray(data.progresso_diario) ? data.progresso_diario : [];
-        const valorAtual = numberValue(req.body.valor_acumulado || req.body.valor_atual || req.body.valor_realizado, data.valor_atual || 0);
-        const valorAlvo = numberValue(data.valor_alvo || existing.valor, 0);
-        const updated = await prisma.planejamento.update({
+        // Resolve sempre os dados bancarios mais recentes do fornecedor (conta de utilizador
+        // ligada ou registo de Fornecedor) em vez de depender apenas do que ja estava gravado
+        // na factura, para que a Ordem de Pagamento nunca mostre dados bancarios estaticos/desactualizados.
+        const bancoInfo = await resolveFornecedorBankInfo(existing, data).catch(() => null);
+        const numero = existing.numeroOrdemPagamento || `OP/N.º ${1000 + Math.floor(Math.random() * 9000)}/${new Date().getFullYear()}`;
+        const ordemPagamento = {
+          ...(data.ordem_pagamento || {}),
+          numero_despacho: req.body.numero_despacho ?? data.ordem_pagamento?.numero_despacho ?? null,
+          conta_debito: req.body.conta_debito ?? data.ordem_pagamento?.conta_debito ?? null,
+          banco_destino_cidade: req.body.banco_destino_cidade ?? bancoInfo?.banco_cidade ?? data.banco_cidade ?? data.ordem_pagamento?.banco_destino_cidade ?? null,
+          banco_destino_pais: req.body.banco_destino_pais ?? bancoInfo?.banco_pais ?? data.banco_pais ?? data.ordem_pagamento?.banco_destino_pais ?? null,
+          gerada_em: new Date().toISOString(),
+          gerada_por_id: (req as any).user?.id,
+          gerada_por_nome: (req as any).user?.name,
+          assinaturas: Array.isArray(data.ordem_pagamento?.assinaturas) ? data.ordem_pagamento.assinaturas : [],
+        };
+
+        const updated = await prisma.factura.update({
+          where: { id: existing.id },
+          data: {
+            numeroOrdemPagamento: numero,
+            data: stringify({ ...data, ...(bancoInfo || {}), ordem_pagamento: ordemPagamento }),
+          }
+        });
+
+        return res.status(200).json({ factura: facturaToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Regista a assinatura (Presidente/Administrador) usando a imagem de assinatura guardada no perfil do utilizador.
+    router.post(`${config.path}/:id/ordem-pagamento/assinar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const user = (req as any).user;
+        const papel = req.body.papel;
+        if (!papel || !ALLOWED_SIGNATURE_PAPEIS.ordemPagamento.includes(papel)) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Papel de assinatura invalido (use presidente ou administrador)' });
+        }
+        if (user?.role !== SIGNATURE_ROLE_MAP[papel]) {
+          return res.status(403).json({ error: 'FORBIDDEN', message: `Apenas o utilizador com o cargo de ${papel} pode assinar nesta funcao` });
+        }
+
+        const existing = await prisma.factura.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Factura nao encontrada' });
+        if (!existing.numeroOrdemPagamento) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Gere a Ordem de Pagamento antes de assinar' });
+        }
+
+        const signerUser = await prisma.user.findUnique({ where: { id: user.id } });
+        if (!signerUser?.signatureImage) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Carregue a sua assinatura no seu perfil antes de assinar' });
+        }
+
+        const data = safeParse(existing.data, {});
+        const ordemPagamento = data.ordem_pagamento || {};
+        const assinaturas = (Array.isArray(ordemPagamento.assinaturas) ? ordemPagamento.assinaturas : [])
+          .filter((assinatura: any) => assinatura.papel !== papel);
+        assinaturas.push({
+          papel,
+          user_id: user.id,
+          nome: user.name,
+          assinatura_url: signerUser.signatureImage,
+          assinado_em: new Date().toISOString(),
+        });
+
+        const updated = await prisma.factura.update({
+          where: { id: existing.id },
+          data: { data: stringify({ ...data, ordem_pagamento: { ...ordemPagamento, assinaturas } }) }
+        });
+
+        return res.status(200).json({ factura: facturaToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+
+  if (config.name === 'comunicacao') {
+    // Lista de utilizadores da plataforma para delegar uma comunicacao (tem de
+    // ser registada antes da rota generica GET /:id, para nao ser interpretada
+    // como um id de comunicacao).
+    router.get(`${config.path}/utilizadores/departamento`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const currentUser = (req as any).user;
+        const users = await prisma.user.findMany({ where: { status: 'active', role: { not: 'externo' } } });
+        const utilizadores = users
+          .filter((u) => u.id !== currentUser?.id)
+          .map((u) => ({ id: u.id, nome: u.name, email: u.email, cargo: u.position || u.role, departamento: u.department || '' }));
+        return res.status(200).json({ utilizadores });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Responder a uma comunicacao: acrescenta a resposta ao historico
+    // (data.respostas), em vez de sobrepor um unico campo.
+    router.post(`${config.path}/:id/responder`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.comunicacao.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Comunicacao nao encontrada' });
+        const user = (req as any).user;
+        const data = safeParse(existing.data, {});
+        const respostas = Array.isArray(data.respostas) ? data.respostas : [];
+        const novaResposta = {
+          id: crypto.randomUUID(),
+          comunicacao_id: existing.id,
+          comunicacao_numero: data.numero || '',
+          texto_resposta: req.body.texto_resposta || '',
+          anexos: Array.isArray(req.body.anexos) ? req.body.anexos : [],
+          respondido_por_id: user.id,
+          respondido_por_nome: user.name,
+          respondido_por_cargo: user.role,
+          departamento: user.department || '',
+          created_at: new Date().toISOString(),
+        };
+        const updated = await prisma.comunicacao.update({
+          where: { id: existing.id },
+          data: { data: stringify({ ...data, respostas: [...respostas, novaResposta] }) },
+        });
+        return res.status(200).json({
+          success: true,
+          resposta: novaResposta,
+          comunicacao_original: recordToResource(updated),
+        });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Delegar uma comunicacao a outro utilizador da plataforma: acrescenta ao
+    // historico (data.delegacoes) e notifica o delegado.
+    router.post(`${config.path}/:id/delegar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.comunicacao.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Comunicacao nao encontrada' });
+        const delegadoParaId = req.body.delegado_para_id;
+        if (!delegadoParaId) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'delegado_para_id e obrigatorio' });
+        }
+        const delegadoUser = await prisma.user.findUnique({ where: { id: delegadoParaId } });
+        if (!delegadoUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador a delegar nao encontrado' });
+
+        const user = (req as any).user;
+        const assinatura = await requireSignature(user.id);
+        const data = safeParse(existing.data, {});
+        const delegacoes = Array.isArray(data.delegacoes) ? data.delegacoes : [];
+        const novaDelegacao = {
+          id: crypto.randomUUID(),
+          comunicacao_id: existing.id,
+          comunicacao_numero: data.numero || '',
+          delegado_para_id: delegadoUser.id,
+          delegado_para_nome: delegadoUser.name,
+          delegado_para_cargo: delegadoUser.position || delegadoUser.role,
+          motivo: req.body.motivo_delegacao || '',
+          delegado_por_id: user.id,
+          delegado_por_nome: user.name,
+          departamento: user.department || '',
+          created_at: new Date().toISOString(),
+          assinatura_url: assinatura.assinatura_url,
+        };
+
+        if (delegadoUser.email) {
+          await notifications.createNotification(
+            delegadoUser.email,
+            'comunicacao_delegada',
+            `${user.name} delegou-lhe a comunicação "${data.assunto || data.titulo || existing.assunto || ''}".`,
+            existing.id
+          ).catch(() => null);
+        }
+
+        // Actualizacao directa (sem passar pelo ModuleRoutesHelper.update generico):
+        // essa via corre ValidationService sobre os campos obrigatorios do estado
+        // actual, que vivem em colunas reais (titulo/mensagem) e nao no blob
+        // "data" isolado que aqui se constroi - a delegacao nao deve exigi-los.
+        const updated = await prisma.comunicacao.update({
           where: { id: existing.id },
           data: {
             data: stringify({
               ...data,
-              valor_atual: valorAtual,
-              percentual_progresso: valorAlvo > 0 ? Math.min(100, (valorAtual / valorAlvo) * 100) : 0,
-              progresso_diario: [...progresso, { ...req.body, data: req.body.data || new Date().toISOString().slice(0, 10) }],
+              delegacoes: [...delegacoes, novaDelegacao],
+              delegado_para_id: delegadoUser.id,
+              delegado_para_nome: delegadoUser.name,
             }),
-          }
+          },
         });
-        return res.status(200).json({ meta: metaToResource(updated) });
+        return res.status(200).json({ success: true, comunicacao: recordToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Despacho: acrescenta ao historico (data.despachos) em vez de sobrepor.
+    router.post(`${config.path}/:id/despacho`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.comunicacao.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Comunicacao nao encontrada' });
+        const user = (req as any).user;
+        const assinatura = await requireSignature(user.id);
+        const data = safeParse(existing.data, {});
+        const despachos = Array.isArray(data.despachos) ? data.despachos : [];
+        const novoDespacho = {
+          id: crypto.randomUUID(),
+          comunicacao_id: existing.id,
+          comunicacao_numero: data.numero || '',
+          tipo: req.body.tipo || 'despacho',
+          texto_despacho: req.body.texto_despacho || '',
+          decisao: req.body.decisao || 'pendente',
+          despachado_por_id: user.id,
+          despachado_por_nome: user.name,
+          despachado_por_cargo: user.role,
+          departamento: user.department || '',
+          created_at: new Date().toISOString(),
+          assinatura_url: assinatura.assinatura_url,
+        };
+        const updated = await prisma.comunicacao.update({
+          where: { id: existing.id },
+          data: {
+            status: 'despachado',
+            data: stringify({
+              ...data,
+              despachos: [...despachos, novoDespacho],
+              despachado_em: novoDespacho.created_at,
+              despachado_por_id: user.id,
+              despachado_por_nome: user.name,
+            }),
+          },
+        });
+        return res.status(200).json({ success: true, comunicacao: recordToResource(updated) });
       } catch (error) {
         next(error);
       }
     });
   }
 
-  router.get(`${config.path}/:id/history`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.history(req, res, next, config));
-  router.get(`${config.path}/:id/historico`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.history(req, res, next, config));
-  router.get(`${config.path}/:id`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.get(req, res, next, config));
-  router.put(`${config.path}/:id`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.put(`${config.path}/:id/status`, requireAuth as any, (req, res, next) => {
+  if (config.name === 'presentation' || config.name === 'audience') {
+    // Delegar (e redelegar - mesmo endpoint, chamado outra vez sobre um item
+    // ja delegado) uma carta de apresentacao/pedido de audiencia a outro
+    // utilizador da plataforma. Regista-se aqui, antes do fallback generico
+    // "/delegate" mais abaixo, para exigir e anexar a assinatura de quem
+    // delega - mesmo modelo usado nas Actas/Ordens de Pagamento/Comunicacoes.
+    router.post(`${config.path}/:id/delegate`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const model = (prisma as any)[config.model];
+        const existing = await model.findUnique({ where: { id: req.params.id } });
+        if (!existing) {
+          return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado(a)` });
+        }
+
+        const delegatedToId = req.body.delegatedTo || req.body.delegado_para_id;
+        if (!delegatedToId) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'delegatedTo e obrigatorio' });
+        }
+        const delegadoUser = await prisma.user.findUnique({ where: { id: delegatedToId } });
+        if (!delegadoUser) {
+          return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador a delegar nao encontrado' });
+        }
+
+        const user = (req as any).user;
+        const assinatura = await requireSignature(user.id);
+        const data = safeParse(existing.data, {});
+        const delegacoes = Array.isArray(data.delegacoes) ? data.delegacoes : [];
+        const motivo = req.body.delegationNotes || req.body.motivo_delegacao || '';
+        const novaDelegacao = {
+          id: crypto.randomUUID(),
+          delegado_para_id: delegadoUser.id,
+          delegado_para_nome: delegadoUser.name,
+          delegado_para_cargo: delegadoUser.position || delegadoUser.role,
+          motivo,
+          delegado_por_id: user.id,
+          delegado_por_nome: user.name,
+          assinatura_url: assinatura.assinatura_url,
+          created_at: new Date().toISOString(),
+        };
+
+        const updated = await model.update({
+          where: { id: existing.id },
+          data: {
+            status: 'delegado',
+            data: stringify({
+              ...data,
+              delegatedTo: delegadoUser.id,
+              delegatedToEmail: delegadoUser.email,
+              delegatedToName: delegadoUser.name,
+              delegationNotes: motivo,
+              assigned_to_id: delegadoUser.id,
+              assigned_to_name: delegadoUser.name,
+              delegado_por_id: user.id,
+              delegado_por_nome: user.name,
+              delegado_assinatura_url: assinatura.assinatura_url,
+              delegacoes: [...delegacoes, novaDelegacao],
+            }),
+          },
+        });
+
+        if (delegadoUser.email) {
+          const assunto = config.name === 'presentation' ? 'uma carta de apresentação' : 'um pedido de audiência';
+          await notifications.createNotification(
+            delegadoUser.email,
+            config.name === 'presentation' ? 'presentation_delegada' : 'audience_delegada',
+            `${user.name} delegou-lhe ${assunto}.`,
+            existing.id
+          ).catch(() => null);
+        }
+
+        const resource = recordToResource(updated);
+        return res.status(200).json({ success: true, data: resource, [config.itemKey]: resource });
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+
+  if (config.name === 'acta') {
+    // Assinatura digital da acta, com o mesmo modelo usado na Ordem de
+    // Pagamento: usa a assinatura carregada no perfil do utilizador (Meu
+    // Perfil), gated por papel/cargo, guardada num historico em data.
+    router.post(`${config.path}/:id/assinar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const user = (req as any).user;
+        const papel = req.body.papel;
+        if (!papel || !ALLOWED_SIGNATURE_PAPEIS.acta.includes(papel)) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Papel de assinatura invalido (use presidente ou secretario)' });
+        }
+        if (user?.role !== SIGNATURE_ROLE_MAP[papel]) {
+          return res.status(403).json({ error: 'FORBIDDEN', message: `Apenas o utilizador com o cargo de ${papel} pode assinar nesta funcao` });
+        }
+
+        const existing = await prisma.acta.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Acta nao encontrada' });
+
+        const signerUser = await prisma.user.findUnique({ where: { id: user.id } });
+        if (!signerUser?.signatureImage) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Carregue a sua assinatura em "Meu Perfil" antes de assinar' });
+        }
+
+        const data = safeParse(existing.data, {});
+        const assinaturas = (Array.isArray(data.assinaturas_reais) ? data.assinaturas_reais : [])
+          .filter((assinatura: any) => assinatura.papel !== papel);
+        assinaturas.push({
+          papel,
+          user_id: user.id,
+          nome: user.name,
+          assinatura_url: signerUser.signatureImage,
+          assinado_em: new Date().toISOString(),
+        });
+
+        const updated = await prisma.acta.update({
+          where: { id: existing.id },
+          data: { data: stringify({ ...data, assinaturas_reais: assinaturas }) },
+        });
+        return res.status(200).json({ success: true, acta: recordToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Finalizar: fecha a edicao do conteudo (resumo/decisoes/tarefas) e liberta a
+    // acta para assinatura. Registada aqui (antes da rota generica de "/finalizar"
+    // mais abaixo, que so serve outros modulos) para usar o estado real do
+    // fluxo de actas em vez do generico STATUS.PENDENTE.
+    router.post(`${config.path}/:id/finalizar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.acta.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Acta nao encontrada' });
+
+        if (!['rascunho', 'pendente', 'em_curso'].includes(existing.status)) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: `Acta com estado "${existing.status}" nao pode ser finalizada.`
+          });
+        }
+
+        const updated = await prisma.acta.update({ where: { id: existing.id }, data: { status: 'finalizada' } });
+        return res.status(200).json({ success: true, acta: recordToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Aprovar: so depois de assinada pelo Presidente e pelo Secretario. Ao
+    // aprovar, envia a acta por e-mail a todos os participantes da reuniao de
+    // origem (organizador + participantes da reuniao interna ligada).
+    router.post(`${config.path}/:id/aprovar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.acta.findUnique({ where: { id: req.params.id } });
+        if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Acta nao encontrada' });
+
+        if (existing.status !== 'finalizada') {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: 'A acta tem de estar finalizada antes de ser aprovada.'
+          });
+        }
+
+        const data = safeParse(existing.data, {});
+        const assinaturas = Array.isArray(data.assinaturas_reais) ? data.assinaturas_reais : [];
+        const papeisAssinados = new Set(assinaturas.map((assinatura: any) => assinatura.papel));
+        if (!papeisAssinados.has('presidente') || !papeisAssinados.has('secretario')) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: 'A acta precisa da assinatura do Presidente e do Secretário antes de ser aprovada.'
+          });
+        }
+
+        const user = (req as any).user;
+        const updated = await prisma.acta.update({
+          where: { id: existing.id },
+          data: {
+            status: 'aprovada',
+            data: stringify({
+              ...data,
+              aprovada_por_id: user.id,
+              aprovada_por_nome: user.name,
+              aprovada_em: new Date().toISOString(),
+            }),
+          }
+        });
+
+        // Reunir destinatarios: organizador da acta + participantes da reuniao
+        // interna de origem (o array acta.participantes nao guarda e-mails, so
+        // nome/cargo, por isso vamos buscar os e-mails reais a reuniao ligada).
+        const destinatarios = new Map<string, string>();
+        if (existing.createdById) {
+          const organizador = await prisma.user.findUnique({ where: { id: existing.createdById } });
+          if (organizador?.email) destinatarios.set(organizador.email.toLowerCase(), organizador.name);
+        }
+        if (existing.internalMeetingId) {
+          const meeting = await prisma.internalMeeting.findUnique({ where: { id: existing.internalMeetingId } });
+          if (meeting?.participantId) {
+            const participanteDirecto = await prisma.user.findUnique({ where: { id: meeting.participantId } });
+            if (participanteDirecto?.email) destinatarios.set(participanteDirecto.email.toLowerCase(), participanteDirecto.name);
+          }
+          const participantesReuniao = await prisma.internalMeetingParticipant.findMany({
+            where: { meetingId: existing.internalMeetingId },
+          });
+          for (const participante of participantesReuniao) {
+            if (participante.email) destinatarios.set(participante.email.toLowerCase(), participante.name);
+          }
+        }
+
+        const assunto = existing.assunto || 'Reunião';
+        const numero = existing.numero || existing.id;
+        const resumo = data.resumo || null;
+
+        await Promise.all(
+          Array.from(destinatarios.entries()).map(([email, nome]) =>
+            emailService.sendEmail({
+              to: email,
+              subject: `Acta aprovada - ${assunto} (${numero})`,
+              html: actaAprovadaEmailHtml(nome, assunto, numero, resumo),
+            }).catch((error) => logger.error(`Falha ao enviar acta aprovada a ${email}:`, error))
+          )
+        );
+
+        return res.status(200).json({
+          success: true,
+          acta: recordToResource(updated),
+          notificados: destinatarios.size,
+        });
+      } catch (error) {
+        next(error);
+      }
+    });
+  }
+
+  router.get(`${config.path}/:id/history`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.history(req, res, next, config));
+  router.get(`${config.path}/:id/historico`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.history(req, res, next, config));
+  router.get(`${config.path}/:id`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.get(req, res, next, config));
+  router.put(`${config.path}/:id`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.put(`${config.path}/:id/status`, requireAuth as any, requireLicense as any, (req, res, next) => {
     req.body = enrichMeetingBody(req.body);
+    const isOnline = (req.body.meetingType || req.body.meeting_type) === 'online';
+    const hasLink = req.body.meetingLink || req.body.meeting_link;
+    if (isOnline && !hasLink) {
+      return res.status(422).json({
+        error: 'MEETING_PLATFORM_NOT_CONFIGURED',
+        message: 'Nenhuma plataforma de reunião está configurada (nem API real, nem link fixo). Peça ao administrador do sistema para configurar em Configurações → Integrações antes de agendar reuniões online.',
+      });
+    }
     return ModuleRoutesHelper.update(req, res, next, config);
   });
-  router.delete(`${config.path}/:id`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.delete(req, res, next, config));
+  router.delete(`${config.path}/:id`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.delete(req, res, next, config));
 
-  router.post(`${config.path}/:id/approve`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.APROVADO));
-  router.post(`${config.path}/:id/aprovar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.APROVADO));
-  router.post(`${config.path}/:id/accept`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'aceite'));
-  router.post(`${config.path}/:id/reject`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.REJEITADO));
-  router.post(`${config.path}/:id/rejeitar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.REJEITADO));
-  router.post(`${config.path}/:id/submit`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
-  router.post(`${config.path}/:id/submeter`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
-  router.post(`${config.path}/:id/finalizar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
-  router.post(`${config.path}/:id/arquivar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.ARQUIVADO));
-  router.post(`${config.path}/:id/ativar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.ACTIVO));
-  router.post(`${config.path}/:id/desativar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.INACTIVO));
-  router.post(`${config.path}/:id/cancel`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
-  router.post(`${config.path}/:id/cancelar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
-  router.post(`${config.path}/:id/concluir`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'concluido'));
-  router.post(`${config.path}/:id/validate`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
-  router.post(`${config.path}/:id/validar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
-  router.post(`${config.path}/:id/pagar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PAGO));
-  router.post(`${config.path}/:id/pay`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PAGO));
-  router.post(`${config.path}/:id/submit-banco`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'submetido_banco'));
-  router.post(`${config.path}/:id/submeter-banco`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'submetido_banco'));
-  router.post(`${config.path}/:id/cotacao`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'cotacao'));
-  router.post(`${config.path}/:id/enviar-aprovacao`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'aprovacao'));
-  router.post(`${config.path}/:id/ordem-compra`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'ordem_compra'));
-  router.post(`${config.path}/:id/receber`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'recebida'));
-  router.post(`${config.path}/:id/renovar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'renovacao_pendente'));
-  router.post(`${config.path}/:id/expirar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'expirado'));
-  router.post(`${config.path}/:id/analise`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_analise'));
-  router.post(`${config.path}/:id/resolucao`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_resolucao'));
-  router.post(`${config.path}/:id/resolver`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'resolvida'));
-  router.post(`${config.path}/:id/fechar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'fechada'));
+  router.post(`${config.path}/:id/approve`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.APROVADO));
+  router.post(`${config.path}/:id/aprovar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.APROVADO));
+  router.post(`${config.path}/:id/accept`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'aceite'));
+  router.post(`${config.path}/:id/reject`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.REJEITADO));
+  router.post(`${config.path}/:id/rejeitar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.REJEITADO));
+  router.post(`${config.path}/:id/submit`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
+  router.post(`${config.path}/:id/submeter`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
+  router.post(`${config.path}/:id/finalizar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PENDENTE));
+  router.post(`${config.path}/:id/arquivar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.ARQUIVADO));
+  router.post(`${config.path}/:id/ativar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.ACTIVO));
+  router.post(`${config.path}/:id/desativar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.INACTIVO));
+  router.post(`${config.path}/:id/cancel`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
+  router.post(`${config.path}/:id/cancelar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
+  router.post(`${config.path}/:id/concluir`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'concluido'));
+  router.post(`${config.path}/:id/validate`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
+  router.post(`${config.path}/:id/validar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
+  router.post(`${config.path}/:id/pagar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PAGO));
+  router.post(`${config.path}/:id/pay`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PAGO));
+  router.post(`${config.path}/:id/submit-banco`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'submetido_ao_banco'));
+  router.post(`${config.path}/:id/submeter-banco`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'submetido_ao_banco'));
+  router.post(`${config.path}/:id/cotacao`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'cotacao'));
+  router.post(`${config.path}/:id/enviar-aprovacao`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'aprovacao'));
+  router.post(`${config.path}/:id/ordem-compra`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'ordem_compra'));
+  router.post(`${config.path}/:id/receber`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'recebida'));
+  router.post(`${config.path}/:id/renovar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'renovacao_pendente'));
+  router.post(`${config.path}/:id/expirar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'expirado'));
+  router.post(`${config.path}/:id/analise`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_analise'));
+  router.post(`${config.path}/:id/resolucao`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_resolucao'));
+  router.post(`${config.path}/:id/resolver`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'resolvida'));
+  router.post(`${config.path}/:id/fechar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'fechada'));
 
-  router.post(`${config.path}/:id/despachos`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/despacho`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/acao`, requireAuth as any, async (req, res, next) => {
+  router.post(`${config.path}/:id/despachos`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/despacho`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/acao`, requireAuth as any, requireLicense as any, async (req, res, next) => {
     try {
       const existing = await (prisma as any)[config.model].findUnique({ where: { id: req.params.id } });
       const data = existing?.data ? JSON.parse(existing.data) : {};
       const acoes = Array.isArray(data.acoes) ? data.acoes : [];
       const acao = {
-        id: `acao_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+        id: crypto.randomUUID(),
         descricao: req.body.descricao || req.body.mensagem || req.body.conteudo || '',
         tipo_acao: req.body.tipo_acao || req.body.tipoAcao || 'comentario',
         autor_id: (req as any).user?.id,
@@ -1076,8 +1647,8 @@ function registerCrud(config: ModuleConfig) {
       next(error);
     }
   });
-  router.post(`${config.path}/:id/compartilhar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/atribuir`, requireAuth as any, (req, res, next) => {
+  router.post(`${config.path}/:id/compartilhar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/atribuir`, requireAuth as any, requireLicense as any, (req, res, next) => {
     req.body = {
       ...req.body,
       responsavel_id: req.body.responsavel_id || req.body.responsavelId,
@@ -1086,20 +1657,58 @@ function registerCrud(config: ModuleConfig) {
     };
     return ModuleRoutesHelper.update(req, res, next, config);
   });
-  router.post(`${config.path}/:id/delegar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/delegate`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/assign`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/anexos`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/assinar`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
-  router.post(`${config.path}/:id/enviar-revisao`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_revisao'));
-  router.get(`${config.path}/:id/pdf`, requireAuth as any, (req, res) => res.status(200).json({ success: true, id: req.params.id, pdfUrl: null, message: 'Exportacao PDF sera gerada no frontend.' }));
-  router.post(`${config.path}/:id/responder`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.create(req, res, next, config));
-  router.get(`${config.path}/:id/intervencoes`, requireAuth as any, (_req, res) => res.status(200).json({ success: true, intervencoes: [] }));
-  router.post(`${config.path}/:id/intervencoes`, requireAuth as any, (req, res) => res.status(201).json({ success: true, intervencao: { id: `intervencao_${Date.now()}`, ...req.body } }));
-  router.put(`${config.path}/:id/intervencoes/:intervencaoId`, requireAuth as any, (req, res) => res.status(200).json({ success: true, intervencao: { id: req.params.intervencaoId, ...req.body } }));
-  router.delete(`${config.path}/:id/intervencoes/:intervencaoId`, requireAuth as any, (req, res) => res.status(200).json({ success: true, id: req.params.intervencaoId }));
-  router.post(`${config.path}/:id/fechar-publica`, requireAuth as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'fechada'));
+  router.post(`${config.path}/:id/delegar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/delegate`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/assign`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/anexos`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/assinar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.update(req, res, next, config));
+  router.post(`${config.path}/:id/enviar-revisao`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'em_revisao'));
+  router.get(`${config.path}/:id/pdf`, requireAuth as any, requireLicense as any, (req, res) => res.status(200).json({ success: true, id: req.params.id, pdfUrl: null, message: 'Exportacao PDF sera gerada no frontend.' }));
+  router.post(`${config.path}/:id/responder`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.create(req, res, next, config));
+  router.get(`${config.path}/:id/intervencoes`, requireAuth as any, requireLicense as any, (_req, res) => res.status(200).json({ success: true, intervencoes: [] }));
+  router.post(`${config.path}/:id/intervencoes`, requireAuth as any, requireLicense as any, (req, res) => res.status(201).json({ success: true, intervencao: { id: crypto.randomUUID(), ...req.body } }));
+  router.put(`${config.path}/:id/intervencoes/:intervencaoId`, requireAuth as any, requireLicense as any, (req, res) => res.status(200).json({ success: true, intervencao: { id: req.params.intervencaoId, ...req.body } }));
+  router.delete(`${config.path}/:id/intervencoes/:intervencaoId`, requireAuth as any, requireLicense as any, (req, res) => res.status(200).json({ success: true, id: req.params.intervencaoId }));
+  router.post(`${config.path}/:id/fechar-publica`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'fechada'));
 }
+
+// Categorias de produtos/servicos do Procurement: usadas tanto no cadastro de
+// fornecedores (que categorias fornece) como nos pedidos de compra (que
+// categoria esta a ser adquirida). Registadas aqui, fora do CRUD generico,
+// para que fiquem sempre antes do fallback generico "/procurement/:id".
+router.get('/procurement/categorias', requireAuth as any, async (_req, res, next) => {
+  try {
+    const categorias = await prisma.procurementCategoria.findMany({ orderBy: { nome: 'asc' } });
+    res.status(200).json({ success: true, categorias });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/procurement/categorias', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const nome = String(req.body?.nome || '').trim();
+    if (!nome) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'O nome da categoria e obrigatorio.' });
+    }
+
+    const existente = await prisma.procurementCategoria.findUnique({ where: { nome } });
+    if (existente) {
+      return res.status(200).json({ success: true, categoria: existente });
+    }
+
+    const categoria = await prisma.procurementCategoria.create({
+      data: {
+        id: crypto.randomUUID(),
+        nome,
+        createdById: req.user?.id,
+      }
+    });
+    res.status(201).json({ success: true, categoria });
+  } catch (error) {
+    next(error);
+  }
+});
 
 modules
   .slice()

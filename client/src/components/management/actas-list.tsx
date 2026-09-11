@@ -2,44 +2,67 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { toast } from "sonner@2.0.3";
-import { 
-  FileText, 
-  Calendar, 
-  Users, 
-  Eye, 
-  Download, 
+import {
+  FileText,
+  Calendar,
+  Users,
+  Eye,
+  Download,
   CheckCircle,
   Clock,
-  Search,
-  Filter
+  Filter,
+  Plus
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { hasPermission } from "../auth/permissions";
 import { Acta } from "./acta-types";
 import { ActaDetails } from "./acta-details";
+import { ActaCreateForm } from "./acta-create-form";
+import { downloadActaPDF } from "../../utils/acta-pdf-export";
 
-export function ActasList() {
+interface ActasListProps {
+  // Quando definido, a lista abre directamente os detalhes desta acta (usado
+  // para chegar aqui a partir do botao "Ver Acta" na Agenda/Reunioes Internas)
+  // em vez de mostrar a lista.
+  initialActaId?: string | null;
+  onInitialActaConsumed?: () => void;
+}
+
+export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListProps = {}) {
   const { user, accessToken } = useAuth();
   const [actas, setActas] = useState<Acta[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
   const [selectedActa, setSelectedActa] = useState<Acta | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const podeCriarActa = Boolean(
+    user && (hasPermission(user.role, 'CREATE_ACTAS') || hasPermission(user.role, 'DRAFT_ACTAS'))
+  );
 
   useEffect(() => {
     loadActas();
   }, [user]);
 
-  const loadActas = async () => {
+  useEffect(() => {
+    if (!initialActaId) return;
+    const acta = actas.find((a) => a.id === initialActaId);
+    if (acta) {
+      setSelectedActa(acta);
+      setShowDetails(true);
+      onInitialActaConsumed?.();
+    }
+  }, [initialActaId, actas, onInitialActaConsumed]);
+
+  const loadActas = async (): Promise<Acta[]> => {
     try {
       setLoading(true);
-      
+
       const response = await fetch(
         `${API_BASE_URL}/actas`,
         {
@@ -55,10 +78,13 @@ export function ActasList() {
       }
 
       const data = await response.json();
-      setActas(data.actas || []);
+      const lista: Acta[] = data.actas || [];
+      setActas(lista);
+      return lista;
     } catch (error) {
  console.error('Erro ao carregar actas:', error);
       toast.error('Erro ao carregar actas');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -66,33 +92,18 @@ export function ActasList() {
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pendente: { label: 'Pendente', color: 'bg-yellow-500' },
-      em_curso: { label: 'Em Curso', color: 'bg-blue-500' },
-      finalizada: { label: 'Finalizada', color: 'bg-green-500' },
-      aprovada: { label: 'Aprovada', color: 'bg-green-700' },
+      pendente: { label: 'Pendente', color: 'var(--tone-warn)' },
+      em_curso: { label: 'Em Curso', color: 'var(--tone-info)' },
+      finalizada: { label: 'Finalizada', color: 'var(--tone-success)' },
+      aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const filterActas = (status: string) => {
-    let filtered = actas;
-    
-    // Filtrar por status
-    if (status !== 'todas') {
-      filtered = filtered.filter(a => a.status === status);
-    }
-    
-    // Filtrar por busca
-    if (searchTerm) {
-      filtered = filtered.filter(a => 
-        a.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        a.organizador_nome.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-    
-    return filtered;
+    if (status === 'todas') return actas;
+    return actas.filter(a => a.status === status);
   };
 
   const handleViewDetails = (acta: Acta) => {
@@ -106,46 +117,20 @@ export function ActasList() {
     loadActas(); // Recarregar lista
   };
 
-  const handleDownloadPDF = async (actaId: string) => {
+  const handleActaCreated = async (actaId?: string) => {
+    setShowCreateForm(false);
+    const lista = await loadActas();
+    const acta = actaId ? lista.find((a) => a.id === actaId) : undefined;
+    if (acta) {
+      setSelectedActa(acta);
+      setShowDetails(true);
+    }
+  };
+
+  const handleDownloadPDF = async (acta: Acta) => {
     try {
       toast.info('A gerar PDF...');
-      
-      const response = await fetch(
-        `${API_BASE_URL}/actas/${actaId}/pdf`,
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erro ao gerar PDF');
-      }
-
-      // Obter o blob do PDF
-      const blob = await response.blob();
-      
-      // Obter o nome do arquivo do header Content-Disposition
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'acta.pdf';
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      // Criar URL temporário e fazer download
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
+      await downloadActaPDF(acta);
       toast.success('PDF baixado com sucesso!');
     } catch (error) {
  console.error('Erro ao baixar PDF:', error);
@@ -153,10 +138,19 @@ export function ActasList() {
     }
   };
 
+  if (showCreateForm) {
+    return (
+      <ActaCreateForm
+        onCancel={() => setShowCreateForm(false)}
+        onCreated={handleActaCreated}
+      />
+    );
+  }
+
   if (showDetails && selectedActa) {
     return (
-      <ActaDetails 
-        acta={selectedActa} 
+      <ActaDetails
+        acta={selectedActa}
         onBack={handleCloseDetails}
         onUpdate={loadActas}
       />
@@ -183,19 +177,16 @@ export function ActasList() {
               Actas de Reuniões
             </CardTitle>
             <CardDescription>
-              Geradas automaticamente a partir de reuniões agendadas
+              Geradas automaticamente a partir de reuniões agendadas, ou criadas manualmente
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Pesquisar actas..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 w-64"
-              />
-            </div>
+            {podeCriarActa && (
+              <Button onClick={() => setShowCreateForm(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Nova Acta
+              </Button>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -296,7 +287,7 @@ export function ActasList() {
                               <Button 
                                 size="sm" 
                                 variant="outline"
-                                onClick={() => handleDownloadPDF(acta.id)}
+                                onClick={() => handleDownloadPDF(acta)}
                               >
                                 <Download className="h-4 w-4" />
                               </Button>

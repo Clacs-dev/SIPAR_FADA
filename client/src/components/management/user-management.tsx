@@ -12,7 +12,8 @@ import { Search, Plus, Edit, Trash2, User, Settings, Users, Check, X, Clock } fr
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
 import { apiClient } from "../../utils/api-client";
-import { DEPARTMENTS, getGroupedDepartmentOptions, getDepartmentName } from "../admin/departments";
+import { getGroupedDepartmentOptions, getDepartmentName, getDepartmentIcon, DepartmentLike } from "../admin/departments";
+import { useDepartments } from "../../hooks/use-departments";
 
 interface UserData {
   id: string;
@@ -34,20 +35,21 @@ const LEGACY_ROLE_OPTIONS = [
   { value: 'user', label: 'Usuario comum' }
 ];
 
-const isDepartmentRole = (role: string) => DEPARTMENTS.some((department) => department.id === role);
+const isDepartmentRole = (departments: DepartmentLike[], role: string) => departments.some((department) => department.slug === role);
 
-const getRoleLabel = (role: string) => {
+const getRoleLabel = (departments: DepartmentLike[], role: string) => {
   const legacyRole = LEGACY_ROLE_OPTIONS.find((option) => option.value === role);
   if (legacyRole) {
     return legacyRole.label;
   }
 
-  const departmentRole = DEPARTMENTS.find((department) => department.id === role);
-  return departmentRole?.name || role || 'Sem papel';
+  const departmentRole = departments.find((department) => department.slug === role);
+  return departmentRole?.nome || role || 'Sem papel';
 };
 
 export function UserManagement() {
   const { accessToken, user: currentUser } = useAuth();
+  const { departments } = useDepartments();
   const [searchTerm, setSearchTerm] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [users, setUsers] = useState<UserData[]>([]);
@@ -113,33 +115,33 @@ export function UserManagement() {
   };
 
   const getRoleBadge = (role: string) => {
-    const departmentRole = DEPARTMENTS.find((department) => department.id === role);
+    const departmentRole = departments.find((department) => department.slug === role);
     if (departmentRole) {
-      return <Badge className="bg-indigo-100 text-indigo-800">{departmentRole.name}</Badge>;
+      return <Badge className="bg-tone-accent-soft text-tone-accent">{departmentRole.nome}</Badge>;
     }
 
     switch (role) {
       case 'admin':
-        return <Badge className="bg-red-100 text-red-800">Administrador</Badge>;
+        return <Badge className="bg-tone-danger-soft text-tone-danger">Administrador</Badge>;
       case 'attendant':
-        return <Badge className="bg-blue-100 text-blue-800">Atendente</Badge>;
+        return <Badge className="bg-tone-info-soft text-tone-info">Atendente</Badge>;
       case 'user':
-        return <Badge className="bg-green-100 text-green-800">Usuário</Badge>;
+        return <Badge className="bg-tone-success-soft text-tone-success">Usuário</Badge>;
       default:
         return <Badge>{role || 'Sem papel'}</Badge>;
     }
   };
 
   const getStatusBadge = (status: string) => {
-    return status === 'active' 
-      ? <Badge className="bg-green-100 text-green-800">Ativo</Badge>
-      : <Badge className="bg-gray-100 text-gray-800">Inativo</Badge>;
+    return status === 'active'
+      ? <Badge className="bg-tone-success-soft text-tone-success">Ativo</Badge>
+      : <Badge className="bg-tone-neutral-soft text-tone-neutral">Inativo</Badge>;
   };
 
   const getRoleIcon = (role: string) => {
-    const departmentRole = DEPARTMENTS.find((department) => department.id === role);
-    const DepartmentIcon = departmentRole?.icon;
-    if (DepartmentIcon) {
+    const departmentRole = departments.find((department) => department.slug === role);
+    if (departmentRole) {
+      const DepartmentIcon = getDepartmentIcon(departmentRole.slug);
       return <DepartmentIcon className="h-4 w-4" />;
     }
 
@@ -211,15 +213,21 @@ export function UserManagement() {
     }
   };
 
-  const handleDeleteUser = (userId: string, userName: string) => {
-    toast.success(`Usuário ${userName} removido com sucesso`);
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    try {
+      // Utilizadores nunca sao eliminados fisicamente (dezenas de tabelas
+      // referenciam createdById em todo o sistema) - "Excluir" desativa a
+      // conta, impedindo login, sem apagar o historico associado.
+      await apiClient.updateUserStatus(accessToken!, userId, 'inactive');
+      toast.success(`Utilizador ${userName} desativado com sucesso`);
+      loadUsers();
+    } catch (error: any) {
+      console.error('Error deactivating user:', error);
+      toast.error(error.message || 'Erro ao desativar utilizador');
+    }
   };
 
   const handleClearDemoUsers = async () => {
-    if (!window.confirm('Tem certeza que deseja remover os usuários de demonstração (admin@sistema.com, atendente@sistema.com, usuario@empresa.com)? Esta ação não pode ser revertida.')) {
-      return;
-    }
-
     setIsClearingDemo(true);
     try {
       const result = await apiClient.clearDemoUsers(accessToken!);
@@ -236,8 +244,8 @@ export function UserManagement() {
   const filteredUsers = users.filter(user =>
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getRoleLabel(user.role).toLowerCase().includes(searchTerm.toLowerCase()) ||
-    getDepartmentName(user.department || '').toLowerCase().includes(searchTerm.toLowerCase())
+    getRoleLabel(departments, user.role).toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getDepartmentName(departments, user.department || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const pendingAttendants = users.filter(u => u.role === 'attendant' && u.status === 'pending');
@@ -251,12 +259,12 @@ export function UserManagement() {
 
       {/* Card de Atendentes Pendentes */}
       {pendingAttendants.length > 0 && (
-        <Card className="border-orange-200 bg-orange-50">
+        <Card style={{ borderColor: 'var(--tone-warn)', backgroundColor: 'var(--tone-warn-soft)' }}>
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-orange-600" />
+                  <Clock className="h-5 w-5" style={{ color: 'var(--tone-warn)' }} />
                   Atendentes Aguardando Aprovação
                 </CardTitle>
                 <CardDescription>
@@ -270,8 +278,8 @@ export function UserManagement() {
               {pendingAttendants.map((attendant) => (
                 <div key={attendant.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
                   <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100">
-                      <User className="h-5 w-5 text-orange-600" />
+                    <div className="flex items-center justify-center w-10 h-10 rounded-full" style={{ backgroundColor: 'var(--tone-warn-soft)' }}>
+                      <User className="h-5 w-5" style={{ color: 'var(--tone-warn)' }} />
                     </div>
                     <div>
                       <p className="font-medium">{attendant.name}</p>
@@ -290,7 +298,7 @@ export function UserManagement() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                      style={{ color: 'var(--tone-success)' }}
                       onClick={() => handleApproveAttendant(attendant.id, attendant.name)}
                     >
                       <Check className="h-4 w-4 mr-1" />
@@ -299,7 +307,7 @@ export function UserManagement() {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      style={{ color: 'var(--tone-danger)' }}
                       onClick={() => handleRejectAttendant(attendant.id, attendant.name)}
                     >
                       <X className="h-4 w-4 mr-1" />
@@ -381,7 +389,7 @@ export function UserManagement() {
                     onValueChange={(value) => setNewUser(prev => ({
                       ...prev,
                       role: value,
-                      department: isDepartmentRole(value) && (!prev.department || prev.department === prev.role)
+                      department: isDepartmentRole(departments, value) && (!prev.department || prev.department === prev.role)
                         ? value
                         : prev.department
                     }))}
@@ -398,7 +406,7 @@ export function UserManagement() {
                           </SelectItem>
                         ))}
                       </SelectGroup>
-                      {getGroupedDepartmentOptions().map((group) => (
+                      {getGroupedDepartmentOptions(departments).map((group) => (
                         <SelectGroup key={`role-${group.label}`}>
                           <SelectLabel>{group.label}</SelectLabel>
                           {group.options.map((option) => (
@@ -468,7 +476,7 @@ export function UserManagement() {
                     <SelectValue placeholder="Selecione o departamento" />
                   </SelectTrigger>
                   <SelectContent>
-                    {getGroupedDepartmentOptions().map((group) => (
+                    {getGroupedDepartmentOptions(departments).map((group) => (
                       <SelectGroup key={group.label}>
                         <SelectLabel>{group.label}</SelectLabel>
                         {group.options.map((option) => (
@@ -539,7 +547,7 @@ export function UserManagement() {
                   </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{getRoleBadge(user.role)}</TableCell>
-                  <TableCell>{getDepartmentName(user.department || '')}</TableCell>
+                  <TableCell>{getDepartmentName(departments, user.department || '')}</TableCell>
                   <TableCell>{getStatusBadge(user.status || 'inactive')}</TableCell>
                   <TableCell>{user.last_login || 'N/A'}</TableCell>
                   <TableCell>
@@ -556,15 +564,16 @@ export function UserManagement() {
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
+                            <AlertDialogTitle>Desativar utilizador</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Tem certeza que deseja excluir o usuário <strong>{user.name}</strong>? 
-                              Esta ação não pode ser revertida.
+                              Tem a certeza que deseja desativar o utilizador <strong>{user.name}</strong>?
+                              A conta deixa de conseguir iniciar sessão, mas todo o histórico associado (registos criados,
+                              assinaturas, auditoria) é mantido. Pode reativar a conta a qualquer momento.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction 
+                            <AlertDialogAction
                               onClick={() => handleDeleteUser(user.id, user.name)}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
@@ -603,7 +612,7 @@ export function UserManagement() {
               </div>
               <div className="flex justify-between">
                 <span className="text-sm">Papéis departamentais:</span>
-                <span className="font-medium">{users.filter(u => isDepartmentRole(u.role)).length}</span>
+                <span className="font-medium">{users.filter(u => isDepartmentRole(departments, u.role)).length}</span>
               </div>
             </div>
           </CardContent>
@@ -617,13 +626,13 @@ export function UserManagement() {
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-sm">Ativos:</span>
-                <span className="font-medium text-green-600">
+                <span className="font-medium" style={{ color: 'var(--tone-success)' }}>
                   {users.filter(u => u.status === 'active').length}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-sm">Inativos:</span>
-                <span className="font-medium text-gray-600">
+                <span className="font-medium" style={{ color: 'var(--tone-neutral)' }}>
                   {users.filter(u => u.status === 'inactive').length}
                 </span>
               </div>
@@ -646,16 +655,37 @@ export function UserManagement() {
               <Button variant="outline" size="sm" className="w-full justify-start">
                 Relatório de Acessos
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-                onClick={handleClearDemoUsers}
-                disabled={isClearingDemo}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {isClearingDemo ? 'Removendo...' : 'Remover Usuários Demo'}
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                    disabled={isClearingDemo}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {isClearingDemo ? 'Removendo...' : 'Remover Usuários Demo'}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Remover utilizadores de demonstração</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Tem a certeza que deseja remover os utilizadores de demonstração (admin@sistema.com,
+                      atendente@sistema.com, usuario@empresa.com)? Esta ação não pode ser revertida.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleClearDemoUsers}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Remover
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </CardContent>
         </Card>

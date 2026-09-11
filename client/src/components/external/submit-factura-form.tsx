@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Upload, X, Plus, FileText, AlertCircle } from "lucide-react";
+import { Upload, X, Plus, FileText, AlertCircle, Landmark, Save } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -30,7 +30,7 @@ interface SubmitFacturaFormProps {
 }
 
 export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProps) {
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, refreshUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -47,7 +47,43 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
     descricao: '',
     observacoes: '',
     tipo: '',
+    tipo_documento: 'factura',
   });
+
+  // Dados bancários - carregados do perfil (reutilizáveis) e editáveis aqui
+  const [dadosBancarios, setDadosBancarios] = useState({
+    bankName: user?.bankName || '',
+    bankAccountHolder: user?.bankAccountHolder || user?.name || '',
+    bankIban: user?.bankIban || '',
+    bankNib: user?.bankNib || '',
+    bankSwift: user?.bankSwift || '',
+    bankCity: user?.bankCity || '',
+    bankCountry: user?.bankCountry || 'Angola',
+  });
+  const [savingBankDetails, setSavingBankDetails] = useState(false);
+  const [bankDetailsSaved, setBankDetailsSaved] = useState(false);
+
+  const handleSaveBankDetails = async () => {
+    setSavingBankDetails(true);
+    setBankDetailsSaved(false);
+    try {
+      await fetch(`${API_BASE_URL}/auth/me/bank-details`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(dadosBancarios),
+      });
+      await refreshUser();
+      setBankDetailsSaved(true);
+      setTimeout(() => setBankDetailsSaved(false), 3000);
+    } catch (err) {
+ console.error('Erro ao guardar dados bancários:', err);
+    } finally {
+      setSavingBankDetails(false);
+    }
+  };
 
   // Itens da factura
   const [itens, setItens] = useState<FacturaItem[]>([
@@ -144,7 +180,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
 
       try {
         const response = await fetch(
-          `${API_BASE_URL}/facturas/upload`,
+          `${API_BASE_URL}/storage/upload`,
           {
             method: 'POST',
             headers: {
@@ -155,11 +191,12 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         );
 
         if (!response.ok) {
-          throw new Error('Erro ao fazer upload do ficheiro');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || errorData.error || 'Erro ao fazer upload do ficheiro');
         }
 
         const data = await response.json();
-        uploadedUrls.push(data.url);
+        uploadedUrls.push(data.file?.url);
       } catch (err) {
  console.error('Erro no upload:', err);
         throw err;
@@ -188,6 +225,10 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         throw new Error('Por favor, anexe pelo menos um ficheiro (PDF da factura)');
       }
 
+      if (!dadosBancarios.bankIban && !dadosBancarios.bankNib) {
+        throw new Error('Por favor, indique o IBAN ou o NIB para recebimento do pagamento');
+      }
+
       // Gerar número da factura automaticamente
       const dataAtual = new Date();
       const ano = dataAtual.getFullYear();
@@ -209,6 +250,13 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         subtotal: totais.subtotal,
         iva_total: totais.ivaTotal,
         total: totais.total,
+        banco_nome: dadosBancarios.bankName,
+        banco_titular: dadosBancarios.bankAccountHolder,
+        banco_iban: dadosBancarios.bankIban,
+        banco_nib: dadosBancarios.bankNib,
+        banco_swift: dadosBancarios.bankSwift,
+        banco_cidade: dadosBancarios.bankCity,
+        banco_pais: dadosBancarios.bankCountry,
         status: 'pendente', // Status inicial - facturas externas entram diretamente como pendente para validação de Compras
       };
 
@@ -273,9 +321,10 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         <Card>
           <CardContent className="pt-6 text-center">
             <div className="mb-4">
-              <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+              <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--tone-success-soft)' }}>
                 <svg
-                  className="w-6 h-6 text-green-600"
+                  className="w-6 h-6"
+                  style={{ color: 'var(--tone-success)' }}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -353,14 +402,123 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
           </CardContent>
         </Card>
 
-        {/* Tipo de Factura */}
+        {/* Dados Bancários */}
         <Card>
           <CardHeader>
-            <CardTitle>Tipo de Factura</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Landmark className="h-4 w-4" />
+                Dados Bancários para Pagamento
+              </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSaveBankDetails}
+                disabled={savingBankDetails}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {savingBankDetails ? 'A guardar...' : bankDetailsSaved ? 'Guardado!' : 'Guardar como meus dados'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Estes dados ficam guardados no seu perfil e são reutilizados automaticamente nas próximas facturas. Pode alterá-los aqui sempre que necessário.
+            </p>
           </CardHeader>
-          <CardContent>
+          <CardContent className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="tipo">Tipo *</Label>
+              <Label htmlFor="bankAccountHolder">Titular da Conta</Label>
+              <Input
+                id="bankAccountHolder"
+                placeholder="Nome do titular da conta"
+                value={dadosBancarios.bankAccountHolder}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankAccountHolder: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankName">Banco</Label>
+              <Input
+                id="bankName"
+                placeholder="Nome do banco"
+                value={dadosBancarios.bankName}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankName: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankIban">IBAN</Label>
+              <Input
+                id="bankIban"
+                placeholder="AO06 0000 0000 0000 0000 0000 0"
+                value={dadosBancarios.bankIban}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankIban: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankNib">NIB</Label>
+              <Input
+                id="bankNib"
+                placeholder="0000 0000 0000 0000 0000 0"
+                value={dadosBancarios.bankNib}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankNib: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankSwift">Código SWIFT/BIC</Label>
+              <Input
+                id="bankSwift"
+                placeholder="Ex: BAOAAOLU"
+                value={dadosBancarios.bankSwift}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankSwift: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankCity">Cidade</Label>
+              <Input
+                id="bankCity"
+                placeholder="Ex: Luanda"
+                value={dadosBancarios.bankCity}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankCity: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankCountry">País</Label>
+              <Input
+                id="bankCountry"
+                placeholder="Ex: Angola"
+                value={dadosBancarios.bankCountry}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankCountry: e.target.value })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tipo de Documento e Factura */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Tipo de Documento</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="tipo_documento">Documento *</Label>
+              <Select
+                value={formData.tipo_documento || 'factura'}
+                onValueChange={(value) => setFormData({ ...formData, tipo_documento: value })}
+              >
+                <SelectTrigger id="tipo_documento">
+                  <SelectValue placeholder="Selecione o documento..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="factura">Factura</SelectItem>
+                  <SelectItem value="factura_proforma">Factura Proforma</SelectItem>
+                  <SelectItem value="outro">Outro Documento</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Facturas proforma são aceites para efeitos de cotação/aprovação prévia
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="tipo">Natureza *</Label>
               <Select
                 value={formData.tipo || ''}
                 onValueChange={(value) => setFormData({ ...formData, tipo: value })}
@@ -374,9 +532,6 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                   <SelectItem value="ambos">Ambos</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Selecione se a factura é de mercadoria, serviço ou ambos
-              </p>
             </div>
           </CardContent>
         </Card>

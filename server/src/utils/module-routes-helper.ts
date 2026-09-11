@@ -7,6 +7,8 @@ import { HistoryService } from '../services/history.service';
 import { SequenceService } from '../services/sequence.service';
 import { ValidationService } from '../services/validation.service';
 import { WorkflowService } from '../services/workflow.service';
+import { notifications } from '../services/notification.service';
+import logger from '../config/logger';
 import * as permissions from './permissions';
 
 export const STATUS = {
@@ -19,6 +21,7 @@ export const STATUS = {
   ACTIVO: 'active',
   INACTIVO: 'inactive',
   PAGO: 'pago',
+  AGENDADO: 'agendado',
 } as const;
 
 export interface ModuleConfig {
@@ -47,7 +50,7 @@ const MODEL_FIELDS: Record<string, string[]> = {
   pedido: ['id', 'numero', 'createdById', 'createdByName', 'titulo', 'descricao', 'importancia', 'categoria', 'direcao', 'funcao', 'status', 'atribuidoAId', 'atribuidoANome', 'abertoEm', 'resolvidoEm', 'fechadoEm', 'solucao', 'anexos', 'data'],
   acta: ['id', 'numero', 'createdById', 'createdByName', 'internalMeetingId', 'status', 'assunto', 'dataReuniao', 'horaInicio', 'horaFim', 'local', 'tipoReuniao', 'modalidade', 'departamento', 'conteudo', 'decisoes', 'participantes', 'pontosAgenda', 'anexos', 'data'],
   oficio: ['id', 'createdById', 'createdByName', 'status', 'numero', 'assunto', 'destinatario', 'departamento', 'prioridade', 'conteudo', 'anexos', 'data'],
-  factura: ['id', 'createdById', 'createdByName', 'status', 'numero', 'fornecedor', 'nif', 'valor', 'moeda', 'dataEmissao', 'dataVencimento', 'descricao', 'anexos', 'paidAt', 'data'],
+  factura: ['id', 'createdById', 'createdByName', 'status', 'numero', 'fornecedor', 'nif', 'valor', 'moeda', 'dataEmissao', 'dataVencimento', 'descricao', 'anexos', 'paidAt', 'purchaseOrderId', 'numeroOrdem', 'numeroOrdemPagamento', 'data'],
   viatura: ['id', 'createdById', 'createdByName', 'status', 'plate', 'brand', 'model', 'year', 'type', 'currentKm', 'assignedTo', 'anexos', 'data'],
   contrato: ['id', 'createdById', 'createdByName', 'status', 'numero', 'fornecedor', 'objeto', 'valor', 'dataInicio', 'dataFim', 'anexos', 'data'],
   reclamacao: ['id', 'createdById', 'createdByName', 'status', 'codigo', 'titulo', 'descricao', 'categoria', 'prioridade', 'solicitante', 'contacto', 'anexos', 'data'],
@@ -71,7 +74,8 @@ function safeJsonParse(value: any, fallback: any) {
   if (typeof value !== 'string') return value;
   try {
     return JSON.parse(value);
-  } catch {
+  } catch (error) {
+    logger.warn('Falha ao interpretar JSON, a usar valor por omissão', { error: (error as Error).message, preview: value.slice(0, 100) });
     return fallback;
   }
 }
@@ -126,6 +130,11 @@ function applyFieldAliases(model: string, body: Record<string, any>) {
     setMissing('contacto', ['reclamante_email', 'email', 'telefone', 'contacto']);
   }
 
+  if (model === 'factura') {
+    setMissing('purchaseOrderId', ['purchase_order_id', 'ordem_id', 'ordemId', 'ordem_compra_id']);
+    setMissing('numeroOrdem', ['numero_ordem', 'ordem_numero']);
+  }
+
   if (model === 'contrato') {
     setMissing('fornecedor', ['fornecedor_nome', 'contratado_nome', 'prestador', 'empresa']);
     setMissing('objeto', ['objeto', 'titulo', 'descricao', 'objectivo', 'objetivo']);
@@ -145,13 +154,108 @@ function applyFieldAliases(model: string, body: Record<string, any>) {
   return enriched;
 }
 
+/**
+ * Tenta descobrir o e-mail do fornecedor de uma factura, para o notificar quando ela
+ * avanca para "submetido ao banco" ou "pago". Tenta, por ordem: o e-mail guardado na
+ * propria factura, o Fornecedor ligado por id, e por fim o utilizador (externo) que
+ * submeteu a factura.
+ */
+async function resolveFacturaFornecedorEmail(record: any): Promise<string | null> {
+  const data = safeJsonParse(record.data, {});
+  if (data.fornecedor_email) return data.fornecedor_email;
+
+  if (data.fornecedor_id) {
+    const fornecedor = await prisma.fornecedor.findUnique({ where: { id: data.fornecedor_id } }).catch(() => null);
+    if (fornecedor?.email) return fornecedor.email;
+  }
+
+  if (record.createdById) {
+    const author = await prisma.user.findUnique({ where: { id: record.createdById } }).catch(() => null);
+    if (author?.role === 'externo' && author.email) return author.email;
+  }
+
+  return null;
+}
+
+/**
+ * Localiza o registo de Fornecedor associado a uma factura, tentando por ordem:
+ * o fornecedor_id gravado na propria factura, o fornecedor da Ordem de Compra de
+ * origem (fluxo Procurement) e, como ultimo recurso, uma correspondencia por NIF/nome.
+ */
+async function findFornecedorForFactura(record: any, data: any): Promise<any | null> {
+  if (data?.fornecedor_id) {
+    const fornecedor = await prisma.fornecedor.findUnique({ where: { id: data.fornecedor_id } }).catch(() => null);
+    if (fornecedor) return fornecedor;
+  }
+
+  if (record.purchaseOrderId) {
+    const ordem = await prisma.purchaseOrder.findUnique({ where: { id: record.purchaseOrderId } }).catch(() => null);
+    if (ordem?.fornecedorId) {
+      const fornecedor = await prisma.fornecedor.findUnique({ where: { id: ordem.fornecedorId } }).catch(() => null);
+      if (fornecedor) return fornecedor;
+    }
+  }
+
+  if (record.nif) {
+    const fornecedor = await prisma.fornecedor.findFirst({ where: { nif: record.nif } }).catch(() => null);
+    if (fornecedor) return fornecedor;
+  }
+
+  if (record.fornecedor && typeof record.fornecedor === 'string') {
+    const fornecedor = await prisma.fornecedor.findFirst({ where: { nome: record.fornecedor } }).catch(() => null);
+    if (fornecedor) return fornecedor;
+  }
+
+  return null;
+}
+
+/**
+ * Resolve as coordenadas bancarias reais de uma factura a partir do fornecedor
+ * (conta de utilizador ligada, quando existe, senao os dados guardados no proprio
+ * registo de Fornecedor) em vez de depender de valores estaticos gravados na factura.
+ * Usado sempre que a Ordem de Pagamento e gerada/actualizada, para que o documento
+ * reflicta sempre os dados actuais do fornecedor.
+ */
+export async function resolveFornecedorBankInfo(record: any, data: any): Promise<Record<string, any> | null> {
+  const fornecedor = await findFornecedorForFactura(record, data);
+  if (!fornecedor) return null;
+
+  let fornecedorUser: any = null;
+  if (fornecedor.userId) {
+    fornecedorUser = await prisma.user.findUnique({ where: { id: fornecedor.userId } }).catch(() => null);
+  }
+
+  const fornecedorData = safeJsonParse((fornecedor as any).data, {});
+
+  const banco_nome = fornecedorUser?.bankName || fornecedorData.banco_nome || null;
+  const banco_iban = fornecedorUser?.bankIban || fornecedorData.banco_iban || fornecedorData.iban || null;
+  const banco_nib = fornecedorUser?.bankNib || fornecedorData.banco_nib || null;
+  const banco_swift = fornecedorUser?.bankSwift || fornecedorData.banco_swift || null;
+  const banco_cidade = fornecedorUser?.bankCity || fornecedorData.banco_cidade || null;
+  const banco_pais = fornecedorUser?.bankCountry || fornecedorData.banco_pais || null;
+  const banco_titular = fornecedorUser?.bankAccountHolder || fornecedorData.banco_titular || fornecedor.nome || null;
+
+  if (!banco_nome && !banco_iban && !banco_cidade && !banco_pais) return null;
+
+  return {
+    fornecedor_id: fornecedor.id,
+    banco_titular,
+    banco_nome,
+    banco_iban,
+    banco_nib,
+    banco_swift,
+    banco_cidade,
+    banco_pais,
+  };
+}
+
 function pickNumber(value: any): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function recordToResource(record: any) {
+export function recordToResource(record: any) {
   if (!record) return null;
   const data = safeJsonParse(record.data, {});
   const resource: any = {
@@ -171,7 +275,7 @@ function recordToResource(record: any) {
     updated_at: record.updatedAt?.toISOString?.() || record.updatedAt,
   };
 
-  for (const key of ['anexos', 'participantes', 'pontosAgenda', 'destinatarios']) {
+  for (const key of ['anexos', 'participantes', 'pontosAgenda', 'destinatarios', 'decisoes']) {
     if (resource[key] !== undefined) {
       resource[key] = safeJsonParse(resource[key], key === 'destinatarios' ? [] : []);
     }
@@ -185,6 +289,11 @@ function recordToResource(record: any) {
   resource.reuniao_interna_id = resource.reuniao_interna_id || resource.internalMeetingId;
   resource.created_by_id = resource.created_by_id || resource.createdById;
   resource.created_by_name = resource.created_by_name || resource.createdByName;
+  // Acta: quem a criou (organizador da reuniao, ou quem a redigiu manualmente)
+  // e sempre quem consta em created_by - sem isto "organizador_id" nunca
+  // batia com o utilizador autenticado e ninguem conseguia editar a acta.
+  resource.organizador_id = resource.organizador_id || resource.created_by_id;
+  resource.organizador_nome = resource.organizador_nome || resource.created_by_name;
   resource.titulo = resource.titulo || resource.assunto;
   resource.conteudo = resource.conteudo || resource.mensagem;
   resource.fornecedor_nome = resource.fornecedor_nome || resource.fornecedor;
@@ -194,6 +303,15 @@ function recordToResource(record: any) {
   resource.data_fim = resource.data_fim || resource.dataFim;
   resource.valor_total = resource.valor_total || resource.valor;
   resource.fornecedor_nif = resource.fornecedor_nif || resource.nif;
+  resource.data_emissao = resource.data_emissao || resource.dataEmissao;
+  resource.data_vencimento = resource.data_vencimento || resource.dataVencimento;
+  resource.data_recebimento = resource.data_recebimento || resource.created_at;
+  resource.pago_at = resource.pago_at || (resource.paidAt?.toISOString?.() || resource.paidAt) || null;
+  resource.total = resource.total ?? resource.valor ?? 0;
+  resource.subtotal = resource.subtotal ?? resource.valor ?? 0;
+  resource.purchase_order_id = resource.purchase_order_id || resource.purchaseOrderId;
+  resource.numero_ordem = resource.numero_ordem || resource.numeroOrdem;
+  resource.numero_ordem_pagamento = resource.numero_ordem_pagamento || resource.numeroOrdemPagamento;
   resource.matricula = resource.matricula || resource.plate;
   resource.marca = resource.marca || resource.brand;
   resource.modelo = resource.modelo || resource.model;
@@ -213,6 +331,24 @@ function recordToResource(record: any) {
   resource.prioridade = resource.prioridade || 'normal';
   resource.numero_passageiros = resource.numero_passageiros ?? resource.participants ?? 1;
   resource.lista_passageiros = resource.lista_passageiros || [];
+
+  // Cartas de apresentacao / pedidos de audiencia: o ecra de detalhes le
+  // "contact"/"email"/"phone"/"company" (nomes usados pelo formulario de
+  // criacao, guardados so no JSON flexivel), mas registos mais antigos ou
+  // criados directamente na base de dados (ex: seed) usam as colunas reais
+  // contactName/contactEmail/contactPhone/requestorName/organization - sem
+  // este alias ficavam sempre em branco no ecra.
+  resource.contact = resource.contact || resource.contactName || resource.requestorName;
+  resource.email = resource.email || resource.contactEmail || resource.requestorEmail;
+  resource.phone = resource.phone || resource.contactPhone || resource.requestorPhone;
+  resource.company = resource.company || resource.organization;
+  resource.area = resource.area || resource.businessArea;
+  resource.reason = resource.reason || resource.purpose;
+  // O "createdAt" (camelCase) e apagado mais abaixo (fica so "created_at"),
+  // mas varios ecras ainda leem item.createdAt - repor como alias evita
+  // "Data de Submissao: N/A".
+  resource.createdAt = resource.created_at;
+  resource.updatedAt = resource.updated_at;
 
   for (const key of ['data', 'createdById', 'createdByName', 'updatedById', 'updatedByName', 'approvedById', 'approvedByName', 'approvedAt', 'rejectedById', 'rejectedByName', 'rejectedAt', 'createdAt', 'updatedAt']) {
     delete (resource as any)[key];
@@ -250,7 +386,7 @@ async function buildCreateData(body: any, user: NonNullable<AuthenticatedRequest
     'requestorEmail', 'requestorPhone', 'organization', 'dataInicio', 'dataFim',
     'dataEmissao', 'dataVencimento', 'dataReuniao', 'horaInicio', 'horaFim',
     'local', 'tipoReuniao', 'modalidade', 'direcao', 'funcao', 'importancia',
-    'solucao', 'area', 'motorista'
+    'solucao', 'area', 'motorista', 'purchaseOrderId', 'numeroOrdem', 'numeroOrdemPagamento'
   ];
 
   for (const field of textFields) {
@@ -263,7 +399,7 @@ async function buildCreateData(body: any, user: NonNullable<AuthenticatedRequest
     if (value !== undefined) base[field] = value;
   }
 
-  for (const field of ['anexos', 'participantes', 'pontosAgenda', 'destinatarios']) {
+  for (const field of ['anexos', 'participantes', 'pontosAgenda', 'destinatarios', 'decisoes']) {
     if (enrichedBody[field] !== undefined) base[field] = stringify(enrichedBody[field], []);
   }
 
@@ -286,7 +422,7 @@ export async function validatePermission(
     return false;
   }
 
-  const userPerms = permissions.getUserPermissions(user.role as any, user.department, undefined);
+  const userPerms = await permissions.getUserPermissions(user.role as any, user.department, undefined);
   const hasPermission = permissions.hasPermission(userPerms, module, action);
 
   if (!hasPermission) {
@@ -374,6 +510,62 @@ export class ModuleRoutesHelper {
       const createData = await buildCreateData(req.body, user, config);
       const created = await delegate.create({ data: createData });
 
+      // Quando a secretaria agenda directamente uma reuniao externa (carta de
+      // apresentacao/audiencia) ja atribuida a um utilizador da plataforma,
+      // notifica esse utilizador com o local/dia/detalhes da reuniao.
+      if ((config.model === 'presentation' || config.model === 'audience') && created.status === STATUS.AGENDADO) {
+        const createdData = safeJsonParse((created as any).data, {});
+        const assignedToId = createdData.assigned_to_id;
+        if (assignedToId) {
+          const assignedUser = await prisma.user.findUnique({ where: { id: assignedToId } }).catch(() => null);
+          if (assignedUser?.email) {
+            const quando = createdData.preferredDate
+              ? `${createdData.preferredDate}${createdData.time ? ` às ${createdData.time}` : ''}`
+              : 'data a confirmar';
+            const onde = createdData.meetingType === 'online'
+              ? (createdData.platform || 'reunião online')
+              : (createdData.location || 'local a confirmar');
+            const quem = (created as any).organization || (created as any).company || 'um visitante externo';
+            await notifications.createNotification(
+              assignedUser.email,
+              'external_meeting_scheduled',
+              `A secretaria agendou uma reunião externa consigo, com ${quem}, em ${quando} (${onde}).`,
+              created.id
+            ).catch(() => null);
+          }
+        }
+      }
+
+      // Comunicacao interna: se for indicado um destinatario especifico (um
+      // utilizador real, escolhido por pesquisa - nunca texto livre), a
+      // notificacao vai so para ele; caso contrario chega a TODOS os
+      // utilizadores activos do departamento de destino.
+      if (config.model === 'comunicacao') {
+        const createdData = safeJsonParse((created as any).data, {});
+        const destinatarios = createdData.destinatario_id
+          ? await prisma.user.findMany({ where: { id: createdData.destinatario_id, status: 'active' } })
+          : createdData.departamento_destino_id
+            ? await prisma.user.findMany({ where: { departmentId: createdData.departamento_destino_id, status: 'active' } })
+            : createdData.departamento_destino
+              ? await prisma.user.findMany({ where: { department: createdData.departamento_destino, status: 'active' } })
+              : [];
+
+        const origem = createdData.departamento_origem || user.department || 'outro departamento';
+        const assunto = createdData.titulo || createdData.assunto || 'Sem assunto';
+        await Promise.all(
+          destinatarios
+            .filter((destinatario) => destinatario.id !== user.id)
+            .map((destinatario) =>
+              notifications.createNotification(
+                destinatario.email,
+                'comunicacao_recebida',
+                `Nova comunicação interna de ${origem}: ${assunto}`,
+                created.id
+              ).catch(() => null)
+            )
+        );
+      }
+
       await auditService.logAction(`${config.name}_created`, 'info', { resourceId: created.id, data: req.body }, {
         userId: user.id,
         userEmail: user.email,
@@ -403,7 +595,7 @@ export class ModuleRoutesHelper {
   static async list(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
       const user = req.user!;
-      const userPerms = permissions.getUserPermissions(user.role as any, user.department, undefined);
+      const userPerms = await permissions.getUserPermissions(user.role as any, user.department, undefined);
       const hasReadAll = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_ALL);
       const hasReadOwn = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_OWN);
 
@@ -411,7 +603,10 @@ export class ModuleRoutesHelper {
         return denyReadAccess(req, res, config.permissionModule);
       }
 
-      const where = !hasReadAll && hasReadOwn ? { createdById: user.id } : {};
+      const where = {
+        ...(!hasReadAll && hasReadOwn ? { createdById: user.id } : {}),
+        deletedAt: null,
+      };
       const records = await delegateFor(config).findMany({ where, orderBy: { createdAt: 'desc' } });
       const resources = records.map(recordToResource);
 
@@ -424,7 +619,7 @@ export class ModuleRoutesHelper {
   static async get(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
       const user = req.user!;
-      const userPerms = permissions.getUserPermissions(user.role as any, user.department, undefined);
+      const userPerms = await permissions.getUserPermissions(user.role as any, user.department, undefined);
       const hasReadAll = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_ALL);
       const hasReadOwn = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_OWN);
       if (!hasReadAll && !hasReadOwn) {
@@ -432,7 +627,7 @@ export class ModuleRoutesHelper {
       }
 
       const record = await delegateFor(config).findUnique({ where: { id: req.params.id } });
-      if (!record) {
+      if (!record || record.deletedAt) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
       }
 
@@ -459,7 +654,7 @@ export class ModuleRoutesHelper {
 
       const user = req.user!;
       const existing = await delegateFor(config).findUnique({ where: { id: req.params.id } });
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
       }
 
@@ -519,14 +714,20 @@ export class ModuleRoutesHelper {
 
       const user = req.user!;
       const existing = await delegateFor(config).findUnique({ where: { id: req.params.id } });
-      if (!existing) {
+      if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
       }
 
       const active = await validateNotApproved(req, res, existing, config);
       if (!active) return;
 
-      await delegateFor(config).delete({ where: { id: req.params.id } });
+      // Eliminacao suave (soft-delete): o registo vai para a Lixeira em vez de
+      // ser apagado de imediato, e pode ser restaurado la (Administrador do
+      // Sistema) ou eliminado definitivamente.
+      await delegateFor(config).update({
+        where: { id: req.params.id },
+        data: { deletedAt: new Date(), deletedById: user.id, deletedByName: user.name },
+      });
       await HistoryService.record({
         module: config.model,
         resourceId: req.params.id,
@@ -581,14 +782,79 @@ export class ModuleRoutesHelper {
         });
       }
 
+      // A Ordem de Pagamento tem de existir antes de submeter ao banco (e, por
+      // consequencia, antes de pagar - "pago" so e alcancavel a partir de
+      // "submetido_ao_banco"). Sem isto seria possivel saltar este passo
+      // chamando a API directamente, contornando o botao da interface.
+      if (config.model === 'factura' && nextStatus === 'submetido_ao_banco' && !(existing as any).numeroOrdemPagamento) {
+        return res.status(400).json({
+          error: 'BAD_REQUEST',
+          message: 'Gere a Ordem de Pagamento antes de submeter a factura ao banco.'
+        });
+      }
+
       const data = safeJsonParse(existing.data, {});
-      const updated = await delegateFor(config).update({
+      // A transicao para "pago" tem de gravar a data de pagamento na coluna real
+      // (paidAt), nao so no JSON flexivel - e o que "Data de Pagamento"/relatorios
+      // e o filtro de facturas em atraso usam para saber que foi paga e quando.
+      const extraColumns: any = {};
+      if (config.model === 'factura' && nextStatus === STATUS.PAGO && !(existing as any).paidAt) {
+        extraColumns.paidAt = new Date();
+      }
+      let updated = await delegateFor(config).update({
         where: { id: req.params.id },
         data: {
           status: nextStatus,
+          ...extraColumns,
           data: stringify({ ...data, ...req.body, status: nextStatus }),
         }
       });
+
+      // Sincronizacao Gestao de Pagamento: assim que a factura fica aprovada, gera
+      // automaticamente o numero da Ordem de Pagamento (despacho/conta a debitar ficam
+      // por preencher e podem ser completados depois no ecra de detalhe da factura).
+      if (config.model === 'factura' && nextStatus === STATUS.APROVADO && !(updated as any).numeroOrdemPagamento) {
+        const facturaData = safeJsonParse((updated as any).data, {});
+        const bancoInfo = await resolveFornecedorBankInfo(updated, facturaData).catch(() => null);
+        const numeroOrdemPagamento = `OP/N.º ${1000 + Math.floor(Math.random() * 9000)}/${new Date().getFullYear()}`;
+        updated = await delegateFor(config).update({
+          where: { id: req.params.id },
+          data: {
+            numeroOrdemPagamento,
+            data: stringify({
+              ...facturaData,
+              ...(bancoInfo || {}),
+              ordem_pagamento: {
+                numero_despacho: null,
+                conta_debito: null,
+                banco_destino_cidade: bancoInfo?.banco_cidade || facturaData.banco_cidade || null,
+                banco_destino_pais: bancoInfo?.banco_pais || facturaData.banco_pais || null,
+                gerada_em: new Date().toISOString(),
+                gerada_por_id: user.id,
+                gerada_por_nome: user.name,
+                assinaturas: [],
+              },
+            }),
+          }
+        });
+      }
+
+      // Notifica o fornecedor quando a factura avanca para submissao ao banco ou pagamento.
+      if (config.model === 'factura' && (nextStatus === 'submetido_ao_banco' || nextStatus === STATUS.PAGO)) {
+        const fornecedorEmail = await resolveFacturaFornecedorEmail(updated);
+        if (fornecedorEmail) {
+          const numero = (updated as any).numero || req.params.id;
+          const mensagem = nextStatus === STATUS.PAGO
+            ? `A sua factura ${numero} foi paga.`
+            : `A sua factura ${numero} foi submetida ao banco para pagamento.`;
+          await notifications.createNotification(
+            fornecedorEmail,
+            nextStatus === STATUS.PAGO ? 'factura_paga' : 'factura_submetida_banco',
+            mensagem,
+            req.params.id
+          ).catch(() => null);
+        }
+      }
 
       await auditService.logAction(`${config.name}_${nextStatus}`, 'info', { resourceId: req.params.id, oldStatus: existing.status, newStatus: nextStatus }, {
         userId: user.id,
@@ -634,7 +900,7 @@ export class ModuleRoutesHelper {
   static async history(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
       const user = req.user!;
-      const userPerms = permissions.getUserPermissions(user.role as any, user.department, undefined);
+      const userPerms = await permissions.getUserPermissions(user.role as any, user.department, undefined);
       const hasReadAll = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_ALL);
       const hasReadOwn = permissions.hasPermission(userPerms, config.permissionModule, permissions.ACTIONS.READ_OWN);
       if (!hasReadAll && !hasReadOwn) {

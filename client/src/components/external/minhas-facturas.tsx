@@ -80,23 +80,23 @@ export function MinhasFacturas() {
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      registada: { label: 'Registada', color: 'bg-blue-500', icon: Clock },
-      rascunho: { label: 'Rascunho', color: 'bg-gray-500', icon: Clock },
-      pendente: { label: 'Pendente', color: 'bg-blue-500', icon: Clock },
-      em_validacao: { label: 'Em Validação', color: 'bg-purple-500', icon: Clock },
-      validado: { label: 'Validado', color: 'bg-purple-500', icon: CheckCircle },
-      aprovada: { label: 'Aprovada', color: 'bg-green-500', icon: CheckCircle },
-      aprovado: { label: 'Aprovado', color: 'bg-green-500', icon: CheckCircle },
-      rejeitada: { label: 'Rejeitada', color: 'bg-red-500', icon: XCircle },
-      rejeitado: { label: 'Rejeitado', color: 'bg-red-500', icon: XCircle },
-      submetido_ao_banco: { label: 'Submetido ao Banco', color: 'bg-indigo-500', icon: CheckCircle },
-      paga: { label: 'Paga', color: 'bg-green-700', icon: CheckCircle },
-      pago: { label: 'Pago', color: 'bg-green-700', icon: CheckCircle },
+      registada: { label: 'Registada', color: 'var(--tone-info)', icon: Clock },
+      rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)', icon: Clock },
+      pendente: { label: 'Pendente', color: 'var(--tone-info)', icon: Clock },
+      em_validacao: { label: 'Em Validação', color: 'var(--tone-info)', icon: Clock },
+      validado: { label: 'Validado', color: 'var(--tone-info)', icon: CheckCircle },
+      aprovada: { label: 'Aprovada', color: 'var(--tone-success)', icon: CheckCircle },
+      aprovado: { label: 'Aprovado', color: 'var(--tone-success)', icon: CheckCircle },
+      rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)', icon: XCircle },
+      rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)', icon: XCircle },
+      submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)', icon: CheckCircle },
+      paga: { label: 'Paga', color: 'var(--tone-success)', icon: CheckCircle },
+      pago: { label: 'Pago', color: 'var(--tone-success)', icon: CheckCircle },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
     const Icon = badge.icon;
     return (
-      <Badge className={`${badge.color} text-white flex items-center gap-1`}>
+      <Badge className="text-white flex items-center gap-1" style={{ backgroundColor: badge.color }}>
         <Icon className="h-3 w-3" />
         {badge.label}
       </Badge>
@@ -202,23 +202,23 @@ export function MinhasFacturas() {
 
             {/* Feedback */}
             {selectedFactura.validacao_comentario && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <p className="font-medium text-purple-900 mb-1">Comentário de Validação</p>
-                <p className="text-sm text-purple-700">{selectedFactura.validacao_comentario}</p>
+              <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
+                <p className="font-medium mb-1" style={{ color: 'var(--tone-info)' }}>Comentário de Validação</p>
+                <p className="text-sm" style={{ color: 'var(--tone-info)' }}>{selectedFactura.validacao_comentario}</p>
               </div>
             )}
 
             {selectedFactura.aprovacao_comentario && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="font-medium text-green-900 mb-1">Comentário de Aprovação</p>
-                <p className="text-sm text-green-700">{selectedFactura.aprovacao_comentario}</p>
+              <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-success-soft)', borderColor: 'var(--tone-success)' }}>
+                <p className="font-medium mb-1" style={{ color: 'var(--tone-success)' }}>Comentário de Aprovação</p>
+                <p className="text-sm" style={{ color: 'var(--tone-success)' }}>{selectedFactura.aprovacao_comentario}</p>
               </div>
             )}
 
             {selectedFactura.rejeicao_motivo && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="font-medium text-red-900 mb-1">Motivo de Rejeição</p>
-                <p className="text-sm text-red-700">{selectedFactura.rejeicao_motivo}</p>
+              <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-danger-soft)', borderColor: 'var(--tone-danger)' }}>
+                <p className="font-medium mb-1" style={{ color: 'var(--tone-danger)' }}>Motivo de Rejeição</p>
+                <p className="text-sm" style={{ color: 'var(--tone-danger)' }}>{selectedFactura.rejeicao_motivo}</p>
               </div>
             )}
           </CardContent>
@@ -259,7 +259,7 @@ export function MinhasFacturas() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-blue-600">{stats.registadas}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--tone-info)' }}>{stats.registadas}</p>
               <p className="text-xs text-muted-foreground mt-1">Registadas</p>
             </div>
           </CardContent>
@@ -267,7 +267,7 @@ export function MinhasFacturas() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-purple-600">{stats.em_validacao}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--tone-accent)' }}>{stats.em_validacao}</p>
               <p className="text-xs text-muted-foreground mt-1">Em Validação</p>
             </div>
           </CardContent>
@@ -275,7 +275,7 @@ export function MinhasFacturas() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-green-600">{stats.aprovadas}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>{stats.aprovadas}</p>
               <p className="text-xs text-muted-foreground mt-1">Aprovadas</p>
             </div>
           </CardContent>
@@ -283,7 +283,7 @@ export function MinhasFacturas() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-red-600">{stats.rejeitadas}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--tone-danger)' }}>{stats.rejeitadas}</p>
               <p className="text-xs text-muted-foreground mt-1">Rejeitadas</p>
             </div>
           </CardContent>
@@ -291,7 +291,7 @@ export function MinhasFacturas() {
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold text-green-700">{stats.pagas}</p>
+              <p className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>{stats.pagas}</p>
               <p className="text-xs text-muted-foreground mt-1">Pagas</p>
             </div>
           </CardContent>
@@ -326,9 +326,9 @@ export function MinhasFacturas() {
         <TabsContent value="todas" className="space-y-4">
           {/* Mensagem de erro */}
           {error && (
-            <Card className="border-red-500">
+            <Card style={{ borderColor: 'var(--tone-danger)' }}>
               <CardContent className="py-6 text-center">
-                <p className="text-red-600 font-semibold mb-2">Erro ao carregar facturas</p>
+                <p className="font-semibold mb-2" style={{ color: 'var(--tone-danger)' }}>Erro ao carregar facturas</p>
                 <p className="text-sm text-muted-foreground">{error}</p>
                 <Button onClick={loadFacturas} variant="outline" className="mt-4">
                   Tentar Novamente
@@ -462,7 +462,7 @@ export function MinhasFacturas() {
                         <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold text-green-600">
+                        <p className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>
                           {formatCurrency(factura.total, factura.moeda)}
                         </p>
                       </div>
@@ -516,10 +516,10 @@ export function MinhasFacturas() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-2xl font-bold text-green-700">
+                          <p className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>
                             {formatCurrency(factura.total, factura.moeda)}
                           </p>
-                          <Badge className="mt-2 bg-green-100 text-green-800">
+                          <Badge className="mt-2" style={{ backgroundColor: 'var(--tone-success-soft)', color: 'var(--tone-success)' }}>
                             ✓ Pagamento Concluído
                           </Badge>
                         </div>
@@ -555,7 +555,7 @@ export function MinhasFacturas() {
                         <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                       </div>
                       <div className="text-right">
-                        <p className="text-2xl font-bold text-red-600">
+                        <p className="text-2xl font-bold" style={{ color: 'var(--tone-danger)' }}>
                           {formatCurrency(factura.total, factura.moeda)}
                         </p>
                       </div>

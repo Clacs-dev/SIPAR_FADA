@@ -62,18 +62,25 @@ export interface Factura {
   numero_fornecedor: string; // Número da factura do fornecedor
   numero_submissao?: string; // Nº de submissão do registo (gerado automaticamente)
   tipo: FacturaTipo; // Mercadoria, Serviço ou Ambos
-  fornecedor_id: string;
-  fornecedor: Fornecedor;
-  data_emissao: string;
-  data_vencimento: string;
-  data_recebimento: string;
+  fornecedor_id?: string;
+  // O backend guarda o fornecedor como texto simples; so aparece como objecto
+  // quando alguem explicitamente estrutura os dados assim (ex: portal de fornecedores).
+  fornecedor: Fornecedor | string;
+  fornecedor_nome?: string;
+  fornecedor_nif?: string;
+  fornecedor_email?: string;
+  nif?: string;
+  data_emissao?: string;
+  data_vencimento?: string;
+  data_recebimento?: string;
   data_registo?: string; // Para compatibilidade com backend
   status: FacturaStatus;
   
   // Valores financeiros
-  subtotal: number;
-  iva_total: number;
-  total: number;
+  subtotal?: number;
+  iva_total?: number;
+  total?: number;
+  valor?: number; // Coluna real do backend; "total" so existe quando submetido via formulario externo
   moeda: string; // AOA, USD, EUR
   
   // Itens da factura
@@ -83,7 +90,40 @@ export interface Factura {
   descricao: string;
   observacoes?: string;
   condicoes_pagamento?: string;
-  
+
+  // Dados bancários para pagamento (preenchidos pelo fornecedor/utilizador externo)
+  banco_nome?: string;
+  banco_titular?: string;
+  banco_iban?: string;
+  banco_nib?: string;
+  banco_swift?: string;
+  banco_cidade?: string;
+  banco_pais?: string;
+
+  // Tipo de documento submetido (factura definitiva, proforma, etc.)
+  tipo_documento?: 'factura' | 'factura_proforma' | 'outro';
+
+  // Vinculo com Ordem de Compra do Procurement (sincronizacao)
+  purchase_order_id?: string;
+  numero_ordem?: string;
+
+  // Ordem de Pagamento gerada a partir desta factura (Gestão de Pagamento)
+  numero_ordem_pagamento?: string;
+  ordem_pagamento?: {
+    numero_despacho?: string;
+    conta_debito?: string;
+    banco_destino_cidade?: string;
+    banco_destino_pais?: string;
+    gerada_em?: string;
+    gerada_por_nome?: string;
+    assinaturas?: {
+      papel: 'presidente' | 'administrador';
+      nome: string;
+      assinatura_url?: string;
+      assinado_em: string;
+    }[];
+  };
+
   // Validação e aprovação
   validado_por_id?: string;
   validado_por_nome?: string;

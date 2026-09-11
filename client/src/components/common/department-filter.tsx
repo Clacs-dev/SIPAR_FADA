@@ -10,10 +10,10 @@ import { Button } from "../ui/button";
 import { X } from "lucide-react";
 import {
   getGroupedDepartmentOptions,
-  getDepartmentById,
   DEPARTMENT_CATEGORIES,
   DepartmentCategory
 } from "../admin/departments";
+import { useDepartments } from "../../hooks/use-departments";
 
 interface DepartmentFilterProps {
   value: string;
@@ -30,7 +30,8 @@ export function DepartmentFilter({
   placeholder = "Filtrar por departamento...",
   allowClear = true
 }: DepartmentFilterProps) {
-  const selectedDept = value !== 'all' ? getDepartmentById(value) : null;
+  const { departments } = useDepartments();
+  const selectedDept = value !== 'all' ? departments.find((d) => d.slug === value) : null;
 
   const handleClear = () => {
     onChange('all');
@@ -47,7 +48,7 @@ export function DepartmentFilter({
             <SelectItem value="all">
               <span className="font-medium">📊 Todos os Departamentos</span>
             </SelectItem>
-            {getGroupedDepartmentOptions().map((group) => (
+            {getGroupedDepartmentOptions(departments).map((group) => (
               <SelectGroup key={group.label}>
                 <SelectLabel>{group.label}</SelectLabel>
                 {group.options.map((option) => (
@@ -72,11 +73,11 @@ export function DepartmentFilter({
         )}
       </div>
 
-      {showCategoryBadge && selectedDept && (
+      {showCategoryBadge && selectedDept?.categoria && DEPARTMENT_CATEGORIES[selectedDept.categoria as DepartmentCategory] && (
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Categoria:</span>
-          <Badge className={DEPARTMENT_CATEGORIES[selectedDept.category].color}>
-            {DEPARTMENT_CATEGORIES[selectedDept.category].label}
+          <Badge className={DEPARTMENT_CATEGORIES[selectedDept.categoria as DepartmentCategory].color}>
+            {DEPARTMENT_CATEGORIES[selectedDept.categoria as DepartmentCategory].label}
           </Badge>
         </div>
       )}

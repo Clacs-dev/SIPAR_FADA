@@ -81,10 +81,7 @@ export function useComunicacoes(): UseComunicacoesReturn {
       const query = queryParams.toString();
       const endpoint = `/comunicacoes${query ? `?${query}` : ''}`;
 
- console.log(' Buscando comunicações...', endpoint);
       const response = await apiClient.get<{ comunicacoes: Comunicacao[] }>(endpoint);
- console.log(' Comunicações recebidas:', response.comunicacoes?.length || 0);
- console.log(' Dados das comunicações:', response.comunicacoes);
       setComunicacoes(response.comunicacoes || []);
     } catch (err: any) {
  console.error(' Erro ao buscar comunicações:', err);
@@ -126,9 +123,7 @@ export function useComunicacoes(): UseComunicacoesReturn {
     setError(null);
 
     try {
- console.log(' Criando comunicação com dados:', data);
       const response = await apiClient.post<{ comunicacao: Comunicacao }>('/comunicacoes', data);
- console.log(' Comunicação criada com sucesso:', response.comunicacao);
       toast.success('Comunicação criada com sucesso!');
       
       // Atualizar lista local
@@ -153,9 +148,7 @@ export function useComunicacoes(): UseComunicacoesReturn {
     setError(null);
 
     try {
- console.log(' Atualizando comunicação:', id, data);
       const response = await apiClient.put<{ comunicacao: Comunicacao }>(`/comunicacoes/${id}`, data);
- console.log(' Comunicação atualizada:', response.comunicacao);
       toast.success('Comunicação atualizada com sucesso!');
       
       // Atualizar lista local
@@ -221,8 +214,9 @@ export function useComunicacoes(): UseComunicacoesReturn {
       return true;
     } catch (err: any) {
  console.error('Erro ao despachar comunicação:', err);
-      setError(err.message || 'Erro ao despachar comunicação');
-      toast.error('Erro ao despachar comunicação');
+      const message = err.message || 'Erro ao despachar comunicação';
+      setError(message);
+      toast.error(message);
       return false;
     } finally {
       setLoading(false);
@@ -344,8 +338,9 @@ export function useComunicacoes(): UseComunicacoesReturn {
       return true;
     } catch (err: any) {
  console.error('Erro ao delegar comunicação:', err);
-      setError(err.message || 'Erro ao delegar comunicação');
-      toast.error('Erro ao delegar comunicação');
+      const message = err.message || 'Erro ao delegar comunicação';
+      setError(message);
+      toast.error(message);
       return false;
     } finally {
       setLoading(false);

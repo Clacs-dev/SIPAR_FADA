@@ -1,19 +1,18 @@
 import { useState, useEffect } from "react";
 import { 
-  Receipt, 
-  Plus, 
-  Search,
+  Receipt,
+  Plus,
   LayoutGrid,
   List,
   Clock,
   CheckCircle,
   DollarSign,
   FileText,
-  Filter
+  Filter,
+  FileSignature
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { FacturasDashboard } from "./facturas-dashboard";
@@ -31,7 +30,6 @@ export function FacturasMain() {
   const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [filters, setFilters] = useState<FacturaFilters>({});
-  const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [facturas, setFacturas] = useState<Factura[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,24 +131,32 @@ export function FacturasMain() {
 
   // Helper functions
   const getFornecedorNome = (factura: Factura) => {
-    if (factura.fornecedor?.nome) {
+    if (typeof factura.fornecedor === 'string' && factura.fornecedor) {
+      return factura.fornecedor;
+    }
+    if (typeof factura.fornecedor === 'object' && factura.fornecedor?.nome) {
       return factura.fornecedor.nome;
     }
+    if (factura.fornecedor_nome) {
+      return factura.fornecedor_nome;
+    }
     const fornecedor = fornecedores.find(f => f.id === factura.fornecedor_id);
-    return fornecedor?.nome || 'Fornecedor Desconhecido';
+    return fornecedor?.nome || 'Fornecedor não especificado';
   };
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      rascunho: { label: 'Rascunho', color: 'bg-gray-500' },
-      pendente: { label: 'Pendente', color: 'bg-blue-500' },
-      aprovado: { label: 'Aprovado', color: 'bg-green-500' },
-      rejeitado: { label: 'Rejeitado', color: 'bg-red-500' },
-      cancelado: { label: 'Cancelado', color: 'bg-gray-700' },
-      pago: { label: 'Pago', color: 'bg-green-700' },
+      rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
+      pendente: { label: 'Pendente', color: 'var(--tone-info)' },
+      validado: { label: 'Validado', color: 'var(--tone-info)' },
+      aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
+      submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
+      rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
+      cancelado: { label: 'Cancelado', color: 'var(--tone-neutral)' },
+      pago: { label: 'Pago', color: 'var(--tone-success)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const formatCurrency = (value: number, moeda: string = 'AOA') => {
@@ -161,15 +167,13 @@ export function FacturasMain() {
     }).format(value);
   };
 
+  const formatDate = (value?: string | null) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('pt-PT');
+  };
+
   const filteredFacturas = facturas.filter(factura => {
-    const fornecedorNome = getFornecedorNome(factura);
-    
-    if (searchTerm && 
-        !factura.numero.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !factura.numero_fornecedor.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        !fornecedorNome.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false;
-    }
     if (filters.status && factura.status !== filters.status) return false;
     if (filters.fornecedor_id && factura.fornecedor_id !== filters.fornecedor_id) return false;
     return true;
@@ -439,7 +443,7 @@ export function FacturasMain() {
         formData.append('file', comprovativo);
 
         const uploadResponse = await fetch(
-          `${API_BASE_URL}/facturas/upload`,
+          `${API_BASE_URL}/storage/upload`,
           {
             method: 'POST',
             headers: {
@@ -454,7 +458,7 @@ export function FacturasMain() {
         }
 
         const uploadData = await uploadResponse.json();
-        comprovantivoUrl = uploadData.data?.url || '';
+        comprovantivoUrl = uploadData.file?.url || '';
  console.log('Comprovativo uploaded:', comprovantivoUrl);
       }
 
@@ -509,6 +513,70 @@ export function FacturasMain() {
     } catch (err) {
  console.error('Erro ao registar pagamento:', err);
       setError(err instanceof Error ? err.message : 'Erro ao registar pagamento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGerarOrdemPagamento = async (numeroDespacho: string, contaDebito: string) => {
+    if (!accessToken || !selectedFactura) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/ordem-pagamento`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ numero_despacho: numeroDespacho, conta_debito: contaDebito }),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || errorData.error || 'Erro ao gerar Ordem de Pagamento');
+      }
+      const data = await response.json();
+      setSelectedFactura(data.factura);
+      setFacturas((prev) => prev.map((f) => (f.id === data.factura.id ? data.factura : f)));
+      toast.success('Ordem de Pagamento gerada com sucesso!');
+    } catch (err) {
+ console.error('Erro ao gerar Ordem de Pagamento:', err);
+      toast.error(err instanceof Error ? err.message : 'Erro ao gerar Ordem de Pagamento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAssinarOrdemPagamento = async (papel: 'presidente' | 'administrador') => {
+    if (!accessToken || !selectedFactura) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(
+        `${API_BASE_URL}/facturas/${selectedFactura.id}/ordem-pagamento/assinar`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ papel }),
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || errorData.error || 'Erro ao assinar Ordem de Pagamento');
+      }
+      const data = await response.json();
+      setSelectedFactura(data.factura);
+      setFacturas((prev) => prev.map((f) => (f.id === data.factura.id ? data.factura : f)));
+      toast.success('Assinatura registada com sucesso!');
+    } catch (err) {
+ console.error('Erro ao assinar Ordem de Pagamento:', err);
+      toast.error(err instanceof Error ? err.message : 'Erro ao assinar Ordem de Pagamento');
     } finally {
       setLoading(false);
     }
@@ -656,6 +724,8 @@ export function FacturasMain() {
         onReject={handleReject}
         onPay={handlePay}
         onSubmitToBanco={handleSubmitToBanco}
+        onGerarOrdemPagamento={handleGerarOrdemPagamento}
+        onAssinarOrdemPagamento={handleAssinarOrdemPagamento}
       />
     );
   }
@@ -665,13 +735,16 @@ export function FacturasMain() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mb-1.5" style={{ color: 'var(--ring)', fontSize: '13px', fontWeight: 600 }}>
+            Financeiro
+          </div>
+          <h1 className="flex items-center gap-2 font-serif" style={{ fontSize: '26px', fontWeight: 600, color: 'var(--foreground)' }}>
             <Receipt className="h-6 w-6" />
-            Facturas
+            Facturas &amp; Pagamentos
           </h1>
-          <p className="text-muted-foreground">
-            {isExterno 
-              ? 'Gerir e acompanhar suas facturas submetidas' 
+          <p style={{ fontSize: '13.5px', color: 'var(--muted-foreground)' }}>
+            {isExterno
+              ? 'Gerir e acompanhar suas facturas submetidas'
               : 'Gestão financeira de facturas e pagamentos'
             }
           </p>
@@ -696,9 +769,9 @@ export function FacturasMain() {
 
       {/* Error */}
       {error && !loading && (
-        <Card className="border-red-500">
+        <Card style={{ borderColor: 'var(--tone-danger)' }}>
           <CardContent className="py-6 text-center">
-            <p className="text-red-600 font-semibold mb-2">Erro ao carregar facturas</p>
+            <p className="font-semibold mb-2" style={{ color: 'var(--tone-danger)' }}>Erro ao carregar facturas</p>
             <p className="text-sm text-muted-foreground">{error}</p>
           </CardContent>
         </Card>
@@ -731,6 +804,10 @@ export function FacturasMain() {
                   <CheckCircle className="mr-2 h-4 w-4" />
                   Aprovados ({facturas.filter(f => f.status === 'aprovado').length})
                 </TabsTrigger>
+                <TabsTrigger value="ordens_pagamento">
+                  <FileSignature className="mr-2 h-4 w-4" />
+                  Ordens de Pagamento ({facturas.filter(f => !!f.numero_ordem_pagamento).length})
+                </TabsTrigger>
                 <TabsTrigger value="submetido_banco">
                   <FileText className="mr-2 h-4 w-4" />
                   Submetido ao Banco ({facturas.filter(f => f.status === 'submetido_ao_banco').length})
@@ -752,14 +829,6 @@ export function FacturasMain() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex gap-4">
-                    <div className="flex-1">
-                      <Input
-                        placeholder="Pesquisar por número, fornecedor..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        icon={<Search className="h-4 w-4" />}
-                      />
-                    </div>
                     <select
                       className="px-3 py-2 border border-input rounded-md bg-background"
                       value={filters.status || ''}
@@ -827,13 +896,13 @@ export function FacturasMain() {
                                 <strong>Código do Fornecedor:</strong> {factura.numero_fornecedor}
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                <strong>Data de Registo:</strong> {new Date(factura.created_at || factura.data_registo || new Date()).toLocaleDateString('pt-PT')}
+                                <strong>Data de Registo:</strong> {formatDate(factura.created_at || factura.data_registo)}
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                <strong>Data de Emissão:</strong> {new Date(factura.data_emissao).toLocaleDateString('pt-PT')}
+                                <strong>Data de Emissão:</strong> {formatDate(factura.data_emissao)}
                               </p>
                               <p className="text-sm text-muted-foreground">
-                                <strong>Data de Vencimento:</strong> {new Date(factura.data_vencimento).toLocaleDateString('pt-PT')}
+                                <strong>Data de Vencimento:</strong> {formatDate(factura.data_vencimento)}
                               </p>
                             </div>
                           </div>
@@ -1065,11 +1134,11 @@ export function FacturasMain() {
                           <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                           <p className="text-sm text-muted-foreground mt-2">
                             {getFornecedorNome(factura)} •{' '}
-                            Pago em {new Date(factura.pago_at!).toLocaleDateString('pt-PT')}
+                            Pago em {formatDate(factura.pago_at)}
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-2xl font-bold text-green-600">
+                          <p className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>
                             {formatCurrency(factura.total, factura.moeda)}
                           </p>
                         </div>
@@ -1080,23 +1149,65 @@ export function FacturasMain() {
                 )}
               </div>
             </TabsContent>
+
+            {/* Ordens de Pagamento */}
+            <TabsContent value="ordens_pagamento" className="space-y-4">
+              <div className="grid gap-4">
+                {facturas.filter(f => !!f.numero_ordem_pagamento).length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <FileSignature className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">
+                        Nenhuma Ordem de Pagamento gerada ainda. É criada automaticamente quando uma factura é aprovada.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  facturas.filter(f => !!f.numero_ordem_pagamento).map((factura) => {
+                    const assinaturas = factura.ordem_pagamento?.assinaturas || [];
+                    const totalmenteAssinada = assinaturas.some(a => a.papel === 'presidente') && assinaturas.some(a => a.papel === 'administrador');
+                    return (
+                      <Card
+                        key={factura.id}
+                        className="hover:bg-accent cursor-pointer transition-colors"
+                        onClick={() => {
+                          setSelectedFactura(factura);
+                          setView('details');
+                        }}
+                      >
+                        <CardHeader>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge className="text-white" style={{ backgroundColor: 'var(--tone-info)' }}>{factura.numero_ordem_pagamento}</Badge>
+                                {getStatusBadge(factura.status)}
+                                <Badge variant={totalmenteAssinada ? 'default' : 'outline'}>
+                                  {assinaturas.length}/2 assinaturas
+                                </Badge>
+                              </div>
+                              <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                              <p className="text-sm text-muted-foreground mt-2">
+                                Factura {factura.numero} • {getFornecedorNome(factura)}
+                                {factura.ordem_pagamento?.numero_despacho && ` • Despacho ${factura.ordem_pagamento.numero_despacho}`}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-primary">
+                                {formatCurrency(factura.total ?? factura.valor, factura.moeda)}
+                              </p>
+                            </div>
+                          </div>
+                        </CardHeader>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
+            </TabsContent>
           </Tabs>
           ) : (
             // Visualização simplificada para utilizadores externos
             <div className="space-y-4">
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex-1">
-                    <Input
-                      placeholder="Pesquisar por número, descrição..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      icon={<Search className="h-4 w-4" />}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
               <div className="grid gap-4">
                 {filteredFacturas.length === 0 ? (
                   <Card>
@@ -1128,7 +1239,7 @@ export function FacturasMain() {
                             <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                             <div className="mt-2 space-y-1">
                               <p className="text-sm text-muted-foreground">
-                                <strong>Vencimento:</strong> {new Date(factura.data_vencimento).toLocaleDateString('pt-PT')}
+                                <strong>Vencimento:</strong> {formatDate(factura.data_vencimento)}
                               </p>
                             </div>
                           </div>

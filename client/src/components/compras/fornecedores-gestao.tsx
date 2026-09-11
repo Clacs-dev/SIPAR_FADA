@@ -3,13 +3,12 @@
  */
 
 import { useState, useEffect } from "react";
-import { 
-  Building2, Plus, Search, Edit, Trash2, Power, 
+import {
+  Building2, Plus, Edit, Trash2, Power,
   Ban, CheckCircle2, Mail, Phone, MapPin, Package, ArrowLeft, Send
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useFornecedores } from "../../hooks/use-fornecedores";
 import { FornecedorFormDialog } from "./fornecedor-form-dialog";
@@ -31,7 +30,6 @@ interface FornecedoresGestaoProps {
 }
 
 export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
-  const [searchTerm, setSearchTerm] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [selectedFornecedor, setSelectedFornecedor] = useState<Fornecedor | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -100,26 +98,21 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
 
   const getSituacaoBadge = (situacao: string) => {
     const badges: Record<string, { label: string; color: string; icon: any }> = {
-      ativo: { label: "Ativo", color: "bg-green-500", icon: CheckCircle2 },
-      inativo: { label: "Inativo", color: "bg-gray-500", icon: Power },
-      bloqueado: { label: "Bloqueado", color: "bg-red-500", icon: Ban },
+      ativo: { label: "Ativo", color: "var(--tone-success)", icon: CheckCircle2 },
+      inativo: { label: "Inativo", color: "var(--tone-neutral)", icon: Power },
+      bloqueado: { label: "Bloqueado", color: "var(--tone-danger)", icon: Ban },
     };
     const badge = badges[situacao] || badges.inativo;
     const Icon = badge.icon;
     return (
-      <Badge className={`${badge.color} text-white flex items-center gap-1`}>
+      <Badge className="text-white flex items-center gap-1" style={{ backgroundColor: badge.color }}>
         <Icon className="h-3 w-3" />
         {badge.label}
       </Badge>
     );
   };
 
-  // Filtrar por pesquisa
-  const fornecedoresFiltrados = fornecedores.filter(f => 
-    f.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.nif.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    f.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const fornecedoresFiltrados = fornecedores;
 
   // Estatísticas
   const stats = {
@@ -168,38 +161,23 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-green-600">{stats.ativos}</div>
+            <div className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>{stats.ativos}</div>
             <p className="text-xs text-muted-foreground">Ativos</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-gray-600">{stats.inativos}</div>
+            <div className="text-2xl font-bold" style={{ color: 'var(--tone-neutral)' }}>{stats.inativos}</div>
             <p className="text-xs text-muted-foreground">Inativos</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold text-red-600">{stats.bloqueados}</div>
+            <div className="text-2xl font-bold" style={{ color: 'var(--tone-danger)' }}>{stats.bloqueados}</div>
             <p className="text-xs text-muted-foreground">Bloqueados</p>
           </CardContent>
         </Card>
       </div>
-
-      {/* Pesquisa */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Pesquisar por nome, NIF ou email..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Lista de Fornecedores */}
       {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
@@ -271,7 +249,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
 
                   {/* Contato Principal */}
                   {fornecedor.contato_nome && (
-                    <div className="mt-2 text-sm bg-blue-50 p-2 rounded">
+                    <div className="mt-2 text-sm p-2 rounded" style={{ backgroundColor: 'var(--tone-info-soft)' }}>
                       <span className="font-medium">Contato: </span>
                       {fornecedor.contato_nome}
                       {fornecedor.contato_cargo && ` (${fornecedor.contato_cargo})`}
@@ -302,7 +280,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
                       {fornecedor.total_vendas > 0 && (
                         <div>
                           <span className="text-muted-foreground">Vendas: </span>
-                          <span className="font-medium text-green-600">
+                          <span className="font-medium" style={{ color: 'var(--tone-success)' }}>
                             {fornecedor.total_vendas.toLocaleString('pt-AO')} AOA
                           </span>
                         </div>
@@ -316,7 +294,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
                   <Button 
                     size="sm" 
                     variant="outline"
-                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    style={{ color: 'var(--tone-info)' }}
                     onClick={() => enviarCredenciais(fornecedor.id)}
                   >
                     <Send className="h-4 w-4 mr-1" />
@@ -346,7 +324,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
                   <Button 
                     size="sm" 
                     variant="outline"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                    style={{ color: 'var(--tone-danger)' }}
                     onClick={() => handleDeleteClick(fornecedor)}
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
@@ -379,7 +357,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
               Tem a certeza que deseja excluir o fornecedor <strong>{fornecedorToDelete?.nome}</strong>?
               Esta ação não pode ser desfeita.
               {fornecedorToDelete?.total_cotacoes > 0 && (
-                <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-900">
+                <div className="mt-3 p-3 border rounded" style={{ backgroundColor: 'var(--tone-warn-soft)', borderColor: 'var(--tone-warn)', color: 'var(--tone-warn)' }}>
                   <strong>Atenção:</strong> Este fornecedor possui cotações registadas no sistema.
                   Se houver cotações ativas, a exclusão será bloqueada.
                 </div>
@@ -388,7 +366,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteConfirm} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction onClick={handleDeleteConfirm} className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-danger)' }}>
               Excluir
             </AlertDialogAction>
           </AlertDialogFooter>

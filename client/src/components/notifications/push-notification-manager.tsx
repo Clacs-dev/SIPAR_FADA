@@ -299,14 +299,14 @@ export function PushNotificationManager() {
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <span>Permissão do Navegador:</span>
-              <Badge className={isSubscribed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+              <Badge className={isSubscribed ? 'bg-tone-success-soft text-tone-success' : 'bg-tone-danger-soft text-tone-danger'}>
                 {isSubscribed ? 'Ativada' : 'Desativada'}
               </Badge>
             </div>
             
             <div className="flex items-center justify-between">
               <span>Suporte do Navegador:</span>
-              <Badge className={('Notification' in window) ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
+              <Badge className={('Notification' in window) ? 'bg-tone-success-soft text-tone-success' : 'bg-tone-danger-soft text-tone-danger'}>
                 {('Notification' in window) ? 'Suportado' : 'Não Suportado'}
               </Badge>
             </div>
@@ -340,7 +340,7 @@ export function PushNotificationManager() {
           <CardContent className="space-y-4">
             <div>
               <label className="text-sm font-medium">Chave Pública VAPID:</label>
-              <div className="mt-1 p-2 bg-gray-100 rounded text-xs font-mono break-all">
+              <div className="mt-1 p-2 bg-tone-neutral-soft rounded text-xs font-mono break-all">
                 {vapidKey || 'Carregando...'}
               </div>
             </div>
@@ -378,7 +378,7 @@ export function PushNotificationManager() {
               <CardTitle className="text-base">Taxa de Sucesso</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-2xl font-bold text-tone-success">
                 {stats.totalSent + stats.totalFailed > 0 ? 
                   Math.round((stats.totalSent / (stats.totalSent + stats.totalFailed)) * 100) : 0}%
               </div>
@@ -390,7 +390,7 @@ export function PushNotificationManager() {
               <CardTitle className="text-base">Falhas</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-red-600">{stats.totalFailed}</div>
+              <div className="text-2xl font-bold text-tone-danger">{stats.totalFailed}</div>
             </CardContent>
           </Card>
         </div>
@@ -469,11 +469,11 @@ export function PushNotificationManager() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className="bg-green-100 text-green-800">
+                    <Badge className="bg-tone-success-soft text-tone-success">
                       {notification.sent} enviadas
                     </Badge>
                     {notification.failed > 0 && (
-                      <Badge className="bg-red-100 text-red-800">
+                      <Badge className="bg-tone-danger-soft text-tone-danger">
                         {notification.failed} falharam
                       </Badge>
                     )}

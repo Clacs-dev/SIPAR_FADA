@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./components/auth/auth-context";
+import { LicenseProvider, useLicense } from "./hooks/use-license";
+import { LicenseBanner } from "./components/license/license-banner";
+import { LicenseExpiredScreen } from "./components/license/license-expired-screen";
+import { LicenseManagement } from "./components/admin/license-management";
 import { LoginForm } from "./components/auth/login-form";
 import { Sidebar } from "./components/layout/sidebar";
+import { TopBar } from "./components/layout/topbar";
 import { DashboardOverview } from "./components/dashboard/overview";
 import { SendGridStatusBanner } from "./components/dashboard/sendgrid-status-banner";
 import { PresentationForm } from "./components/forms/presentation-form";
@@ -19,29 +24,47 @@ import { DatabaseManagement } from "./components/admin/database-management";
 import { MessagingCenter } from "./components/messaging/messaging-center";
 import { InternalMeetings } from "./components/management/internal-meetings";
 import { Actas } from "./components/management/actas";
-import { Oficios } from "./components/management/oficios";
 import { Comunicacoes } from "./components/management/comunicacoes";
-import { Reclamacoes } from "./components/management/reclamacoes";
-import { ReclamacoesPublicPage } from "./components/reclamacoes/reclamacoes-public-page";
-import { Contratos } from "./components/management/contratos";
-import { Pedidos } from "./components/management/pedidos";
 import { Compras } from "./components/management/compras";
-import { Planejamento } from "./components/management/planejamento";
 import { Facturas } from "./components/management/facturas";
-import { StorageAdmin } from "./components/admin/storage-admin";
-import { GmailConfig } from "./components/admin/gmail-config";
+import { MeetingRoomsAdmin } from "./components/meeting-rooms/meeting-rooms-admin";
+import { IntegrationsConfig } from "./components/admin/integrations-config";
+import { DepartmentsAdmin } from "./components/admin/departments-admin";
+import { AreasAdmin } from "./components/admin/areas-admin";
+import { RolesPermissionsAdmin } from "./components/admin/roles-permissions-admin";
+import { SystemDiagnostics } from "./components/admin/system-diagnostics";
+import { TrashScreen } from "./components/admin/trash";
 import { MinhasFacturas } from "./components/external/minhas-facturas";
 import { DepartmentDashboard } from "./components/dashboard/department-dashboard";
 import { DepartmentReports } from "./components/reports/department-reports";
-import { FrotasMain } from "./components/frotas/frotas-main";
 import ActaDemoPage from "./pages/acta-demo";
 import { Toaster } from "./components/ui/sonner";
+import { toast } from "sonner@2.0.3";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog";
 import { hasPermission } from "./components/auth/permissions";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 
 function AppContent() {
   const { user, isLoading } = useAuth();
+  const { isRestricted } = useLicense();
   const [activeTab, setActiveTab] = useState("dashboard");
+  // Id de uma acta a abrir directamente ao navegar para "Livro de Actas" (a
+  // partir do botao "Ver Acta" na Agenda ou nas Reunioes Internas).
+  const [pendingActaId, setPendingActaId] = useState<string | null>(null);
+  const openActa = (actaId: string) => {
+    setPendingActaId(actaId);
+    setActiveTab("actas");
+  };
 
   // =====================================================
   // VERIFICAÇÃO DE RELOAD PENDENTE APÓS LOGIN FORNECEDOR
@@ -86,7 +109,7 @@ function AppContent() {
         return (
           <>
             {hasPermission(user.role, "MANAGE_SETTINGS") && (
-              <SendGridStatusBanner onConfigure={() => setActiveTab("sendgrid-config")} />
+              <SendGridStatusBanner onConfigure={() => setActiveTab("integrations-config")} />
             )}
             <DashboardOverview onTabChange={setActiveTab} />
           </>
@@ -129,7 +152,7 @@ function AppContent() {
         if (!hasPermission(user.role, "VIEW_SCHEDULE")) {
           return <div>Acesso negado</div>;
         }
-        return <Agenda />;
+        return <Agenda onNavigateToActa={openActa} />;
 
       // Gerenciamento de usuários (apenas admin)
       case "users":
@@ -153,11 +176,11 @@ function AppContent() {
             <div className="grid gap-4 md:grid-cols-2">
               <div
                 className="p-6 border border-border rounded-lg cursor-pointer hover:bg-accent"
-                onClick={() => setActiveTab("sendgrid-config")}
+                onClick={() => setActiveTab("integrations-config")}
               >
-                <h3>📧 Configurar Gmail SMTP</h3>
+                <h3>📧 E-mail e plataformas de reunião</h3>
                 <p className="text-muted-foreground text-sm">
-                  Configure o envio automático de emails via Gmail
+                  Configure o envio de e-mails (Gmail/SMTP) e as integrações de reunião
                 </p>
               </div>
               <div
@@ -169,44 +192,7 @@ function AppContent() {
                   Ver histórico de e-mails enviados pelo sistema
                 </p>
               </div>
-              <div
-                className="p-6 border border-border rounded-lg cursor-pointer hover:bg-accent"
-                onClick={async () => {
-                  if (confirm('⚠️ ATENÇÃO! Isto irá deletar e recriar TODOS os utilizadores de demonstração com os novos departamentos. Continuar?')) {
-                    try {
-                      const response = await fetch(
-                        `${API_BASE_URL}/auth/reset-demo-users`,
-                        {
-                          method: 'POST',
-                          headers: {
-                            ...getAuthHeaders(false),
-                            'Content-Type': 'application/json'
-                          }
-                        }
-                      );
-                      const data = await response.json();
-                      if (data.success) {
-                        alert(`✅ Sucesso! ${data.message}\n\nPor favor, faça logout e login novamente.`);
-                      } else {
-                        alert(`❌ Erro: ${data.error}`);
-                      }
-                    } catch (error) {
-                      alert(`❌ Erro ao resetar utilizadores: ${error.message}`);
-                    }
-                  }
-                }}
-              >
-                <h3>🔄 Resetar Utilizadores Demo</h3>
-                <p className="text-muted-foreground text-sm">
-                  Recriar utilizadores com novos departamentos (27 roles)
-                </p>
-              </div>
-              <div className="p-6 border border-border rounded-lg">
-                <h3>Integrações</h3>
-                <p className="text-muted-foreground text-sm">
-                  Gerencie conexões com plataformas de reunião
-                </p>
-              </div>
+              <ResetDemoUsersCard />
               <div className="p-6 border border-border rounded-lg">
                 <h3>Segurança</h3>
                 <p className="text-muted-foreground text-sm">
@@ -247,14 +233,50 @@ function AppContent() {
         }
         return <DatabaseManagement />;
 
-      case "department-dashboard":
+      case "departments-admin":
         if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <DepartmentsAdmin />;
+
+      case "areas-admin":
+        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <AreasAdmin />;
+
+      case "roles-permissions-admin":
+        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <RolesPermissionsAdmin />;
+
+      case "system-diagnostics":
+        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <SystemDiagnostics />;
+
+      case "trash":
+        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <TrashScreen />;
+
+      case "license-management":
+        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <LicenseManagement />;
+
+      case "department-dashboard":
+        if (!hasPermission(user.role, "VIEW_DEPARTMENT_REPORTS")) {
           return <div>Acesso negado</div>;
         }
         return <DepartmentDashboard />;
 
       case "department-reports":
-        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
+        if (!hasPermission(user.role, "VIEW_DEPARTMENT_REPORTS")) {
           return <div>Acesso negado</div>;
         }
         return <DepartmentReports />;
@@ -266,36 +288,26 @@ function AppContent() {
         if (!hasPermission(user.role, "MANAGE_INTERNAL_MEETINGS")) {
           return <div>Acesso negado</div>;
         }
-        return <InternalMeetings />;
+        return <InternalMeetings onNavigateToActa={openActa} />;
+
+      case "meeting-rooms":
+        if (!hasPermission(user.role, "MANAGE_MEETING_ROOMS")) {
+          return <div>Acesso negado</div>;
+        }
+        return <MeetingRoomsAdmin />;
 
       case "actas":
         if (!hasPermission(user.role, "MANAGE_INTERNAL_MEETINGS")) {
           return <div>Acesso negado</div>;
         }
-        return <Actas />;
+        return <Actas initialActaId={pendingActaId} onInitialActaConsumed={() => setPendingActaId(null)} />;
 
       case "acta-demo":
         // Página de demonstração acessível a todos os utilizadores autenticados
         return <ActaDemoPage />;
 
-      case "oficios":
-        return <Oficios />;
-
       case "comunicacoes":
         return <Comunicacoes />;
-
-      case "reclamacoes":
-        return <Reclamacoes />;
-
-      case "submeter-reclamacao":
-        // Página pública para usuários externos submeterem reclamações
-        return <ReclamacoesPublicPage />;
-
-      case "contratos":
-        return <Contratos />;
-
-      case "pedidos":
-        return <Pedidos />;
 
       case "compras":
         return <Compras />;
@@ -303,9 +315,6 @@ function AppContent() {
       case "cotacoes":
         // Portal de Cotações - acessível para usuários externos
         return <Compras mode="cotacoes" />;
-
-      case "planejamento":
-        return <Planejamento />;
 
       case "facturas":
         if (!hasPermission(user.role, "VIEW_FACTURAS")) {
@@ -317,21 +326,11 @@ function AppContent() {
         // Rota específica para utilizadores externos
         return <MinhasFacturas />;
 
-      case "frotas":
-        // Dashboard de Gestão de Frotas
-        return <FrotasMain />;
-
-      case "storage-admin":
+      case "integrations-config":
         if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
           return <div>Acesso negado</div>;
         }
-        return <StorageAdmin />;
-
-      case "sendgrid-config":
-        if (!hasPermission(user.role, "MANAGE_SETTINGS")) {
-          return <div>Acesso negado</div>;
-        }
-        return <GmailConfig />;
+        return <IntegrationsConfig />;
 
       default:
         return <DashboardOverview />;
@@ -344,18 +343,91 @@ function AppContent() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
       />
-      <main className="flex-1 overflow-auto">
-        <div className="p-6">{renderContent()}</div>
-      </main>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <TopBar onTabChange={setActiveTab} />
+        <LicenseBanner />
+        <main className="flex-1 overflow-auto">
+          <div className="p-6">
+            {isRestricted && activeTab !== "license-management" ? (
+              <LicenseExpiredScreen onGoToLicense={() => setActiveTab("license-management")} />
+            ) : (
+              renderContent()
+            )}
+          </div>
+        </main>
+      </div>
       <Toaster />
     </div>
+  );
+}
+
+function ResetDemoUsersCard() {
+  const [resetting, setResetting] = useState(false);
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/reset-demo-users`,
+        {
+          method: 'POST',
+          headers: {
+            ...getAuthHeaders(false),
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`${data.message} Por favor, faça logout e login novamente.`);
+      } else {
+        toast.error(data.error || 'Erro ao resetar utilizadores');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao resetar utilizadores');
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <div className="p-6 border border-border rounded-lg cursor-pointer hover:bg-accent">
+          <h3>🔄 Resetar Utilizadores Demo</h3>
+          <p className="text-muted-foreground text-sm">
+            Recriar utilizadores com novos departamentos (27 roles)
+          </p>
+        </div>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Resetar utilizadores de demonstração</AlertDialogTitle>
+          <AlertDialogDescription>
+            Isto irá eliminar e recriar TODOS os utilizadores de demonstração com os novos departamentos. Continuar?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={handleReset}
+            disabled={resetting}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            {resetting ? 'A resetar...' : 'Resetar'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <LicenseProvider>
+        <AppContent />
+      </LicenseProvider>
     </AuthProvider>
   );
 }

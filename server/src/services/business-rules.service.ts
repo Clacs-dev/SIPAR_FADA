@@ -32,7 +32,7 @@ const RULES: Record<string, ModuleRules> = {
     },
   },
   factura: {
-    statuses: ['pendente', 'validado', 'aprovado', 'rejeitado', 'pago', 'submetido_banco', 'cancelado', 'arquivado'],
+    statuses: ['rascunho', 'pendente', 'validado', 'aprovado', 'rejeitado', 'pago', 'submetido_ao_banco', 'cancelado', 'arquivado'],
     initialStatus: 'pendente',
     terminalStatuses: ['pago', 'rejeitado', 'cancelado', 'arquivado'],
     aliases: {
@@ -40,18 +40,24 @@ const RULES: Record<string, ModuleRules> = {
       validada: 'validado',
       pay: 'pago',
       paid: 'pago',
+      submetido_banco: 'submetido_ao_banco',
     },
     transitions: {
+      rascunho: ['pendente', 'validado', 'aprovado', 'rejeitado', 'cancelado', 'arquivado'],
       pendente: ['validado', 'aprovado', 'rejeitado', 'cancelado', 'arquivado'],
       validado: ['aprovado', 'rejeitado', 'cancelado', 'arquivado'],
-      aprovado: ['pago', 'submetido_banco', 'cancelado', 'arquivado'],
-      submetido_banco: ['pago', 'cancelado', 'arquivado'],
+      // "aprovado" tem sempre de passar por "submetido_ao_banco" antes de "pago" -
+      // a Ordem de Pagamento tem de ser submetida ao banco, nunca marcada como
+      // paga directamente a partir da aprovacao.
+      aprovado: ['submetido_ao_banco', 'cancelado', 'arquivado'],
+      submetido_ao_banco: ['pago', 'cancelado', 'arquivado'],
       pago: [],
       rejeitado: [],
       cancelado: [],
       arquivado: [],
     },
     requiredByStatus: {
+      rascunho: ['fornecedor'],
       pendente: ['fornecedor', 'valor'],
       validado: ['fornecedor', 'valor', 'numero'],
       aprovado: ['fornecedor', 'valor'],

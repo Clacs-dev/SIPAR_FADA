@@ -1,4 +1,5 @@
 import logger from '../config/logger';
+import { SettingsService } from './settings.service';
 
 export type MeetingPlatform = 'googlemeet' | 'google_meet' | 'meet' | 'zoom' | 'teams' | 'microsoft_teams' | 'skype' | 'whatsapp' | string;
 
@@ -24,19 +25,17 @@ function normalizePlatform(platform?: string) {
   return value;
 }
 
-function slugify(value: string) {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .substring(0, 48);
+function platformFallbackLink(platform: string) {
+  const envKey = `MEETING_${platform.toUpperCase()}_DEFAULT_LINK`;
+  return SettingsService.get(`meeting_${platform}_default_link`, envKey);
+}
+
+function generalFallbackLink() {
+  return SettingsService.get('meeting_default_link', 'MEETING_DEFAULT_LINK');
 }
 
 function configuredLink(platform: string) {
-  const envKey = `MEETING_${platform.toUpperCase()}_DEFAULT_LINK`;
-  return process.env[envKey] || process.env.MEETING_DEFAULT_LINK;
+  return platformFallbackLink(platform) || generalFallbackLink();
 }
 
 function parseDurationMinutes(duration?: string) {
@@ -60,7 +59,7 @@ function buildDateRange(input: MeetingLinkInput) {
   return {
     start: start.toISOString(),
     end: end.toISOString(),
-    timeZone: process.env.MEETING_TIMEZONE || 'Africa/Luanda',
+    timeZone: SettingsService.get('meeting_timezone', 'MEETING_TIMEZONE') || 'Africa/Luanda',
   };
 }
 
@@ -75,9 +74,9 @@ async function postForm(url: string, body: Record<string, string>, headers: Reco
 }
 
 async function createGoogleMeet(input: MeetingLinkInput) {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId = SettingsService.get('google_client_id', 'GOOGLE_CLIENT_ID');
+  const clientSecret = SettingsService.get('google_client_secret', 'GOOGLE_CLIENT_SECRET');
+  const refreshToken = SettingsService.get('google_refresh_token', 'GOOGLE_REFRESH_TOKEN');
   if (!clientId || !clientSecret || !refreshToken) return null;
 
   const token = await postForm('https://oauth2.googleapis.com/token', {
@@ -88,7 +87,7 @@ async function createGoogleMeet(input: MeetingLinkInput) {
   });
 
   const range = buildDateRange(input);
-  const calendarId = encodeURIComponent(process.env.GOOGLE_CALENDAR_ID || 'primary');
+  const calendarId = encodeURIComponent(SettingsService.get('google_calendar_id', 'GOOGLE_CALENDAR_ID') || 'primary');
   const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?conferenceDataVersion=1`, {
     method: 'POST',
     headers: {
@@ -116,9 +115,9 @@ async function createGoogleMeet(input: MeetingLinkInput) {
 }
 
 async function createZoomMeeting(input: MeetingLinkInput) {
-  const accountId = process.env.ZOOM_ACCOUNT_ID;
-  const clientId = process.env.ZOOM_CLIENT_ID;
-  const clientSecret = process.env.ZOOM_CLIENT_SECRET;
+  const accountId = SettingsService.get('zoom_account_id', 'ZOOM_ACCOUNT_ID');
+  const clientId = SettingsService.get('zoom_client_id', 'ZOOM_CLIENT_ID');
+  const clientSecret = SettingsService.get('zoom_client_secret', 'ZOOM_CLIENT_SECRET');
   if (!accountId || !clientId || !clientSecret) return null;
 
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
@@ -154,10 +153,10 @@ async function createZoomMeeting(input: MeetingLinkInput) {
 }
 
 async function createTeamsMeeting(input: MeetingLinkInput) {
-  const tenantId = process.env.MICROSOFT_TENANT_ID;
-  const clientId = process.env.MICROSOFT_CLIENT_ID;
-  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
-  const userId = process.env.MICROSOFT_USER_ID || process.env.MICROSOFT_ORGANIZER_ID;
+  const tenantId = SettingsService.get('teams_tenant_id', 'MICROSOFT_TENANT_ID');
+  const clientId = SettingsService.get('teams_client_id', 'MICROSOFT_CLIENT_ID');
+  const clientSecret = SettingsService.get('teams_client_secret', 'MICROSOFT_CLIENT_SECRET');
+  const userId = SettingsService.get('teams_user_id', 'MICROSOFT_USER_ID') || process.env.MICROSOFT_ORGANIZER_ID;
   if (!tenantId || !clientId || !clientSecret || !userId) return null;
 
   const token = await postForm(`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`, {
@@ -192,24 +191,26 @@ async function createTeamsMeeting(input: MeetingLinkInput) {
   return meeting.joinWebUrl || null;
 }
 
+const PLATFORM_LABELS: Record<string, string> = {
+  googlemeet: 'Google Meet',
+  zoom: 'Zoom',
+  teams: 'Microsoft Teams',
+};
+
 export class MeetingLinkService {
-  static generate(input: MeetingLinkInput) {
+  /**
+   * Resolve um link a partir do que estiver de facto configurado pelo admin
+   * (fallback especifico da plataforma, depois o geral). NUNCA inventa um
+   * link placeholder - se nada estiver configurado devolve null, e quem
+   * chamar deve tratar isso como "plataforma nao configurada", nao criar
+   * uma reuniao com um link falso que ninguem consegue usar.
+   */
+  static generate(input: MeetingLinkInput): string | null {
     const platform = normalizePlatform(input.platform);
-    const configured = configuredLink(platform);
-    if (configured) return configured;
-
-    const token = slugify(`${input.title || 'sipar20'}-${input.date || ''}-${input.time || ''}-${Date.now().toString(36)}`);
-
-    logger.warn(`[MeetingLinkService] Credenciais/API de ${platform} ausentes. Gerando link placeholder configuravel.`);
-
-    if (platform === 'zoom') return `https://zoom.us/j/${token}`;
-    if (platform === 'teams') return `https://teams.microsoft.com/l/meetup-join/${token}`;
-    if (platform === 'skype') return `https://join.skype.com/${token}`;
-    if (platform === 'whatsapp') return `https://wa.me/?text=${encodeURIComponent(`Reuniao SIPAR20: ${token}`)}`;
-    return `https://meet.google.com/${token.substring(0, 3)}-${token.substring(3, 7)}-${token.substring(7, 10)}`;
+    return configuredLink(platform) || null;
   }
 
-  static async create(input: MeetingLinkInput) {
+  static async create(input: MeetingLinkInput): Promise<string | null> {
     const platform = normalizePlatform(input.platform);
     try {
       const realLink = platform === 'zoom'
@@ -225,26 +226,58 @@ export class MeetingLinkService {
         return realLink;
       }
     } catch (error) {
-      logger.error(`[MeetingLinkService] Falha ao criar reuniao real em ${platform}. Usando fallback.`, error);
+      logger.error(`[MeetingLinkService] Falha ao criar reuniao real em ${platform}. Tentando fallback configurado.`, error);
     }
 
-    return this.generate(input);
+    const fallback = this.generate(input);
+    if (!fallback) {
+      logger.warn(`[MeetingLinkService] Nenhuma API real nem link de fallback configurado para ${platform}.`);
+    }
+    return fallback;
   }
 
   static getConfigStatus() {
     return {
       googlemeet: {
-        configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN),
-        fallbackLink: Boolean(process.env.MEETING_GOOGLEMEET_DEFAULT_LINK || process.env.MEETING_DEFAULT_LINK),
+        configured: Boolean(
+          SettingsService.get('google_client_id', 'GOOGLE_CLIENT_ID')
+          && SettingsService.get('google_client_secret', 'GOOGLE_CLIENT_SECRET')
+          && SettingsService.get('google_refresh_token', 'GOOGLE_REFRESH_TOKEN')
+        ),
+        fallbackLink: Boolean(platformFallbackLink('googlemeet')),
       },
       zoom: {
-        configured: Boolean(process.env.ZOOM_ACCOUNT_ID && process.env.ZOOM_CLIENT_ID && process.env.ZOOM_CLIENT_SECRET),
-        fallbackLink: Boolean(process.env.MEETING_ZOOM_DEFAULT_LINK || process.env.MEETING_DEFAULT_LINK),
+        configured: Boolean(
+          SettingsService.get('zoom_account_id', 'ZOOM_ACCOUNT_ID')
+          && SettingsService.get('zoom_client_id', 'ZOOM_CLIENT_ID')
+          && SettingsService.get('zoom_client_secret', 'ZOOM_CLIENT_SECRET')
+        ),
+        fallbackLink: Boolean(platformFallbackLink('zoom')),
       },
       teams: {
-        configured: Boolean(process.env.MICROSOFT_TENANT_ID && process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET),
-        fallbackLink: Boolean(process.env.MEETING_TEAMS_DEFAULT_LINK || process.env.MEETING_DEFAULT_LINK),
+        configured: Boolean(
+          SettingsService.get('teams_tenant_id', 'MICROSOFT_TENANT_ID')
+          && SettingsService.get('teams_client_id', 'MICROSOFT_CLIENT_ID')
+          && SettingsService.get('teams_client_secret', 'MICROSOFT_CLIENT_SECRET')
+        ),
+        fallbackLink: Boolean(platformFallbackLink('teams')),
       },
+      generalFallbackLink: Boolean(generalFallbackLink()),
     };
+  }
+
+  /**
+   * Lista, para consumo de qualquer utilizador autenticado (nao so
+   * admin_sistema), quais plataformas produzem de facto um link ao agendar
+   * uma reuniao - para o seletor de plataforma no frontend so mostrar as
+   * que funcionam, e nunca deixar escolher uma que vai falhar.
+   */
+  static listAvailablePlatforms() {
+    const status = this.getConfigStatus();
+    return (['googlemeet', 'zoom', 'teams'] as const).map((key) => ({
+      key,
+      label: PLATFORM_LABELS[key],
+      usable: status[key].configured || status[key].fallbackLink || status.generalFallbackLink,
+    }));
   }
 }

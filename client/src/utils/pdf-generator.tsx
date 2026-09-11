@@ -5,6 +5,7 @@
 
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import { FADA_LOGO_DATA_URI } from '../assets/fada-logo';
 
 // Tipos para autoTable
 interface AutoTableOptions {
@@ -371,6 +372,234 @@ export function gerarPDFFactura(factura: any): void {
   // Salvar
   const filename = `Factura_${factura.numero.replace(/\//g, '-')}_${new Date().getTime()}.pdf`;
   pdf.save(filename);
+}
+
+/**
+ * Converte a imagem apontada por uma URL (ex: /uploads/assinatura.png) para data URL base64,
+ * necessário para embutir a imagem no PDF via jsPDF.addImage().
+ */
+export async function urlParaDataUrl(url: string): Promise<string> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+/**
+ * Converte um valor numérico para a sua forma por extenso, em português.
+ * Ex: 125340 -> "cento e vinte e cinco mil, trezentos e quarenta"
+ */
+function numeroPorExtenso(valor: number): string {
+  const UNIDADES = ['', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove'];
+  const DEZ_A_DEZANOVE = ['dez', 'onze', 'doze', 'treze', 'catorze', 'quinze', 'dezasseis', 'dezassete', 'dezoito', 'dezanove'];
+  const DEZENAS = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+  const CENTENAS = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+  function grupoPorExtenso(n: number): string {
+    if (n === 0) return '';
+    if (n === 100) return 'cem';
+    const c = Math.floor(n / 100);
+    const resto = n % 100;
+    const partes: string[] = [];
+    if (c > 0) partes.push(CENTENAS[c]);
+    if (resto > 0) {
+      if (resto < 10) partes.push(UNIDADES[resto]);
+      else if (resto < 20) partes.push(DEZ_A_DEZANOVE[resto - 10]);
+      else {
+        const d = Math.floor(resto / 10);
+        const u = resto % 10;
+        partes.push(u > 0 ? `${DEZENAS[d]} e ${UNIDADES[u]}` : DEZENAS[d]);
+      }
+    }
+    return partes.join(' e ');
+  }
+
+  const inteiro = Math.floor(Math.abs(valor));
+  if (inteiro === 0) return 'zero';
+
+  const ESCALAS: [number, string, string][] = [
+    [1000000000, 'mil milhões', 'mil milhões'],
+    [1000000, 'milhão', 'milhões'],
+    [1000, 'mil', 'mil'],
+  ];
+
+  let restante = inteiro;
+  const segmentos: string[] = [];
+  for (const [valorEscala, singular, plural] of ESCALAS) {
+    const qtd = Math.floor(restante / valorEscala);
+    if (qtd > 0) {
+      if (valorEscala === 1000 && qtd === 1) {
+        segmentos.push('mil');
+      } else {
+        segmentos.push(`${grupoPorExtenso(qtd)} ${qtd === 1 ? singular : plural}`);
+      }
+      restante %= valorEscala;
+    }
+  }
+  if (restante > 0 || segmentos.length === 0) {
+    segmentos.push(grupoPorExtenso(restante));
+  }
+
+  return segmentos.filter(Boolean).join(', ');
+}
+
+interface AssinaturaOrdemPagamento {
+  papel: 'presidente' | 'administrador';
+  nome: string;
+  assinatura_url?: string;
+}
+
+interface OrdemPagamentoData {
+  numero: string; // Nº da Ordem de Pagamento (ex: OP/N.º 1261/2026)
+  contaDebito?: string;
+  numeroDespacho?: string;
+  numeroFacturas?: string; // Ex: "FT FA 2026/1883 e N.º FT FA 2026/1899"
+  descricao?: string;
+  valor: number;
+  moeda?: string;
+  fornecedor: string;
+  bancoNome?: string;
+  bancoIban?: string;
+  bancoCidade?: string;
+  bancoPais?: string;
+  data?: string; // ISO
+  assinaturas?: AssinaturaOrdemPagamento[];
+}
+
+const FADA_CONTACTOS = {
+  morada: ['Rua dos Enganos - Kinaxixi', 'Edifício Zimbo Tower 2º e 3º Andar', 'Ingombota - Luanda'],
+  telefone: '+244 222 706 699',
+  email: 'correspondencia@fada.gov.ao',
+  website: 'www.fada.gov.ao',
+  nif: '5000336793',
+};
+
+/**
+ * Gera o PDF da Ordem de Pagamento (documento oficial dirigido ao banco),
+ * replicando o modelo oficial do FADA. Aceita imagens de assinatura (Presidente/Administrador)
+ * já convertidas para data URL — quando ausentes, é deixado o espaço para assinatura manual.
+ */
+export function gerarPDFOrdemPagamento(op: OrdemPagamentoData): jsPDF {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginLeft = 22;
+  const marginRight = pageWidth - 22;
+  const textWidth = marginRight - marginLeft;
+
+  // Logótipo oficial do FADA (centrado horizontalmente na página)
+  try {
+    const logoLargura = 58;
+    const logoAltura = logoLargura * (315 / 738);
+    const logoX = (pageWidth - logoLargura) / 2;
+    doc.addImage(FADA_LOGO_DATA_URI, 'JPEG', logoX, 10, logoLargura, logoAltura);
+  } catch (error) {
+ console.warn('Não foi possível inserir o logótipo do FADA:', error);
+  }
+
+  // Bloco do destinatário (Ao / Banco / Cidade) alinhado à direita, como no ofício oficial.
+  let y = 55;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Ao', marginRight, y, { align: 'right' });
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.text(op.bancoNome ? `Banco ${op.bancoNome}` : 'Banco do Fornecedor', marginRight, y, { align: 'right' });
+  y += 10;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(0, 0, 0);
+  const cidadeDestino = (op.bancoCidade || 'LUANDA').toUpperCase();
+  doc.text(cidadeDestino, marginRight, y, { align: 'right' });
+  doc.setLineWidth(0.3);
+  const cidadeDestinoWidth = doc.getTextWidth(cidadeDestino);
+  doc.line(marginRight - cidadeDestinoWidth, y + 1, marginRight, y + 1);
+  y += 14;
+
+  doc.setFont('helvetica', 'bolditalic');
+  doc.setFontSize(11);
+  doc.text(`N/Ref.ª: ${op.numero}`, marginLeft, y);
+  y += 9;
+
+  doc.setFont('helvetica', 'normal');
+  doc.text('Assunto: ', marginLeft, y);
+  doc.setFont('helvetica', 'bolditalic');
+  doc.text('Ordem de Pagamento.', marginLeft + doc.getTextWidth('Assunto: '), y);
+  y += 10;
+
+  const valorExtenso = numeroPorExtenso(op.valor);
+  const moeda = op.moeda || 'AOA';
+  const valorFormatado = op.valor.toLocaleString('pt-PT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  const paragrafo1 = `Por débito na nossa conta n.º ${op.contaDebito || '[conta a debitar]'} domiciliada no vosso Banco, queiram executar o pagamento do montante total de KZ ${valorFormatado} (${valorExtenso} kwanzas), referente a: ${op.descricao || '[descrição da despesa]'}, conforme Despacho N.º ${op.numeroDespacho || '[nº despacho]'}${op.numeroFacturas ? ` e Factura N.º ${op.numeroFacturas}` : ''}, a favor de ${op.fornecedor}, cujas coordenadas bancárias indicamos abaixo:`;
+  const linhas1 = doc.splitTextToSize(paragrafo1, textWidth);
+  doc.text(linhas1, marginLeft, y);
+  y += linhas1.length * 5.5 + 4;
+
+  const bullets = [
+    `Banco: ${op.bancoNome || '—'};`,
+    `IBAN: ${op.bancoIban || '—'};`,
+    `Cidade/País: ${op.bancoCidade || '—'} / ${op.bancoPais || '—'}.`,
+  ];
+  for (const bullet of bullets) {
+    doc.text('•', marginLeft + 2, y);
+    doc.text(bullet, marginLeft + 8, y);
+    y += 6;
+  }
+  y += 6;
+
+  doc.setFont('helvetica', 'bold');
+  const dataDoc = op.data ? new Date(op.data) : new Date();
+  const fecho = `O Conselho de Administração do Fundo de Apoio ao Desenvolvimento Agrário, Luanda, ${dataDoc.toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}.`;
+  const linhasFecho = doc.splitTextToSize(fecho, textWidth);
+  doc.text(linhasFecho, marginLeft, y);
+  y += linhasFecho.length * 5.5 + 14;
+
+  const assinaturas = op.assinaturas || [];
+  const presidente = assinaturas.find((a) => a.papel === 'presidente');
+  const administrador = assinaturas.find((a) => a.papel === 'administrador');
+
+  const desenharAssinatura = (label: string, assinatura?: AssinaturaOrdemPagamento) => {
+    const centerX = pageWidth / 2;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.text(label, centerX, y, { align: 'center' });
+    y += 14;
+    if (assinatura?.assinatura_url) {
+      try {
+        doc.addImage(assinatura.assinatura_url, 'PNG', centerX - 30, y - 13, 60, 14);
+      } catch (error) {
+ console.warn('Não foi possível inserir a imagem de assinatura:', error);
+        doc.line(centerX - 40, y, centerX + 40, y);
+      }
+    } else {
+      doc.line(centerX - 40, y, centerX + 40, y);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.text(assinatura?.nome || '', centerX, y + 5, { align: 'center' });
+    y += 16;
+  };
+
+  desenharAssinatura('Presidente', presidente);
+  desenharAssinatura('Administrador', administrador);
+
+  // Rodapé com dados de contacto do FADA
+  const footerY = doc.internal.pageSize.getHeight() - 20;
+  doc.setFontSize(8);
+  doc.setTextColor(90, 90, 90);
+  doc.setFont('helvetica', 'normal');
+  FADA_CONTACTOS.morada.forEach((linha, i) => doc.text(linha, marginLeft, footerY + i * 4));
+  doc.text(`Telefone: ${FADA_CONTACTOS.telefone}`, pageWidth / 2 + 10, footerY);
+  doc.text(`E-mail: ${FADA_CONTACTOS.email}`, pageWidth / 2 + 10, footerY + 4);
+  doc.text(`Website: ${FADA_CONTACTOS.website}`, pageWidth / 2 + 10, footerY + 8);
+  doc.text(`NIF: ${FADA_CONTACTOS.nif}`, marginLeft, footerY + 12);
+
+  return doc;
 }
 
 /**

@@ -64,71 +64,52 @@ export function DocumentUpload({
     setUploading(true);
 
     try {
-      // Converter para base64
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      
-      reader.onload = async () => {
-        try {
-          const base64 = reader.result as string;
-          const base64Data = base64.split(',')[1];
-
-          const token = getToken();
-          if (!token) {
-            toast.error("Sessão expirada. Por favor, faça login novamente.");
-            return;
-          }
-
-          const response = await fetch(
-            `${API_BASE_URL}/documents/upload`,
-            {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                fileName: file.name,
-                fileType: file.type,
-                fileData: base64Data,
-                folder: folder
-              })
-            }
-          );
-
-          if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erro ao fazer upload');
-          }
-
-          const data = await response.json();
-          
-          const uploadedFileInfo = {
-            path: data.path,
-            name: file.name
-          };
-
-          setUploadedFile(uploadedFileInfo);
-          toast.success("Documento enviado com sucesso!");
-          
-          if (onUploadComplete) {
-            onUploadComplete(data.path, file.name);
-          }
-        } catch (error) {
- console.error('Upload error:', error);
-          toast.error(error instanceof Error ? error.message : 'Erro ao fazer upload do documento');
-        } finally {
-          setUploading(false);
-        }
-      };
-
-      reader.onerror = () => {
-        toast.error("Erro ao ler arquivo");
+      const token = getToken();
+      if (!token) {
+        toast.error("Sessão expirada. Por favor, faça login novamente.");
         setUploading(false);
+        return;
+      }
+
+      const body = new FormData();
+      body.append('file', file);
+      body.append('module', folder);
+
+      const response = await fetch(
+        `${API_BASE_URL}/documents/upload`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+            // Sem 'Content-Type': o browser define o boundary do multipart automaticamente.
+          },
+          body
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || error.error || 'Erro ao fazer upload');
+      }
+
+      const data = await response.json();
+      const filePath = data.file?.url || data.path;
+
+      const uploadedFileInfo = {
+        path: filePath,
+        name: file.name
       };
+
+      setUploadedFile(uploadedFileInfo);
+      toast.success("Documento enviado com sucesso!");
+
+      if (onUploadComplete) {
+        onUploadComplete(filePath, file.name);
+      }
     } catch (error) {
- console.error('File processing error:', error);
-      toast.error("Erro ao processar arquivo");
+ console.error('Upload error:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao fazer upload do documento');
+    } finally {
       setUploading(false);
     }
   };

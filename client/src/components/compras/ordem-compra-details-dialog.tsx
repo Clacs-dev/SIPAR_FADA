@@ -51,14 +51,14 @@ export function OrdemCompraDetailsDialog({
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      emitida: { label: "Emitida", color: "bg-blue-500" },
-      confirmada: { label: "Confirmada", color: "bg-green-500" },
-      em_transito: { label: "Em Trânsito", color: "bg-yellow-500" },
-      entregue: { label: "Entregue", color: "bg-green-600" },
-      cancelada: { label: "Cancelada", color: "bg-gray-500" },
+      emitida: { label: "Emitida", color: "var(--tone-info)" },
+      confirmada: { label: "Confirmada", color: "var(--tone-success)" },
+      em_transito: { label: "Em Trânsito", color: "var(--tone-gold)" },
+      entregue: { label: "Entregue", color: "var(--tone-success)" },
+      cancelada: { label: "Cancelada", color: "var(--tone-neutral)" },
     };
     const badge = badges[status as keyof typeof badges] || badges.emitida;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const handleConfirmar = async () => {
@@ -184,10 +184,10 @@ export function OrdemCompraDetailsDialog({
           <div className="border-t pt-4">
             <h5 className="font-semibold mb-3">Valores</h5>
             <div className="flex items-center gap-2">
-              <DollarSign className="h-6 w-6 text-green-600" />
+              <DollarSign className="h-6 w-6 text-tone-success" />
               <div>
                 <p className="text-xs text-muted-foreground">Valor Total</p>
-                <p className="text-2xl font-bold text-green-600">
+                <p className="text-2xl font-bold text-tone-success">
                   {ordemCompra.valor_total.toLocaleString('pt-AO')} AOA
                 </p>
               </div>
@@ -233,17 +233,18 @@ export function OrdemCompraDetailsDialog({
               <div className="space-y-3">
                 {/* Status: Emitida → Confirmada */}
                 {canConfirmar && (
-                  <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <CheckCircle className="h-5 w-5 text-blue-600 mt-0.5" />
+                  <div className="flex items-start gap-3 p-4 bg-tone-info-soft border border-tone-info/30 rounded-lg">
+                    <CheckCircle className="h-5 w-5 text-tone-info mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-blue-900">Aguardando confirmação do fornecedor</p>
-                      <p className="text-sm text-blue-700 mt-1">
+                      <p className="font-medium text-tone-info">Aguardando confirmação do fornecedor</p>
+                      <p className="text-sm text-tone-info mt-1">
                         Clique abaixo quando o fornecedor confirmar o recebimento da ordem
                       </p>
-                      <Button 
-                        onClick={handleConfirmar} 
+                      <Button
+                        onClick={handleConfirmar}
                         disabled={submitting}
-                        className="mt-3 bg-green-600 hover:bg-green-700"
+                        style={{ backgroundColor: 'var(--tone-success)' }}
+                        className="mt-3 text-white hover:opacity-90"
                       >
                         <CheckCircle className="mr-2 h-4 w-4" />
                         {submitting ? "A processar..." : "Confirmar Recebimento pelo Fornecedor"}
@@ -254,17 +255,18 @@ export function OrdemCompraDetailsDialog({
 
                 {/* Status: Confirmada → Em Trânsito */}
                 {canEnviar && (
-                  <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <Truck className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div className="flex items-start gap-3 p-4 bg-tone-success-soft border border-tone-success/30 rounded-lg">
+                    <Truck className="h-5 w-5 text-tone-success mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-green-900">Ordem confirmada</p>
-                      <p className="text-sm text-green-700 mt-1">
+                      <p className="font-medium text-tone-success">Ordem confirmada</p>
+                      <p className="text-sm text-tone-success mt-1">
                         Marque como "Em Trânsito" quando o fornecedor enviar os produtos
                       </p>
-                      <Button 
-                        onClick={handleEnviar} 
+                      <Button
+                        onClick={handleEnviar}
                         disabled={submitting}
-                        className="mt-3 bg-yellow-600 hover:bg-yellow-700"
+                        style={{ backgroundColor: 'var(--tone-gold)' }}
+                        className="mt-3 text-white hover:opacity-90"
                       >
                         <Truck className="mr-2 h-4 w-4" />
                         {submitting ? "A processar..." : "Marcar como Em Trânsito"}
@@ -275,17 +277,18 @@ export function OrdemCompraDetailsDialog({
 
                 {/* Status: Em Trânsito → Entregue */}
                 {canReceber && (
-                  <div className="flex items-start gap-3 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <Package className="h-5 w-5 text-yellow-600 mt-0.5" />
+                  <div className="flex items-start gap-3 p-4 bg-tone-warn-soft border border-tone-warn/30 rounded-lg">
+                    <Package className="h-5 w-5 text-tone-warn mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-yellow-900">Produtos em trânsito</p>
-                      <p className="text-sm text-yellow-700 mt-1">
+                      <p className="font-medium text-tone-warn">Produtos em trânsito</p>
+                      <p className="text-sm text-tone-warn mt-1">
                         Confirme o recebimento quando os produtos chegarem
                       </p>
-                      <Button 
-                        onClick={handleReceber} 
+                      <Button
+                        onClick={handleReceber}
                         disabled={submitting}
-                        className="mt-3 bg-green-600 hover:bg-green-700"
+                        style={{ backgroundColor: 'var(--tone-success)' }}
+                        className="mt-3 text-white hover:opacity-90"
                       >
                         <Package className="mr-2 h-4 w-4" />
                         {submitting ? "A processar..." : "Confirmar Recebimento"}
@@ -296,11 +299,11 @@ export function OrdemCompraDetailsDialog({
 
                 {/* Status: Entregue */}
                 {ordemCompra.status === "entregue" && (
-                  <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                    <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                  <div className="flex items-start gap-3 p-4 bg-tone-success-soft border border-tone-success/30 rounded-lg">
+                    <CheckCircle className="h-5 w-5 text-tone-success mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-green-900">✅ Ordem Finalizada</p>
-                      <p className="text-sm text-green-700 mt-1">
+                      <p className="font-medium text-tone-success">✅ Ordem Finalizada</p>
+                      <p className="text-sm text-tone-success mt-1">
                         Produtos recebidos com sucesso
                       </p>
                     </div>
@@ -325,12 +328,12 @@ export function OrdemCompraDetailsDialog({
 
             {/* Formulário de Cancelamento */}
             {showCancelarForm && (
-              <div className="border rounded-lg p-4 bg-red-50 space-y-4">
-                <h5 className="font-semibold text-red-900 flex items-center gap-2">
+              <div className="border rounded-lg p-4 bg-tone-danger-soft space-y-4">
+                <h5 className="font-semibold text-tone-danger flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" />
                   Cancelar Ordem de Compra
                 </h5>
-                <p className="text-sm text-red-800">
+                <p className="text-sm text-tone-danger">
                   Tem certeza que deseja cancelar esta ordem de compra? Esta ação não pode ser desfeita.
                 </p>
                 <div className="flex gap-2">

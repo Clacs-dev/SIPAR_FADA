@@ -1,8 +1,9 @@
 import { UserRole } from './auth-context';
 
 // Tipos de perfil estendidos baseados em department/position
-export type ExtendedProfile = 
-  | 'admin-sistema'      // Administrador do Sistema
+export type ExtendedProfile =
+  | 'admin-tecnico'     // Administrador do Sistema (role admin_sistema - exclusivo tecnico)
+  | 'admin-sistema'      // Executivos/Gabinetes (modulos de negocio)
   | 'gerente'           // Gerente (aprova/decide)
   | 'atendente'         // Atendente/Secretária
   | 'financeiro'        // Responsável Financeiro
@@ -55,12 +56,15 @@ export const PERMISSIONS = {
   VIEW_OWN_REQUESTS: ['externo'] as UserRole[],
   VIEW_OWN_HISTORY: ['externo'] as UserRole[],
   
-  // Agenda
+  // Agenda - cada utilizador ve a sua propria agenda (reunioes internas e
+  // solicitacoes/audiencias agendadas para si), por isso e visivel a todos.
   VIEW_SCHEDULE: [
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
     'gabinete_ministro', 'gabinete_secretario_estado_1', 'gabinete_secretario_estado_2',
     'gabinete_vice_governador_1', 'gabinete_vice_governador_2',
-    'administracao', 'secretaria'
+    'financeiro', 'recursos_humanos', 'juridico', 'compras', 'tecnologia_informacao', 'operacoes', 'operacional_frota',
+    'administracao', 'administrativo', 'comunicacao_imagem', 'seguranca', 'secretaria', 'externo',
+    'planeamento', 'organizacao_qualidade', 'compliance', 'risco'
   ] as UserRole[],
   MANAGE_SCHEDULE: [
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
@@ -72,7 +76,13 @@ export const PERMISSIONS = {
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
     'administracao', 'secretaria'
   ] as UserRole[],
-  
+
+  // Salas de Reunião
+  MANAGE_MEETING_ROOMS: [
+    'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
+    'administracao', 'secretaria'
+  ] as UserRole[],
+
   // Actas
   VIEW_ACTAS: [
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
@@ -142,18 +152,24 @@ export const PERMISSIONS = {
     'planeamento', 'organizacao_qualidade', 'compliance', 'risco'
   ] as UserRole[],
   
-  // Gestão de Utilizadores
-  MANAGE_USERS: ['gabinete_pca', 'gabinete_administrador', 'recursos_humanos', 'tecnologia_informacao'] as UserRole[],
-  
-  // Configurações Técnicas
-  MANAGE_SETTINGS: ['gabinete_pca', 'tecnologia_informacao'] as UserRole[],
-  
-  // Auditoria
-  VIEW_AUDIT: ['gabinete_pca', 'gabinete_administrador', 'compliance', 'tecnologia_informacao'] as UserRole[],
-  
-  // Base de Dados
-  MANAGE_DATABASE: ['gabinete_pca', 'tecnologia_informacao'] as UserRole[],
-  
+  // Gestão de Utilizadores (exclusivo do Administrador do Sistema)
+  MANAGE_USERS: ['admin_sistema'] as UserRole[],
+
+  // Configurações Técnicas (exclusivo do Administrador do Sistema)
+  MANAGE_SETTINGS: ['admin_sistema'] as UserRole[],
+
+  // Auditoria (exclusivo do Administrador do Sistema)
+  VIEW_AUDIT: ['admin_sistema'] as UserRole[],
+
+  // Base de Dados (exclusivo do Administrador do Sistema)
+  MANAGE_DATABASE: ['admin_sistema'] as UserRole[],
+
+  // Dashboard/Relatórios Departamentais (supervisão de negócio - executivos + Administrador do Sistema)
+  VIEW_DEPARTMENT_REPORTS: [
+    'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
+    'admin_sistema'
+  ] as UserRole[],
+
   // Relatórios Gerais
   VIEW_REPORTS: [
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
@@ -174,6 +190,11 @@ export function getExtendedProfile(
   department?: string, 
   position?: string
 ): ExtendedProfile {
+  // Administrador do Sistema (role tecnico dedicado, separado dos executivos)
+  if (role === 'admin_sistema') {
+    return 'admin-tecnico';
+  }
+
   // Gabinetes Executivos e Governamentais → admin-sistema
   if ([
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director',
@@ -292,9 +313,9 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'submeter-reclamacao',
-        label: 'Submeter Reclamação',
-        icon: 'AlertCircle',
+        id: 'schedule',
+        label: 'Agenda',
+        icon: 'Calendar',
         show: true
       },
       {
@@ -354,33 +375,9 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'oficios',
-        label: 'Gestão de Ofícios',
-        icon: 'FileSignature',
-        show: true
-      },
-      {
         id: 'comunicacoes',
         label: 'Comunicação Interna',
         icon: 'Send',
-        show: true
-      },
-      {
-        id: 'reclamacoes',
-        label: 'Reclamações Operacionais',
-        icon: 'AlertCircle',
-        show: true
-      },
-      {
-        id: 'contratos',
-        label: 'Gestão de Contratos',
-        icon: 'FileKey',
-        show: true
-      },
-      {
-        id: 'pedidos',
-        label: 'Pedido e Helpdesk',
-        icon: 'ShoppingCart',
         show: true
       },
       {
@@ -390,27 +387,9 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'planejamento',
-        label: 'Planeamento e Gestão',
-        icon: 'TrendingUp',
-        show: true
-      },
-      {
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
-        show: true
-      },
-      {
-        id: 'financial-reports',
-        label: 'Relatórios Financeiros',
-        icon: 'TrendingUp',
-        show: true
-      },
-      {
-        id: 'frotas',
-        label: 'Gestão de Frota',
-        icon: 'Car',
         show: true
       },
       {
@@ -440,15 +419,15 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'facturas',
-        label: 'Gestão de Pagamento',
-        icon: 'Receipt',
+        id: 'schedule',
+        label: 'Agenda',
+        icon: 'Calendar',
         show: true
       },
       {
-        id: 'financial-reports',
-        label: 'Relatórios Financeiros',
-        icon: 'TrendingUp',
+        id: 'facturas',
+        label: 'Gestão de Pagamento',
+        icon: 'Receipt',
         show: true
       },
       {
@@ -465,7 +444,7 @@ export function getMenuItems(
       }
     ];
   }
-  
+
   // ==========================================
   // OPERADOR
   // ==========================================
@@ -496,33 +475,9 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'oficios',
-        label: 'Gestão de Ofícios',
-        icon: 'FileSignature',
-        show: true
-      },
-      {
         id: 'comunicacoes',
         label: 'Comunicação Interna',
         icon: 'Send',
-        show: true
-      },
-      {
-        id: 'reclamacoes',
-        label: 'Reclamações Operacionais',
-        icon: 'AlertCircle',
-        show: true
-      },
-      {
-        id: 'contratos',
-        label: 'Gestão de Contratos',
-        icon: 'FileKey',
-        show: true
-      },
-      {
-        id: 'pedidos',
-        label: 'Pedido e Helpdesk',
-        icon: 'ShoppingCart',
         show: true
       },
       {
@@ -532,21 +487,9 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'planejamento',
-        label: 'Planeamento e Gestão',
-        icon: 'TrendingUp',
-        show: true
-      },
-      {
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
-        show: true
-      },
-      {
-        id: 'frotas',
-        label: 'Gestão de Frota',
-        icon: 'Car',
         show: true
       },
       {
@@ -563,7 +506,7 @@ export function getMenuItems(
       }
     ];
   }
-  
+
   // ==========================================
   // ATENDENTE/SECRETÁRIA
   // ==========================================
@@ -591,6 +534,12 @@ export function getMenuItems(
         id: 'internal-meetings',
         label: 'Reuniões Internas',
         icon: 'Users',
+        show: true
+      },
+      {
+        id: 'meeting-rooms',
+        label: 'Salas de Reunião',
+        icon: 'DoorOpen',
         show: true
       },
       {
@@ -638,15 +587,15 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'actas',
-        label: 'Livro de Actas',
-        icon: 'FileCheck',
+        id: 'meeting-rooms',
+        label: 'Salas de Reunião',
+        icon: 'DoorOpen',
         show: true
       },
       {
-        id: 'oficios',
-        label: 'Gestão de Ofícios',
-        icon: 'FileSignature',
+        id: 'actas',
+        label: 'Livro de Actas',
+        icon: 'FileCheck',
         show: true
       },
       {
@@ -656,51 +605,15 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'reclamacoes',
-        label: 'Reclamações Operacionais',
-        icon: 'AlertCircle',
-        show: true
-      },
-      {
-        id: 'contratos',
-        label: 'Gestão de Contratos',
-        icon: 'FileKey',
-        show: true
-      },
-      {
-        id: 'pedidos',
-        label: 'Pedido e Helpdesk',
-        icon: 'ShoppingCart',
-        show: true
-      },
-      {
         id: 'compras',
         label: 'Procurement',
         icon: 'ShoppingBag',
         show: true
       },
       {
-        id: 'planejamento',
-        label: 'Planeamento e Gestão',
-        icon: 'TrendingUp',
-        show: true
-      },
-      {
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
-        show: true
-      },
-      {
-        id: 'financial-reports',
-        label: 'Relatórios Financeiros',
-        icon: 'TrendingUp',
-        show: true
-      },
-      {
-        id: 'frotas',
-        label: 'Gestão de Frota',
-        icon: 'Car',
         show: true
       },
       {
@@ -713,6 +626,38 @@ export function getMenuItems(
         id: 'push-notifications',
         label: 'Notificações Push',
         icon: 'Bell',
+        show: true
+      },
+      {
+        id: 'department-dashboard',
+        label: 'Dashboard Departamental',
+        icon: 'TrendingUp',
+        show: true
+      },
+      {
+        id: 'department-reports',
+        label: 'Relatórios Departamentais',
+        icon: 'FileText',
+        show: true
+      }
+    ];
+  }
+
+  // ==========================================
+  // ADMINISTRADOR DO SISTEMA (role tecnico admin_sistema)
+  // ==========================================
+  if (profile === 'admin-tecnico') {
+    return [
+      {
+        id: 'dashboard',
+        label: 'Dashboard',
+        icon: 'Home',
+        show: true
+      },
+      {
+        id: 'schedule',
+        label: 'Agenda',
+        icon: 'Calendar',
         show: true
       },
       {
@@ -734,6 +679,42 @@ export function getMenuItems(
         show: true
       },
       {
+        id: 'departments-admin',
+        label: 'Gestão de Departamentos',
+        icon: 'Building',
+        show: true
+      },
+      {
+        id: 'areas-admin',
+        label: 'Gestão de Áreas',
+        icon: 'Layers',
+        show: true
+      },
+      {
+        id: 'roles-permissions-admin',
+        label: 'Roles e Permissões',
+        icon: 'KeyRound',
+        show: true
+      },
+      {
+        id: 'system-diagnostics',
+        label: 'Diagnóstico do Sistema',
+        icon: 'Activity',
+        show: true
+      },
+      {
+        id: 'license-management',
+        label: 'Gestão de Licença',
+        icon: 'FileKey',
+        show: true
+      },
+      {
+        id: 'trash',
+        label: 'Lixeira',
+        icon: 'Trash2',
+        show: true
+      },
+      {
         id: 'database-management',
         label: 'Gestão do Banco de Dados',
         icon: 'Database',
@@ -746,26 +727,26 @@ export function getMenuItems(
         show: true
       },
       {
-        id: 'department-reports',
-        label: 'Relatórios Departamentais',
-        icon: 'FileText',
-        show: true
-      },
-      {
-        id: 'storage-admin',
-        label: 'Administração Storage',
-        icon: 'Database',
-        show: true
-      },
-      {
         id: 'settings',
         label: 'Configurações',
         icon: 'Settings',
         show: true
+      },
+      {
+        id: 'messages',
+        label: 'Mensagens',
+        icon: 'MessageSquare',
+        show: true
+      },
+      {
+        id: 'push-notifications',
+        label: 'Notificações Push',
+        icon: 'Bell',
+        show: true
       }
     ];
   }
-  
+
   // Fallback
   return [];
 }
@@ -781,10 +762,14 @@ export function getProfileBadge(
   // Debug log
  console.log('getProfileBadge called with:', { userRole, department, position });
   
-  // Verificação especial: Se a posição é PCA, mostrar "Administrador Sistema"
-  if (position === 'Presidente do Conselho de Administração' || userRole === 'gabinete_pca') {
- console.log('Matched PCA condition, returning Administrador Sistema');
-    return { label: 'Administrador Sistema', color: 'bg-red-600' };
+  // Administrador do Sistema (role tecnico dedicado)
+  if (userRole === 'admin_sistema') {
+    return { label: 'Administrador do Sistema', color: 'bg-slate-900' };
+  }
+
+  // Verificação especial: cargo de Presidente do Conselho de Administração
+  if (position === 'Presidente do Conselho de Administração') {
+    return { label: 'Presidente do Conselho de Administração', color: 'bg-red-600' };
   }
 
   // Mapeamento de departamentos para badges
@@ -825,6 +810,8 @@ export function getProfileBadge(
     'organizacao_qualidade': { label: 'Org. & Qualidade', color: 'bg-yellow-600' },
     'compliance': { label: 'Compliance', color: 'bg-orange-600' },
     'risco': { label: 'Gestão de Risco', color: 'bg-orange-700' },
+
+    'admin_sistema': { label: 'Administrador do Sistema', color: 'bg-slate-900' },
   };
   
   return departmentBadges[userRole] || { label: 'Utilizador', color: 'bg-gray-500' };

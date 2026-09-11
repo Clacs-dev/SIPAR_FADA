@@ -13,6 +13,7 @@ import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { toast } from "sonner@2.0.3";
 import type { ItemPedido, PrioridadePedido, TipoItem } from "./types";
+import { useCategorias } from "../../hooks/use-categorias";
 
 interface PedidoFormDialogProps {
   open: boolean;
@@ -22,10 +23,12 @@ interface PedidoFormDialogProps {
 
 export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogProps) {
   const [loading, setLoading] = useState(false);
-  
+  const { categorias } = useCategorias();
+
   // Dados do pedido
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
+  const [categoria, setCategoria] = useState("");
   const [departamento, setDepartamento] = useState("");
   const [prioridade, setPrioridade] = useState<PrioridadePedido>("normal");
   const [orcamentoEstimado, setOrcamentoEstimado] = useState("");
@@ -85,7 +88,12 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
       toast.error("Descrição é obrigatória");
       return;
     }
-    
+
+    if (!categoria) {
+      toast.error("Seleccione a categoria do produto/serviço a adquirir");
+      return;
+    }
+
     if (!localEntrega.trim()) {
       toast.error("Local de entrega é obrigatório");
       return;
@@ -109,6 +117,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
     const data = {
       titulo: titulo.trim(),
       descricao: descricao.trim(),
+      categoria,
       departamento_solicitante: departamento.trim() || undefined,
       prioridade,
       orcamento_estimado: orcamentoEstimado ? parseFloat(orcamentoEstimado) : 0,
@@ -141,6 +150,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
       // Reset form
       setTitulo("");
       setDescricao("");
+      setCategoria("");
       setDepartamento("");
       setPrioridade("normal");
       setOrcamentoEstimado("");
@@ -208,6 +218,23 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
                 rows={3}
                 required
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="categoria">Categoria do Produto/Serviço *</Label>
+              <Select value={categoria} onValueChange={setCategoria}>
+                <SelectTrigger id="categoria">
+                  <SelectValue placeholder="Seleccione a categoria..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {categorias.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.nome}>{cat.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Ao publicar, só os fornecedores cadastrados nesta categoria serão notificados por e-mail.
+              </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">

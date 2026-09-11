@@ -216,17 +216,23 @@ export function useProcurement(): UseProcurementReturn {
   }, []);
 
   const aprovarCotacao = useCallback(async (
-    pedidoId: string, 
-    cotacaoId: string, 
+    pedidoId: string,
+    cotacaoId: string,
     justificativa: string
   ): Promise<boolean> => {
     try {
-      const response = await apiClient.post<{ pedido: PedidoCompra }>(
+      // O backend so aceita esta chamada quando o pedido esta em "em_analise"
+      // (depois de "Analisar as Cotações"). Ao aprovar, o pedido passa a
+      // "concluido" e a ordem de compra correspondente e emitida automaticamente.
+      const response = await apiClient.post<{ pedido: PedidoCompra; ordem?: OrdemCompra }>(
         `/procurement/pedidos/${pedidoId}/aprovar`,
         { cotacao_id: cotacaoId, justificativa }
       );
-      toast.success('Cotação aprovada! Ordem de compra será gerada.');
+      toast.success('Cotação aprovada! Ordem de compra gerada.');
       setPedidos(prev => prev.map(p => p.id === pedidoId ? response.pedido : p));
+      if (response.ordem) {
+        setOrdensCompra(prev => [response.ordem as OrdemCompra, ...prev]);
+      }
       return true;
     } catch (err: any) {
       toast.error('Erro ao aprovar cotação');

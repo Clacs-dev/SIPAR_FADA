@@ -6,7 +6,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { CalendarPlus, FileText, X } from "lucide-react";
 import { Button } from "../ui/button";
 
-export function InternalMeetings() {
+interface InternalMeetingsProps {
+  onNavigateToActa?: (actaId: string) => void;
+}
+
+export function InternalMeetings({ onNavigateToActa }: InternalMeetingsProps = {}) {
   const [activeTab, setActiveTab] = useState("agendar");
   const [showForm, setShowForm] = useState(false);
 
@@ -98,7 +102,7 @@ export function InternalMeetings() {
           </div>
 
           {/* Lista de Reuniões */}
-          <InternalMeetingsList />
+          <InternalMeetingsList onNavigateToActa={onNavigateToActa} />
         </TabsContent>
 
         <TabsContent value="actas" className="space-y-6 mt-6">

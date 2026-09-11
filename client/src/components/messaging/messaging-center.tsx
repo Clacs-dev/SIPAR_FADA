@@ -63,6 +63,7 @@ interface User {
   name: string;
   email: string;
   role: string;
+  document?: string;
 }
 
 export function MessagingCenter() {
@@ -76,12 +77,48 @@ export function MessagingCenter() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [recipientSearch, setRecipientSearch] = useState('');
   const [newMessage, setNewMessage] = useState<NewMessage>({
     to_user_id: '',
     subject: '',
     content: '',
     priority: 'medium'
   });
+
+  const selectedRecipient = users.find((u) => u.id === newMessage.to_user_id) || null;
+
+  const resetCompose = () => {
+    setNewMessage({ to_user_id: '', subject: '', content: '', priority: 'medium' });
+    setRecipientSearch('');
+  };
+
+  const handleReply = (message: Message) => {
+    const otherPartyId = message.from_user_id === user?.id ? message.to_user_id : message.from_user_id;
+    setNewMessage({
+      to_user_id: otherPartyId,
+      subject: message.subject.toLowerCase().startsWith('re:') ? message.subject : `Re: ${message.subject}`,
+      content: '',
+      priority: message.priority,
+    });
+    setRecipientSearch('');
+    setSelectedMessage(null);
+    setIsComposeOpen(true);
+  };
+
+  const recipientMatches = (() => {
+    const term = recipientSearch.trim().toLowerCase();
+    if (!term) return [];
+    return users
+      .filter((u) =>
+        u.name.toLowerCase().includes(term) ||
+        u.email.toLowerCase().includes(term) ||
+        (u.document || '').toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  })();
+
+  const getRoleLabel = (role: string) =>
+    role === 'admin' ? 'Administrador' : role === 'attendant' ? 'Atendente' : role === 'user' ? 'Requerente' : role;
 
   useEffect(() => {
     if (user?.id) {
@@ -112,7 +149,6 @@ export function MessagingCenter() {
       }
 
       const data = await response.json();
- console.log('Mensagens carregadas:', data.messages?.length || 0);
       setMessages(data.messages || []);
     } catch (error) {
  console.error('Erro ao carregar mensagens:', error);
@@ -129,7 +165,6 @@ export function MessagingCenter() {
         return;
       }
 
- console.log('Carregando lista de usuários...');
       const response = await fetch(`${API_BASE_URL}/users`, {
         method: 'GET',
         headers: {
@@ -141,10 +176,10 @@ export function MessagingCenter() {
 
       if (response.ok) {
         const data = await response.json();
- console.log('Usuários carregados:', data.users?.length || 0);
-        // Filtrar o próprio usuário da lista
-        const filteredUsers = data.users?.filter((u: User) => u.id !== user?.id) || [];
- console.log('Usuários disponíveis para mensagem:', filteredUsers.length);
+        // Filtrar o próprio usuário da lista. A rota /users devolve { data: [...] },
+        // nunca { users: [...] } - era isso que deixava a lista sempre vazia e
+        // impedia o envio de mensagens.
+        const filteredUsers = data.data?.filter((u: User) => u.id !== user?.id) || [];
         setUsers(filteredUsers);
       } else {
  console.error('Erro ao carregar usuários:', response.status);
@@ -183,12 +218,7 @@ export function MessagingCenter() {
 
       toast.success('Mensagem enviada com sucesso!');
       setIsComposeOpen(false);
-      setNewMessage({
-        to_user_id: '',
-        subject: '',
-        content: '',
-        priority: 'medium'
-      });
+      resetCompose();
       loadMessages();
     } catch (error) {
  console.error('Erro ao enviar mensagem:', error);
@@ -292,7 +322,13 @@ export function MessagingCenter() {
             Gerencie comunicações internas do sistema
           </p>
         </div>
-        <Dialog open={isComposeOpen} onOpenChange={setIsComposeOpen}>
+        <Dialog
+          open={isComposeOpen}
+          onOpenChange={(open) => {
+            setIsComposeOpen(open);
+            if (!open) resetCompose();
+          }}
+        >
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
@@ -313,22 +349,72 @@ export function MessagingCenter() {
                   <div className="p-3 border rounded-md bg-muted/50">
                     <p className="text-sm text-muted-foreground">Carregando usuários...</p>
                   </div>
+                ) : selectedRecipient ? (
+                  <div className="flex items-center justify-between p-3 border rounded-md bg-muted/50">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{selectedRecipient.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {selectedRecipient.email} · {getRoleLabel(selectedRecipient.role)}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setNewMessage((prev) => ({ ...prev, to_user_id: '' }));
+                        setRecipientSearch('');
+                      }}
+                    >
+                      Alterar
+                    </Button>
+                  </div>
                 ) : (
-                  <Select value={newMessage.to_user_id} onValueChange={(value) => {
- console.log('Usuário selecionado:', value);
-                    setNewMessage(prev => ({ ...prev, to_user_id: value }));
-                  }}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione o destinatário" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {users.map(u => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.name} - {u.role === 'admin' ? 'Administrador' : u.role === 'attendant' ? 'Atendente' : 'Requerente'} ({u.email})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                      <Input
+                        id="recipient"
+                        placeholder="Pesquise por nome, email ou número de documento..."
+                        value={recipientSearch}
+                        onChange={(e) => setRecipientSearch(e.target.value)}
+                        className="pl-10"
+                        autoComplete="off"
+                      />
+                    </div>
+                    {recipientSearch.trim().length > 0 && (
+                      <div className="mt-2 border rounded-md max-h-56 overflow-y-auto">
+                        {recipientMatches.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            Nenhum utilizador encontrado
+                          </p>
+                        ) : (
+                          recipientMatches.map((u) => (
+                            <button
+                              type="button"
+                              key={u.id}
+                              onClick={() => {
+                                setNewMessage((prev) => ({ ...prev, to_user_id: u.id }));
+                                setRecipientSearch('');
+                              }}
+                              className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent transition-colors border-b last:border-b-0"
+                            >
+                              <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{u.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {u.email} · {getRoleLabel(u.role)}
+                                </p>
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {users.length > 0 && (
                   <p className="text-xs text-muted-foreground">
@@ -375,7 +461,13 @@ export function MessagingCenter() {
               </div>
 
               <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setIsComposeOpen(false)}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsComposeOpen(false);
+                    resetCompose();
+                  }}
+                >
                   Cancelar
                 </Button>
                 <Button onClick={sendMessage}>
@@ -558,6 +650,12 @@ export function MessagingCenter() {
                   Lida em: {new Date(selectedMessage.read_at).toLocaleString('pt-BR')}
                 </div>
               )}
+              <div className="flex justify-end pt-2">
+                <Button onClick={() => handleReply(selectedMessage)}>
+                  <Send className="h-4 w-4 mr-2" />
+                  Responder
+                </Button>
+              </div>
             </>
           )}
         </DialogContent>

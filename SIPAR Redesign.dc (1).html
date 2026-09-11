@@ -1,0 +1,2043 @@
+<!DOCTYPE html>
+<html lang="pt">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIPAR — Redesign</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --ink: #101d33;
+      --ink-2: #17253f;
+      --ink-3: #233252;
+      --paper: #f4f6f5;
+      --paper-card: #ffffff;
+      --line: #e3e7e6;
+      --text: #141b26;
+      --text-soft: #5b6472;
+      --text-faint: #8a92a0;
+      --accent: #1f6f6b;
+      --accent-soft: #e2efee;
+      --gold: #b8862b;
+      --gold-soft: #f7eedb;
+      --success: #2f7d5b;
+      --success-soft: #e5f2ec;
+      --warn: #c97a2b;
+      --warn-soft: #faeee0;
+      --danger: #b23a32;
+      --danger-soft: #f8e7e5;
+      --info: #3b6ea5;
+      --info-soft: #e8eef7;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow: 0 1px 2px rgba(16, 29, 51, .04), 0 6px 20px rgba(16, 29, 51, .05);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--paper);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1,
+    h2,
+    h3,
+    .serif {
+      font-family: 'Source Serif 4', serif;
+    }
+
+    .app {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ---------- SIDEBAR ---------- */
+    .sidebar {
+      width: 264px;
+      flex-shrink: 0;
+      background: linear-gradient(180deg, var(--ink) 0%, var(--ink-2) 100%);
+      color: #cfd8e6;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    .brand {
+      padding: 22px 22px 18px 22px;
+      border-bottom: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .brand .mark {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .brand .mark .dot {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--gold), #8e6420);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #1a1204;
+      font-family: 'Source Serif 4', serif;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .brand .mark .name {
+      font-family: 'Source Serif 4', serif;
+      font-size: 20px;
+      color: #fff;
+      font-weight: 600;
+      letter-spacing: .2px;
+    }
+
+    .brand .sub {
+      font-size: 12px;
+      color: #8fa0b8;
+      line-height: 1.4;
+    }
+
+    .user-chip {
+      margin: 16px 18px;
+      padding: 12px 14px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, .05);
+      border: 1px solid rgba(255, 255, 255, .07);
+    }
+
+    .user-chip .u-name {
+      font-size: 13.5px;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .user-chip .u-mail {
+      font-size: 11.5px;
+      color: #8fa0b8;
+      margin-top: 2px;
+    }
+
+    .user-chip .u-role {
+      margin-top: 9px;
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 100px;
+      letter-spacing: .3px;
+      background: rgba(184, 134, 43, .18);
+      color: #e6c583;
+      border: 1px solid rgba(184, 134, 43, .35);
+    }
+
+    .nav {
+      padding: 6px 12px 24px 12px;
+      flex: 1;
+    }
+
+    .nav-group {
+      margin-top: 16px;
+    }
+
+    .nav-group-label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #5f7290;
+      padding: 0 10px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 8px;
+      margin-bottom: 2px;
+      font-size: 13.5px;
+      color: #c3cede;
+      cursor: pointer;
+      transition: background .12s ease, color .12s ease;
+      border: 1px solid transparent;
+    }
+
+    .nav-item svg {
+      width: 17px;
+      height: 17px;
+      flex-shrink: 0;
+      opacity: .85;
+    }
+
+    .nav-item:hover {
+      background: rgba(255, 255, 255, .05);
+      color: #fff;
+    }
+
+    .nav-item.active {
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      border-color: rgba(184, 134, 43, .35);
+    }
+
+    .nav-item.active svg {
+      opacity: 1;
+      color: var(--gold);
+    }
+
+    .nav-item .nbadge {
+      margin-left: auto;
+      font-size: 10.5px;
+      background: rgba(255, 255, 255, .08);
+      padding: 1px 7px;
+      border-radius: 100px;
+      color: #a9b6c8;
+    }
+
+    /* ---------- MAIN ---------- */
+    .main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 32px;
+      background: var(--paper-card);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .topbar .url {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-faint);
+      font-size: 13px;
+      background: var(--paper);
+      padding: 7px 14px;
+      border-radius: 100px;
+      border: 1px solid var(--line);
+    }
+
+    .topbar .actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .clock {
+      font-size: 12.5px;
+      color: var(--text-faint);
+    }
+
+    .page {
+      padding: 32px;
+      max-width: 1280px;
+    }
+
+    .page-head {
+      margin-bottom: 26px;
+    }
+
+    .page-head .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .page-head h1 {
+      font-size: 30px;
+      font-weight: 600;
+      margin: 0 0 6px 0;
+      color: var(--text);
+    }
+
+    .page-head p {
+      margin: 0;
+      color: var(--text-soft);
+      font-size: 14.5px;
+      max-width: 60ch;
+    }
+
+    .page-head .head-actions {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      border: none;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      font-weight: 600;
+      font-size: 13.5px;
+      padding: 10px 18px;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform .08s ease, box-shadow .12s ease;
+    }
+
+    .btn-primary {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--ink-2);
+    }
+
+    .btn-gold {
+      background: var(--gold);
+      color: #231705;
+    }
+
+    .btn-gold:hover {
+      filter: brightness(1.06);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+
+    .btn-ghost:hover {
+      background: var(--paper);
+    }
+
+    /* stat cards */
+    .stat-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 18px 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .stat-card .icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .stat-card .val {
+      font-family: 'Source Serif 4', serif;
+      font-size: 30px;
+      font-weight: 600;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .stat-card .lbl {
+      font-size: 12.5px;
+      color: var(--text-soft);
+      margin-top: 6px;
+    }
+
+    .stat-card.hero {
+      grid-column: span 2;
+      background: linear-gradient(135deg, var(--ink), var(--ink-3));
+      border-color: var(--ink);
+    }
+
+    .stat-card.hero .val {
+      color: #fff;
+    }
+
+    .stat-card.hero .lbl {
+      color: #a9b6c8;
+    }
+
+    .stat-card.hero .icon {
+      background: rgba(184, 134, 43, .18);
+    }
+
+    .tone-accent .icon {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .tone-gold .icon {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .tone-success .icon {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .tone-warn .icon {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .tone-danger .icon {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .tone-info .icon {
+      background: var(--info-soft);
+      color: var(--info);
+    }
+
+    /* tabs */
+    .tabbar {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+      overflow-x: auto;
+    }
+
+    .tab {
+      padding: 11px 16px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-soft);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tab.active {
+      color: var(--ink);
+      border-color: var(--gold);
+    }
+
+    .tab .n {
+      color: var(--text-faint);
+      font-weight: 500;
+    }
+
+    /* search */
+    .searchbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 11px 16px;
+      margin-bottom: 22px;
+      color: var(--text-faint);
+      font-size: 13.5px;
+    }
+
+    /* badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 100px;
+      white-space: nowrap;
+    }
+
+    .b-success {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .b-warn {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .b-danger {
+      background: var(--danger-soft);
+      color: var(--danger);
+    }
+
+    .b-info {
+      background: var(--info-soft);
+      color: var(--info);
+    }
+
+    .b-neutral {
+      background: #eceff0;
+      color: #5b6472;
+    }
+
+    .b-gold {
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    /* list card */
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .item-card {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      transition: border-color .12s ease;
+    }
+
+    .item-card:hover {
+      border-color: #c9d3d2;
+    }
+
+    .item-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .item-code {
+      font-family: 'Source Serif 4', serif;
+      font-size: 13.5px;
+      color: var(--text-faint);
+      font-weight: 600;
+    }
+
+    .item-title {
+      font-size: 16.5px;
+      font-weight: 600;
+      margin: 2px 0 6px 0;
+    }
+
+    .item-meta {
+      font-size: 12.5px;
+      color: var(--text-soft);
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .item-meta span {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .item-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .item-right {
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .item-value {
+      font-family: 'Source Serif 4', serif;
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    /* two-col grid */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel h3 {
+      margin: 0 0 4px 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .panel .desc {
+      font-size: 12.5px;
+      color: var(--text-soft);
+      margin-bottom: 16px;
+    }
+
+    .empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 50px 20px;
+      color: var(--text-faint);
+      text-align: center;
+      gap: 10px;
+    }
+
+    .empty .ico {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--paper);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-faint);
+      margin-bottom: 4px;
+    }
+
+    /* table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    th {
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--text-faint);
+      font-weight: 600;
+      padding: 0 14px 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .row-hover:hover {
+      background: var(--paper);
+    }
+
+    /* calendar */
+    .cal {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .cal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .cal-head .m {
+      font-family: 'Source Serif 4', serif;
+      font-weight: 600;
+      font-size: 16px;
+    }
+
+    .cal-nav {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-soft);
+    }
+
+    .cal-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      text-align: center;
+    }
+
+    .cal-grid .dow {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-weight: 600;
+      padding-bottom: 6px;
+    }
+
+    .cal-grid .day {
+      padding: 9px 0;
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .cal-grid .day.faint {
+      color: var(--text-faint);
+    }
+
+    .cal-grid .day.today {
+      background: var(--ink);
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .cal-grid .day:not(.today):hover {
+      background: var(--paper);
+    }
+
+    /* vehicle grid */
+    .veh-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .veh-card {
+      background: var(--paper-card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .veh-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .veh-plate {
+      font-family: 'Source Serif 4', serif;
+      font-weight: 600;
+      font-size: 13.5px;
+      background: var(--paper);
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+    }
+
+    .veh-name {
+      font-size: 17px;
+      font-weight: 600;
+      text-transform: capitalize;
+      margin: 0 0 2px 0;
+    }
+
+    .veh-year {
+      font-size: 12.5px;
+      color: var(--text-soft);
+      margin-bottom: 14px;
+    }
+
+    .veh-specs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .veh-specs .lbl {
+      color: var(--text-faint);
+      font-size: 11.5px;
+      margin-bottom: 2px;
+    }
+
+    .veh-specs .v {
+      font-weight: 600;
+    }
+
+    /* login */
+    .login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--paper);
+      padding: 20px;
+    }
+
+    .login-card {
+      display: flex;
+      width: 100%;
+      max-width: 920px;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 30px 60px rgba(16, 29, 51, .14);
+    }
+
+    .login-side {
+      flex: 1;
+      background: radial-gradient(120% 120% at 0% 0%, #1a2b4a 0%, var(--ink) 60%, #0b1526 100%);
+      padding: 44px 38px;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .login-side::after {
+      content: "";
+      position: absolute;
+      right: -60px;
+      bottom: -60px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(184, 134, 43, .28), transparent 70%);
+    }
+
+    .login-side .mark {
+      font-family: 'Source Serif 4', serif;
+      font-size: 30px;
+      font-weight: 600;
+      margin-bottom: 10px;
+    }
+
+    .login-side .rule {
+      width: 36px;
+      height: 3px;
+      background: var(--gold);
+      margin-bottom: 16px;
+      border-radius: 2px;
+    }
+
+    .login-side p {
+      color: #b9c4d6;
+      font-size: 14px;
+      line-height: 1.6;
+      max-width: 30ch;
+    }
+
+    .login-feature {
+      margin-top: auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+      background: rgba(255, 255, 255, .06);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, .08);
+    }
+
+    .login-feature .fi {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: rgba(184, 134, 43, .2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--gold);
+      flex-shrink: 0;
+    }
+
+    .login-feature .ft {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .login-feature .fs {
+      font-size: 11.5px;
+      color: #a9b6c8;
+    }
+
+    .login-form {
+      flex: 1;
+      background: #fff;
+      padding: 48px 42px;
+    }
+
+    .login-form h1 {
+      font-size: 26px;
+      margin: 0 0 6px 0;
+      font-weight: 600;
+    }
+
+    .login-form .sub {
+      color: var(--text-soft);
+      font-size: 13.5px;
+      margin-bottom: 28px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .field input {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      background: var(--paper);
+    }
+
+    .field input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: var(--accent);
+    }
+
+    .login-form .btn-primary {
+      width: 100%;
+      justify-content: center;
+      padding: 13px;
+      margin-top: 6px;
+      background: var(--ink);
+    }
+
+    .login-form .foot {
+      text-align: center;
+      margin-top: 22px;
+      font-size: 13px;
+      color: var(--text-soft);
+    }
+
+    .login-form .foot a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    @media (max-width: 900px) {
+      .sidebar {
+        display: none;
+      }
+
+      .grid-2,
+      .grid-3,
+      .veh-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stat-card.hero {
+        grid-column: span 1;
+      }
+
+      .login-card {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="app">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">
+          <div class="dot">S</div>
+          <div class="name">SIPAR</div>
+        </div>
+        <div class="sub">Sistema Integrado de Processos, Aprovações &amp; Registos</div>
+      </div>
+
+      <div class="user-chip">
+        <div class="u-name">Administrador Sistema</div>
+        <div class="u-mail">admin@sistema.com</div>
+        <div class="u-role">Administrador</div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <div class="nav-group">
+          <div class="nav-group-label">Visão Geral</div>
+          <div class="nav-item active" data-screen="dashboard">🏠 <span>Dashboard</span></div>
+          <div class="nav-item" data-screen="agenda">📅 <span>Agenda</span></div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">Processos &amp; Registos</div>
+          <div class="nav-item" data-screen="solicitacoes">📋 <span>Solicitações</span> <span class="nbadge">39</span>
+          </div>
+          <div class="nav-item" data-screen="reunioes">🤝 <span>Reuniões Internas</span></div>
+          <div class="nav-item" data-screen="actas">📖 <span>Livro de Actas</span> <span class="nbadge">6</span></div>
+          <div class="nav-item" data-screen="oficios">✉️ <span>Ofícios</span> <span class="nbadge">45</span></div>
+          <div class="nav-item" data-screen="comunicacao">📣 <span>Comunicação Interna</span> <span
+              class="nbadge">10</span></div>
+          <div class="nav-item" data-screen="reclamacoes">⚠️ <span>Reclamações</span> <span class="nbadge">9</span>
+          </div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">Financeiro</div>
+          <div class="nav-item" data-screen="pagamentos">💳 <span>Facturas &amp; Pagamentos</span></div>
+          <div class="nav-item" data-screen="planeamento">📈 <span>Planeamento &amp; Gestão</span></div>
+          <div class="nav-item" data-screen="contratos">📑 <span>Contratos</span></div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">Operações</div>
+          <div class="nav-item" data-screen="procurement">🛒 <span>Procurement</span></div>
+          <div class="nav-item" data-screen="helpdesk">🎧 <span>Helpdesk</span></div>
+          <div class="nav-item" data-screen="frota">🚗 <span>Gestão de Frota</span></div>
+        </div>
+
+        <div class="nav-group">
+          <div class="nav-group-label">Acesso</div>
+          <div class="nav-item" data-screen="login">🔐 <span>Ecrã de Login</span></div>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="topbar">
+        <div class="url">🌐 sipar.clacstecnologia.com</div>
+        <div class="actions"><span class="clock">Terça-feira, 1 de setembro · 13:14</span></div>
+      </div>
+
+      <!-- ============ DASHBOARD ============ -->
+      <div class="screen active" id="dashboard">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Visão geral</div>
+            <h1>Bom dia, Administrador</h1>
+            <p>Aqui está o estado atual dos processos, aprovações e registos do sistema.</p>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-card hero">
+              <div class="icon">📈</div>
+              <div class="val">68%</div>
+              <div class="lbl">Taxa de aprovação de solicitações</div>
+            </div>
+            <div class="stat-card tone-accent">
+              <div class="icon">📄</div>
+              <div class="val">24</div>
+              <div class="lbl">Apresentações · 8 pendentes</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="icon">👥</div>
+              <div class="val">29</div>
+              <div class="lbl">Audiências · 9 por confirmar</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="icon">✅</div>
+              <div class="val">7</div>
+              <div class="lbl">Apresentações agendadas</div>
+            </div>
+          </div>
+
+          <h3 style="margin-bottom:14px;">Módulos do sistema</h3>
+          <div class="stat-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));">
+            <div class="stat-card tone-accent">
+              <div class="icon">✉️</div>
+              <div class="val">45</div>
+              <div class="lbl">Ofícios</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="icon">📣</div>
+              <div class="val">10</div>
+              <div class="lbl">Comunicações</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="icon">📖</div>
+              <div class="val">6</div>
+              <div class="lbl">Actas</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="icon">🚗</div>
+              <div class="val">5</div>
+              <div class="lbl">Frotas</div>
+            </div>
+            <div class="stat-card tone-danger">
+              <div class="icon">🧾</div>
+              <div class="val">15</div>
+              <div class="lbl">Facturas</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="icon">🤝</div>
+              <div class="val">23</div>
+              <div class="lbl">Reuniões</div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top:26px;">
+            <div class="panel">
+              <h3>Solicitações recentes</h3>
+              <div class="desc">Últimas cartas de apresentação recebidas</div>
+              <div class="list">
+                <div class="item-card" style="padding:14px 16px;">
+                  <div class="item-row">
+                    <div>
+                      <div class="item-title" style="font-size:14px;">Consultoria Profissional Angola</div>
+                      <div class="item-meta"><span>Processos de licenciamento</span></div>
+                    </div>
+                    <span class="badge b-warn">Recebido</span>
+                  </div>
+                </div>
+                <div class="item-card" style="padding:14px 16px;">
+                  <div class="item-row">
+                    <div>
+                      <div class="item-title" style="font-size:14px;">GRD Services</div>
+                      <div class="item-meta"><span>Proposta de parceria</span></div>
+                    </div>
+                    <span class="badge b-success">Aceite</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="panel">
+              <h3>Próximas audiências</h3>
+              <div class="desc">Agendamentos confirmados desta semana</div>
+              <div class="empty">
+                <div class="ico">📅</div>
+                Sem audiências marcadas para os próximos dias.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ AGENDA ============ -->
+      <div class="screen" id="agenda">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Calendário</div>
+            <h1>Agenda de reuniões</h1>
+            <p>Visualize e gerencie todas as audiências agendadas.</p>
+          </div>
+          <div class="grid-2">
+            <div class="cal">
+              <div class="cal-head">
+                <div class="cal-nav">‹</div>
+                <div class="m">Setembro 2026</div>
+                <div class="cal-nav">›</div>
+              </div>
+              <div class="cal-grid">
+                <div class="dow">D</div>
+                <div class="dow">S</div>
+                <div class="dow">T</div>
+                <div class="dow">Q</div>
+                <div class="dow">Q</div>
+                <div class="dow">S</div>
+                <div class="dow">S</div>
+                <div class="day faint">30</div>
+                <div class="day faint">31</div>
+                <div class="day today">1</div>
+                <div class="day">2</div>
+                <div class="day">3</div>
+                <div class="day">4</div>
+                <div class="day">5</div>
+                <div class="day">6</div>
+                <div class="day">7</div>
+                <div class="day">8</div>
+                <div class="day">9</div>
+                <div class="day">10</div>
+                <div class="day">11</div>
+                <div class="day">12</div>
+                <div class="day">13</div>
+                <div class="day">14</div>
+                <div class="day">15</div>
+                <div class="day">16</div>
+                <div class="day">17</div>
+                <div class="day">18</div>
+                <div class="day">19</div>
+                <div class="day">20</div>
+                <div class="day">21</div>
+                <div class="day">22</div>
+                <div class="day">23</div>
+                <div class="day">24</div>
+                <div class="day">25</div>
+                <div class="day">26</div>
+                <div class="day">27</div>
+                <div class="day">28</div>
+                <div class="day">29</div>
+                <div class="day">30</div>
+                <div class="day faint">1</div>
+                <div class="day faint">2</div>
+                <div class="day faint">3</div>
+              </div>
+            </div>
+            <div>
+              <div class="panel" style="margin-bottom:16px;">
+                <h3>1 de setembro de 2026</h3>
+                <div class="desc">0 reuniões agendadas</div>
+                <div class="empty" style="padding:26px 10px;">
+                  <div class="ico">📅</div>
+                  Nenhuma reunião agendada para esta data.
+                </div>
+              </div>
+              <div class="panel">
+                <h3>Próximas reuniões</h3>
+                <div class="desc">Resumo das próximas audiências confirmadas</div>
+                <div class="empty" style="padding:20px 10px;">Sem registos ainda.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SOLICITAÇÕES ============ -->
+      <div class="screen" id="solicitacoes">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Solicitações</div>
+            <h1>Gerenciar solicitações</h1>
+            <p>Acompanhe e gerencie cartas de apresentação e pedidos de audiência.</p>
+          </div>
+          <div class="searchbar">🔍 Pesquisar por empresa ou contacto…</div>
+          <div class="tabbar">
+            <div class="tab active">Cartas de Apresentação <span class="n">24</span></div>
+            <div class="tab">Audiências <span class="n">15</span></div>
+          </div>
+          <div class="tabbar" style="border:none; margin-top:-14px;">
+            <div class="tab active"
+              style="background:var(--paper-card); border:1px solid var(--line); border-radius:9px; border-bottom:1px solid var(--line);">
+              Recebido <span class="n">8</span></div>
+            <div class="tab" style="border-radius:9px;">Aceites <span class="n">9</span></div>
+            <div class="tab" style="border-radius:9px;">Agendado <span class="n">7</span></div>
+          </div>
+          <div class="panel" style="padding:0; overflow-x:auto;">
+            <table>
+              <tr>
+                <th>Empresa</th>
+                <th>Ramo</th>
+                <th>Assunto</th>
+                <th>Requerente</th>
+                <th>Data</th>
+              </tr>
+              <tr class="row-hover">
+                <td><strong>Consultoria Profissional Angola</strong></td>
+                <td>Não informada</td>
+                <td>Consultoria sobre processos de licenciamento</td>
+                <td>—</td>
+                <td>08/01</td>
+              </tr>
+              <tr class="row-hover">
+                <td><strong>Empresa Comercial Luanda, Lda</strong></td>
+                <td>Não informada</td>
+                <td>Proposta comercial — fornecimento de equipamentos</td>
+                <td>—</td>
+                <td>01/01</td>
+              </tr>
+              <tr class="row-hover">
+                <td><strong>GRD Services</strong></td>
+                <td>Consultoria</td>
+                <td>Proposta de Parceria</td>
+                <td>Valter Ferreira, Director Financeiro</td>
+                <td>18/12</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ REUNIÕES ============ -->
+      <div class="screen" id="reunioes">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Colaboração interna</div>
+            <h1>Reuniões internas &amp; livro de actas</h1>
+            <p>Agende reuniões e gerencie actas automaticamente.</p>
+            <div class="head-actions">
+              <button class="btn btn-primary">＋ Agendar reunião</button>
+              <button class="btn btn-ghost">📖 Ver actas</button>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab">Todas</div>
+            <div class="tab">Pendentes</div>
+            <div class="tab active">Confirmadas</div>
+            <div class="tab">Concluídas</div>
+          </div>
+          <div class="panel">
+            <h3>Minhas reuniões internas</h3>
+            <div class="desc">Reuniões agendadas com outros membros da equipa</div>
+            <div class="empty">
+              <div class="ico">👥</div>
+              Nenhuma reunião encontrada.
+              <button class="btn btn-gold" style="margin-top:6px;">＋ Agendar a primeira reunião</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ ACTAS ============ -->
+      <div class="screen" id="actas">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Registos formais</div>
+            <h1>Livro de actas</h1>
+            <p>Gerir actas de reuniões e assembleias.</p>
+            <div class="head-actions">
+              <button class="btn btn-primary">＋ Nova acta</button>
+              <button class="btn btn-ghost">⬇ Baixar PDF demo</button>
+            </div>
+          </div>
+          <div class="searchbar">🔍 Pesquisar por número, assunto ou local… <span
+              style="margin-left:auto; color:var(--text-faint);">6 actas encontradas</span></div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">ACTA-2026-794836</span><span
+                      class="badge b-neutral">Rascunho</span><span class="badge b-info">Ordinária</span></div>
+                  <div class="item-title">Abertura do Ano</div>
+                  <div class="item-meta"><span>📅 10/03/2026 · 10:29</span><span>📍 Sala 1</span><span>👥 2
+                      participantes</span></div>
+                </div>
+                <div class="item-right">👁 ✏️ ⬇</div>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">ACTA-2026-746998</span><span
+                      class="badge b-neutral">Rascunho</span><span class="badge b-gold">Extraordinária</span></div>
+                  <div class="item-title">Reunião de direcção — Dande Free Zone</div>
+                  <div class="item-meta"><span>📅 25/02/2026 · 09:00</span><span>📍 Sala 1</span><span>👥 2
+                      participantes</span></div>
+                </div>
+                <div class="item-right">👁 ✏️ ⬇</div>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">ACTA-2026-756618</span><span
+                      class="badge b-neutral">Rascunho</span><span class="badge b-info">Ordinária</span></div>
+                  <div class="item-title">Conciliação de Contas</div>
+                  <div class="item-meta"><span>📅 25/02/2026 · 09:00</span><span>📍 Sala 1</span><span>👥 2
+                      participantes</span></div>
+                </div>
+                <div class="item-right">👁 ✏️ ⬇</div>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">ACTA-2026-506350</span><span
+                      class="badge b-neutral">Rascunho</span><span class="badge b-info">Ordinária</span></div>
+                  <div class="item-title">Proposta de Parceria Tecnológica</div>
+                  <div class="item-meta"><span>📅 22/01/2026 · 10:30</span><span>📍 Sede do MINTRANS</span><span>👥 2
+                      participantes</span></div>
+                </div>
+                <div class="item-right">👁 ✏️ ⬇</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ OFÍCIOS ============ -->
+      <div class="screen" id="oficios">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Correspondência oficial</div>
+            <h1>Gestão de ofícios</h1>
+            <p>Gestão de correspondência oficial de entrada e saída.</p>
+            <div class="head-actions"><button class="btn btn-primary">＋ Novo ofício</button></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab active">Todos <span class="n">45</span></div>
+            <div class="tab">Recebidos <span class="n">35</span></div>
+            <div class="tab">Enviados <span class="n">10</span></div>
+            <div class="tab">Arquivo <span class="n">5</span></div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="badge b-danger">Urgente</span><span
+                      class="item-code">OF-2026-607403</span><span class="badge b-success">Despachado</span></div>
+                  <div class="item-title">Apresentação</div>
+                  <div class="item-meta"><span>De: DIADIKOTA</span><span>Prazo: 16/07/2026</span></div>
+                </div>
+                <span class="badge b-info">⬇ Entrada</span>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="badge b-danger">Urgente</span><span
+                      class="item-code">OF-2026-603054</span><span class="badge b-warn">Pendente</span></div>
+                  <div class="item-title">Apresentação</div>
+                  <div class="item-meta"><span>De: DIADIKOTA</span><span>Prazo: 16/07/2026</span></div>
+                </div>
+                <span class="badge b-info">⬇ Entrada</span>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">OF-2026-716739</span><span
+                      class="badge b-success">Despachado</span></div>
+                  <div class="item-title">Parceira</div>
+                  <div class="item-meta"><span>De: ACT</span><span>11/06/2026</span></div>
+                </div>
+                <span class="badge b-info">⬇ Entrada</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ COMUNICAÇÃO ============ -->
+      <div class="screen" id="comunicacao">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Fluxo interno</div>
+            <h1>Comunicações internas</h1>
+            <p>Gestão de comunicações internas de saída.</p>
+            <div class="head-actions">
+              <button class="btn btn-primary">＋ Nova comunicação</button>
+              <button class="btn btn-ghost">⬇ Exportar relatório</button>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-accent">
+              <div class="icon">💬</div>
+              <div class="val">10</div>
+              <div class="lbl">Total de comunicações</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="icon">⏱</div>
+              <div class="val">7</div>
+              <div class="lbl">Pendentes de resposta</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="icon">📦</div>
+              <div class="val">7</div>
+              <div class="lbl">Em arquivo</div>
+            </div>
+            <div class="stat-card tone-danger">
+              <div class="icon">❗</div>
+              <div class="val">2</div>
+              <div class="lbl">Urgentes</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">COM/2026/03/0001</span><span
+                      class="badge b-danger">Urgente</span></div>
+                  <div class="item-title">Dificuldade no acesso com o passe</div>
+                  <div class="item-meta"><span>De: Gabinete Director</span><span>Para: Tecnologia e
+                      Informação</span><span>12/03 · 11:17</span></div>
+                </div>
+                <span class="badge b-warn">Pendente</span>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">COM/2026/02/0003</span><span
+                      class="badge b-neutral">Confidencial</span></div>
+                  <div class="item-title">Proposta de parceria tecnológica</div>
+                  <div class="item-meta"><span>De: Financeiro</span><span>Para: Financeiro</span><span>25/02 ·
+                      12:35</span></div>
+                </div>
+                <span class="badge b-warn">Pendente</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ RECLAMAÇÕES ============ -->
+      <div class="screen" id="reclamacoes">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Qualidade &amp; atendimento</div>
+            <h1>Gestão de reclamações</h1>
+            <p>Sistema completo de registo e acompanhamento de reclamações.</p>
+            <div class="head-actions">
+              <button class="btn btn-primary">＋ Nova reclamação</button>
+              <button class="btn btn-ghost">👥 Operadores</button>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-accent">
+              <div class="icon">📥</div>
+              <div class="val">9</div>
+              <div class="lbl">Total</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="icon">📝</div>
+              <div class="val">1</div>
+              <div class="lbl">Registadas</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="icon">🔄</div>
+              <div class="val">0</div>
+              <div class="lbl">Em resolução</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="icon">✅</div>
+              <div class="val">2</div>
+              <div class="lbl">Resolvidas</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="icon">⭐</div>
+              <div class="val">5.0</div>
+              <div class="lbl">Avaliação média</div>
+            </div>
+          </div>
+          <h3 style="margin-bottom:12px;">Reclamações por tipo</h3>
+          <div class="grid-3" style="margin-bottom:24px;">
+            <div class="stat-card tone-accent">
+              <div class="val">3</div>
+              <div class="lbl">Cliente</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="val">0</div>
+              <div class="lbl">Fornecedor</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="val">0</div>
+              <div class="lbl">Qualidade / Serviço / Outro</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">REC/2026/02/0009</span><span
+                      class="badge b-warn">Média</span></div>
+                  <div class="item-title">Dificuldade no acesso com o passe</div>
+                  <div class="item-meta"><span>quercia.jorge@enbi.ao</span><span>25/02 · 12:39</span></div>
+                </div>
+                <span class="badge b-success">Resolvido</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ CONTRATOS ============ -->
+      <div class="screen" id="contratos">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Vigências &amp; renovações</div>
+            <h1>Gestão de contratos</h1>
+            <p>Controle de vigências, renovações e alertas de vencimento.</p>
+            <div class="head-actions"><button class="btn btn-primary">＋ Novo contrato</button></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-accent">
+              <div class="val">2</div>
+              <div class="lbl">Total</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="val">1</div>
+              <div class="lbl">Ativos</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="val">0</div>
+              <div class="lbl">Expirando (30d)</div>
+            </div>
+            <div class="stat-card tone-danger">
+              <div class="val">0</div>
+              <div class="lbl">Expirados</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="val">0.1M</div>
+              <div class="lbl">Valor total ativos</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">CONT/2026/0001</span><span
+                      class="badge b-info">Prestação de serviços</span></div>
+                  <div class="item-title">Serviços</div>
+                  <div class="item-meta"><span>Contratado: Domingos</span><span>Início 08/03 · Fim 05/04</span><span>1
+                      mês</span></div>
+                </div>
+                <div class="item-right">
+                  <div class="item-value">100 000 AOA</div>
+                  <span class="badge b-success">Ativo</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PAGAMENTOS ============ -->
+      <div class="screen" id="pagamentos">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Financeiro</div>
+            <h1>Facturas &amp; pagamentos</h1>
+            <p>Gestão financeira de facturas e pagamentos.</p>
+          </div>
+          <div class="tabbar">
+            <div class="tab active">Dashboard</div>
+            <div class="tab">Todas <span class="n">15</span></div>
+            <div class="tab">Pendentes <span class="n">1</span></div>
+            <div class="tab">Aprovados <span class="n">1</span></div>
+            <div class="tab">Pagos <span class="n">6</span></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-info">
+              <div class="val">3</div>
+              <div class="lbl">Aguardam validação</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="val">4</div>
+              <div class="lbl">Em análise</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="val">6</div>
+              <div class="lbl">Prontas para pagar</div>
+            </div>
+            <div class="stat-card tone-accent">
+              <div class="val">4</div>
+              <div class="lbl">Pagas</div>
+            </div>
+            <div class="stat-card tone-danger">
+              <div class="val">1</div>
+              <div class="lbl">Rejeitadas</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="val">2</div>
+              <div class="lbl">Vencidas</div>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-bottom:20px;">
+            <div class="panel">
+              <div class="desc">Valor total</div>
+              <h3 style="font-size:26px; margin-bottom:0;">12 500 000,00 Kz</h3>
+              <div class="desc" style="margin-top:4px;">18 facturas registadas</div>
+            </div>
+            <div class="panel">
+              <div class="desc">Total pago</div>
+              <h3 style="font-size:26px; margin-bottom:0; color:var(--success);">7 800 000,00 Kz</h3>
+              <div class="desc" style="margin-top:4px;">62.4% do valor total</div>
+            </div>
+          </div>
+          <div class="grid-2" style="margin-bottom:24px;">
+            <div class="panel" style="border-color:#e6c9c6; background:var(--danger-soft);">
+              <h3 style="color:var(--danger); font-size:15px;">⚠ Facturas vencidas</h3>
+              <p style="font-size:13px; color:#8a3a34; margin:0;">2 factura(s) com data de vencimento ultrapassada —
+                processe os pagamentos com urgência.</p>
+            </div>
+            <div class="panel" style="border-color:#ecd9bd; background:var(--warn-soft);">
+              <h3 style="color:var(--warn); font-size:15px;">📅 A vencer (30 dias)</h3>
+              <p style="font-size:13px; color:#8a5a20; margin:0;">5 factura(s) vencem nos próximos 30 dias — planifique
+                os pagamentos.</p>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Top fornecedores</h3>
+            <div class="list" style="margin-top:10px;">
+              <div class="item-row" style="padding:10px 0; border-bottom:1px solid var(--line);">
+                <span><strong>1.</strong> Sonangol — 6 facturas</span><span class="item-value"
+                  style="font-size:14.5px;">5 200 000,00 Kz</span>
+              </div>
+              <div class="item-row" style="padding:10px 0; border-bottom:1px solid var(--line);">
+                <span><strong>2.</strong> Empresa de Distribuição de Energia — 5 facturas</span><span class="item-value"
+                  style="font-size:14.5px;">3 800 000,00 Kz</span>
+              </div>
+              <div class="item-row" style="padding:10px 0;">
+                <span><strong>3.</strong> Papelaria Central Lda — 4 facturas</span><span class="item-value"
+                  style="font-size:14.5px;">2 500 000,00 Kz</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PLANEAMENTO ============ -->
+      <div class="screen" id="planeamento">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Controlo financeiro</div>
+            <h1>Planeamento &amp; gestão</h1>
+            <p>Metas, orçamentos, relatórios e controlo financeiro.</p>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-accent">
+              <div class="val">0.0M</div>
+              <div class="lbl">Orçamento aprovado</div>
+            </div>
+            <div class="stat-card tone-danger">
+              <div class="val">0.0M</div>
+              <div class="lbl">Contas a pagar · 0 vencidas</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="val">0.0M</div>
+              <div class="lbl">Contas a receber · 0 vencidas</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="val">1</div>
+              <div class="lbl">Orçamentos criados</div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab">Metas <span class="n">0</span></div>
+            <div class="tab active">Orçamentos <span class="n">1</span></div>
+            <div class="tab">Relatórios <span class="n">1</span></div>
+            <div class="tab">Contas a pagar <span class="n">0</span></div>
+            <div class="tab">Contas a receber <span class="n">0</span></div>
+          </div>
+          <div class="item-card">
+            <div class="item-row">
+              <div>
+                <div class="item-top"><span class="item-code">ORC/2026/001</span><span
+                    class="badge b-neutral">Rascunho</span></div>
+                <div class="item-title">Ano fiscal 2026 — Gabinete do PCE</div>
+                <div class="item-meta"><span>1 categoria</span></div>
+              </div>
+              <div class="item-right">
+                <div class="item-value">1.00M AOA</div>
+                <div class="desc" style="margin:0;">Previsto</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ PROCUREMENT ============ -->
+      <div class="screen" id="procurement">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Aquisições</div>
+            <h1>Procurement</h1>
+            <p>Gestão completa de pedidos de compra, cotações de fornecedores e análise automática.</p>
+            <div class="head-actions">
+              <button class="btn btn-primary">＋ Novo pedido</button>
+              <button class="btn btn-ghost">🏢 Fornecedores (7)</button>
+            </div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-accent">
+              <div class="val">8</div>
+              <div class="lbl">Total de pedidos</div>
+            </div>
+            <div class="stat-card tone-warn">
+              <div class="val">5</div>
+              <div class="lbl">Aguardando cotações</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="val">0</div>
+              <div class="lbl">Em cotação</div>
+            </div>
+            <div class="stat-card tone-gold">
+              <div class="val">0</div>
+              <div class="lbl">Em análise</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="val">2</div>
+              <div class="lbl">Concluídos</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">PED/2026/05/0002</span><span
+                      class="badge b-danger">Urgente</span><span class="badge b-info">1 cotação</span></div>
+                  <div class="item-title">Serviços de limpeza</div>
+                  <div class="item-meta"><span>Compras</span><span>1 item</span><span>12/05/2026</span></div>
+                  <div style="margin-top:8px;"><span class="badge b-success">Aprovado: 9 180 000 AOA</span> <span
+                      class="badge b-neutral">Fornecedor: João Usuário</span></div>
+                </div>
+                <span class="badge b-success">Concluído</span>
+              </div>
+            </div>
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">PED/2026/05/0001</span><span
+                      class="badge b-warn">Alta</span></div>
+                  <div class="item-title">Aquisição de tinteiros</div>
+                  <div class="item-meta"><span>Compras</span><span>1 item</span><span>12/05/2026</span></div>
+                </div>
+                <span class="badge b-info">Aguardando cotações</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ HELPDESK ============ -->
+      <div class="screen" id="helpdesk">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Suporte técnico</div>
+            <h1>Pedido &amp; helpdesk</h1>
+            <p>Sistema de suporte técnico para comunicação com a equipa de TI.</p>
+            <div class="head-actions"><button class="btn btn-primary">＋ Novo ticket de suporte</button></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-card tone-warn">
+              <div class="val">0</div>
+              <div class="lbl">Abertos</div>
+            </div>
+            <div class="stat-card tone-info">
+              <div class="val">2</div>
+              <div class="lbl">Em resolução</div>
+            </div>
+            <div class="stat-card tone-success">
+              <div class="val">0</div>
+              <div class="lbl">Resolvidos</div>
+            </div>
+            <div class="stat-card tone-accent">
+              <div class="val">2</div>
+              <div class="lbl">Fechados</div>
+            </div>
+          </div>
+          <div class="list">
+            <div class="item-card">
+              <div class="item-row">
+                <div>
+                  <div class="item-top"><span class="item-code">TKT/2026/02/0001</span><span
+                      class="badge b-neutral">Normal</span><span class="badge b-info">Rede</span></div>
+                  <div class="item-title">Falta de internet</div>
+                  <div class="item-meta"><span>Administrador Sistema · Gabinete PCA</span><span>22/02 ·
+                      13:41</span><span>Atribuído: José TI</span></div>
+                </div>
+                <div class="item-right">
+                  <span class="badge b-success" style="display:block; margin-bottom:6px;">Resolvido</span>
+                  <span class="badge b-neutral">Fechado</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ FROTA ============ -->
+      <div class="screen" id="frota">
+        <div class="page">
+          <div class="page-head">
+            <div class="eyebrow">Viaturas</div>
+            <h1>Gestão de frota</h1>
+            <p>Gestão completa de viaturas, utilizações e manutenções.</p>
+            <div class="head-actions"><button class="btn btn-primary">＋ Nova viatura</button></div>
+          </div>
+          <div class="searchbar">🔍 Pesquisar viaturas…</div>
+          <div class="veh-grid">
+            <div class="veh-card">
+              <div class="veh-top"><span class="veh-plate">LD-12-24-AK</span><span
+                  class="badge b-success">Disponível</span></div>
+              <div class="veh-name">Toyota Prado</div>
+              <div class="veh-year">2022 · Azul</div>
+              <div class="veh-specs">
+                <div>
+                  <div class="lbl">Tipo</div>
+                  <div class="v">Ligeiro</div>
+                </div>
+                <div>
+                  <div class="lbl">KM</div>
+                  <div class="v">5 000</div>
+                </div>
+                <div>
+                  <div class="lbl">Departamento</div>
+                  <div class="v">Administração</div>
+                </div>
+                <div>
+                  <div class="lbl">Localização</div>
+                  <div class="v">Garagem principal</div>
+                </div>
+              </div>
+            </div>
+            <div class="veh-card">
+              <div class="veh-top"><span class="veh-plate">LD-12-29-AC</span><span
+                  class="badge b-success">Disponível</span></div>
+              <div class="veh-name">Toyota Prado</div>
+              <div class="veh-year">2026 · Azul</div>
+              <div class="veh-specs">
+                <div>
+                  <div class="lbl">Tipo</div>
+                  <div class="v">SUV</div>
+                </div>
+                <div>
+                  <div class="lbl">KM</div>
+                  <div class="v">5 000</div>
+                </div>
+                <div>
+                  <div class="lbl">Departamento</div>
+                  <div class="v">Administração</div>
+                </div>
+                <div>
+                  <div class="lbl">Localização</div>
+                  <div class="v">Garagem principal</div>
+                </div>
+              </div>
+            </div>
+            <div class="veh-card">
+              <div class="veh-top"><span class="veh-plate">LD-12-29-AB</span><span
+                  class="badge b-success">Disponível</span></div>
+              <div class="veh-name">Toyota Land Cruiser</div>
+              <div class="veh-year">2026 · Azul</div>
+              <div class="veh-specs">
+                <div>
+                  <div class="lbl">Tipo</div>
+                  <div class="v">Pick-up</div>
+                </div>
+                <div>
+                  <div class="lbl">KM</div>
+                  <div class="v">125</div>
+                </div>
+                <div>
+                  <div class="lbl">Departamento</div>
+                  <div class="v">—</div>
+                </div>
+                <div>
+                  <div class="lbl">Localização</div>
+                  <div class="v">—</div>
+                </div>
+              </div>
+            </div>
+            <div class="veh-card" style="opacity:.75;">
+              <div class="veh-top"><span class="veh-plate">LD-12-24-AB</span><span
+                  class="badge b-neutral">Rascunho</span></div>
+              <div class="veh-name">Toyota Land Cruiser</div>
+              <div class="veh-year">2026 · Azul</div>
+              <div class="veh-specs">
+                <div>
+                  <div class="lbl">Tipo</div>
+                  <div class="v">SUV</div>
+                </div>
+                <div>
+                  <div class="lbl">KM</div>
+                  <div class="v">150</div>
+                </div>
+              </div>
+              <button class="btn btn-gold" style="width:100%; justify-content:center; margin-top:6px;">✓ Ativar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ LOGIN ============ -->
+      <div class="screen" id="login">
+        <div class="login-wrap">
+          <div class="login-card">
+            <div class="login-side">
+              <div>
+                <div class="mark">SIPAR</div>
+                <div class="rule"></div>
+                <p>Sistema Integrado de Processos, Aprovações &amp; Registos.</p>
+              </div>
+              <div class="login-feature">
+                <div class="fi">📅</div>
+                <div>
+                  <div class="ft">Agenda integrada</div>
+                  <div class="fs">Marcação e acompanhamento de reuniões</div>
+                </div>
+              </div>
+            </div>
+            <div class="login-form">
+              <h1>Bem-vindo de volta</h1>
+              <div class="sub">Entre com as suas credenciais para continuar</div>
+              <div class="field"><label>E-mail</label><input type="email" placeholder="seu@email.com"></div>
+              <div class="field"><label>Senha</label><input type="password" placeholder="Digite a sua senha"></div>
+              <button class="btn btn-primary">Entrar</button>
+              <div class="foot">Não tem uma conta? <a href="#">Criar conta</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    const items = document.querySelectorAll('.nav-item[data-screen]');
+    items.forEach(it => {
+      it.addEventListener('click', () => {
+        items.forEach(i => i.classList.remove('active'));
+        it.classList.add('active');
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(it.dataset.screen).classList.add('active');
+        window.scrollTo(0, 0);
+      });
+    });
+  </script>
+</body>
+
+</html>

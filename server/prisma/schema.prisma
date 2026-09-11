@@ -16,6 +16,8 @@ model User {
   organization String?
   phone        String?
   department   String?
+  departmentId String?
+  areaId       String?
   position     String?
   address      String?
   document     String?
@@ -24,10 +26,24 @@ model User {
   updatedAt    DateTime  @updatedAt
   lastLogin    DateTime?
 
+  // Coordenadas bancarias reutilizaveis (fornecedores/utilizadores externos)
+  bankName          String?
+  bankAccountHolder String?
+  bankIban          String?
+  bankNib           String?
+  bankSwift         String?
+  bankCity          String?
+  bankCountry       String?
+
+  // Assinatura digitalizada (Presidente/Administrador) para Ordens de Pagamento
+  signatureImage    String?
+
   organizedMeetings     InternalMeeting[] @relation("Organizer")
   participatedMeetings  InternalMeeting[] @relation("Participant")
   meetingParticipations InternalMeetingParticipant[]
 
+  departmentRef  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  areaRef        Area?       @relation(fields: [areaId], references: [id], onDelete: SetNull)
   presentations  Presentation[]
   audiences      Audience[]
   pedidos        Pedido[]
@@ -38,6 +54,7 @@ model User {
   contratos      Contrato[]
   reclamacoes    Reclamacao[]
   fornecedores   Fornecedor[]
+  procurementCategorias ProcurementCategoria[]
   planejamentos  Planejamento[]
   procurements   Procurement[]
   operadores     Operador[]
@@ -51,6 +68,91 @@ model User {
   sentMessages   Message[] @relation("MessageFrom")
   receivedMessages Message[] @relation("MessageTo")
   pushSubscriptions PushSubscription[]
+  passwordResetTokens PasswordResetToken[]
+  sessions UserSession[]
+  purchaseOrdersCreated PurchaseOrder[]
+  budgetsCreated Budget[]
+  budgetExecutionsCreated BudgetExecution[]
+  accountsPayableCreated AccountPayable[]
+  accountsReceivableCreated AccountReceivable[]
+  financialReportsCreated FinancialReport[]
+
+  @@index([departmentId])
+  @@index([areaId])
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  nome      String
+  slug      String   @unique
+  categoria String?
+  descricao String?
+  cor       String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
+
+  users User[]
+  areas Area[]
+}
+
+model Role {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  nome      String
+  descricao String?
+  sistema   Boolean  @default(false)
+  // Marca roles de gabinete/executivo (isAdminUser em middlewares/auth.ts).
+  // Substitui o array fixo de strings que existia antes - criar um role novo
+  // e marcar este campo concede automaticamente o nivel de acesso "admin
+  // executivo" (usado por requireAdmin), sem tocar em codigo.
+  executivo Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
+
+  permissoes RolePermission[]
+}
+
+// Subdivisao dentro de um departamento (ex: uma equipa/unidade). Introduzida
+// junto com o resto do admin_sistema (Departamentos, Roles, Lixeira, etc.)
+// portado do SIPAR_MINTRANS.
+model Area {
+  id            String    @id @default(uuid())
+  nome          String
+  slug          String
+  departmentId  String
+  descricao     String?
+  activo        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
+
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  users      User[]
+
+  @@unique([departmentId, slug])
+  @@index([departmentId])
+}
+
+model RolePermission {
+  id        String   @id @default(uuid())
+  roleId    String
+  module    String
+  action    String
+  createdAt DateTime @default(now())
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, module, action])
+  @@index([roleId])
 }
 
 model InternalMeeting {
@@ -71,13 +173,30 @@ model InternalMeeting {
   tipoReuniao   String   @default("ordinaria")
   orgao         String?
   pontosAgenda  String   @default("[]")
+  roomId        String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   organizer     User                         @relation("Organizer", fields: [organizerId], references: [id], onDelete: Cascade)
   participant   User?                        @relation("Participant", fields: [participantId], references: [id], onDelete: SetNull)
+  room          MeetingRoom?                 @relation(fields: [roomId], references: [id], onDelete: SetNull)
   participantes InternalMeetingParticipant[]
   actas         Acta[]
+
+  @@index([roomId, meetingDate])
+}
+
+model MeetingRoom {
+  id          String   @id @default(uuid())
+  nome        String
+  capacidade  Int      @default(0)
+  localizacao String?
+  recursos    String   @default("[]")
+  ativa       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  meetings InternalMeeting[]
 }
 
 model InternalMeetingParticipant {
@@ -96,6 +215,8 @@ model InternalMeetingParticipant {
 
   meeting InternalMeeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   user    User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([meetingId])
 }
 
 model Presentation {
@@ -114,8 +235,13 @@ model Presentation {
   data          String   @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Audience {
@@ -135,8 +261,13 @@ model Audience {
   data           String   @default("{}")
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+  deletedById    String?
+  deletedByName  String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Pedido {
@@ -163,6 +294,8 @@ model Pedido {
   updatedAt       DateTime  @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Acta {
@@ -188,9 +321,14 @@ model Acta {
   data              String   @default("{}")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  deletedAt         DateTime?
+  deletedById       String?
+  deletedByName     String?
 
   createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
   internalMeeting InternalMeeting? @relation(fields: [internalMeetingId], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Oficio {
@@ -210,6 +348,8 @@ model Oficio {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Factura {
@@ -227,11 +367,21 @@ model Factura {
   descricao     String?
   anexos        String    @default("[]")
   paidAt        DateTime?
+  purchaseOrderId String?  // Vinculo com a Ordem de Compra do Procurement (sincronizacao)
+  numeroOrdem     String?
+  numeroOrdemPagamento String?  // N.o da Ordem de Pagamento gerada (ex: OP/N.o 1261/2026)
   data          String    @default("{}")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
+
+  @@index([purchaseOrderId])
 }
 
 model Viatura {
@@ -252,6 +402,8 @@ model Viatura {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Contrato {
@@ -271,6 +423,8 @@ model Contrato {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Reclamacao {
@@ -291,6 +445,8 @@ model Reclamacao {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Fornecedor {
@@ -303,11 +459,36 @@ model Fornecedor {
   nif           String?
   telefone      String?
   endereco      String?
+  userId        String?  // Conta de utilizador (role externo) ligada, usada para submeter facturas/cotacoes
   data          String   @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  purchaseQuotations PurchaseQuotation[]
+  purchaseOrders PurchaseOrder[]
+  procurementsAsFornecedor Procurement[]
+
+  @@index([createdById])
+}
+
+// Categorias de produtos/servicos usadas tanto no cadastro de fornecedores
+// (que categorias cada fornecedor fornece) como na criacao de um pedido de
+// compra (que categoria esta a ser adquirida). Comecou como uma lista fixa no
+// front-end; agora e' gerida aqui para que o utilizador possa criar novas
+// categorias directamente a partir do formulario de fornecedor.
+model ProcurementCategoria {
+  id          String   @id
+  nome        String   @unique
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Planejamento {
@@ -326,6 +507,8 @@ model Planejamento {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Procurement {
@@ -342,8 +525,17 @@ model Procurement {
   data          String   @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  fornecedorRef Fornecedor? @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  purchaseQuotations PurchaseQuotation[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([createdById])
+  @@index([fornecedorId])
 }
 
 model Operador {
@@ -360,6 +552,8 @@ model Operador {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Comunicacao {
@@ -376,8 +570,13 @@ model Comunicacao {
   data          String   @default("{}")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model PedidoViatura {
@@ -396,6 +595,8 @@ model PedidoViatura {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model UtilizacaoViatura {
@@ -417,6 +618,8 @@ model UtilizacaoViatura {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model ManutencaoViatura {
@@ -437,6 +640,8 @@ model ManutencaoViatura {
   updatedAt     DateTime @updatedAt
 
   createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model UploadedFile {
@@ -468,6 +673,9 @@ model Notification {
   createdAt  DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([email])
 }
 
 model AuditLog {
@@ -486,9 +694,76 @@ model AuditLog {
   metadata     String   @default("{}")
   oldValue     String?
   newValue     String?
+  resolved       Boolean   @default(false)
+  resolvedById   String?
+  resolvedByName String?
+  resolvedAt     DateTime?
   createdAt    DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model UserSession {
+  id               String    @id @default(uuid())
+  userId           String
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedReason    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SystemSetting {
+  key           String   @id
+  value         String
+  updatedAt     DateTime @updatedAt
+  updatedById   String?
+  updatedByName String?
+}
+
+model License {
+  id                       String    @id @default(uuid())
+  licenseId                String    @unique
+  customerName              String
+  licenseType               String
+  status                     String    @default("pending")
+  startsAt                  DateTime
+  expiresAt                 DateTime?
+  maxUsers                  Int?
+  maxAdmins                 Int?
+  modules                   String    @default("[]")
+  features                  String    @default("{}")
+  offlineGraceDays           Int       @default(7)
+  minVersion                 String?
+  issuedAt                   DateTime
+  signedPayload               String
+  signature                   String
+  activationCertPayload       String?
+  activationCertSignature     String?
+  installationFingerprint     String?
+  activatedAt                 DateTime?
+  lastValidatedAt              DateTime?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
 }
 
 model Message {
@@ -508,6 +783,9 @@ model Message {
 
   fromUser User @relation("MessageFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser   User @relation("MessageTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([fromUserId])
+  @@index([toUserId])
 }
 
 model DocumentSequence {
@@ -627,7 +905,12 @@ model PurchaseQuotation {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  procurement   Procurement? @relation(fields: [procurementId], references: [id], onDelete: SetNull)
+  fornecedorRef Fornecedor?  @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  purchaseOrders PurchaseOrder[]
+
   @@index([procurementId])
+  @@index([fornecedorId])
 }
 
 model PurchaseOrder {
@@ -653,7 +936,15 @@ model PurchaseOrder {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  createdBy     User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  procurement   Procurement?        @relation(fields: [procurementId], references: [id], onDelete: SetNull)
+  quotation     PurchaseQuotation?  @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  fornecedorRef Fornecedor?         @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+
   @@index([procurementId])
+  @@index([quotationId])
+  @@index([fornecedorId])
+  @@index([createdById])
 }
 
 model Budget {
@@ -675,6 +966,9 @@ model Budget {
 
   lines      BudgetLine[]
   executions BudgetExecution[]
+  createdBy  User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model BudgetLine {
@@ -714,9 +1008,11 @@ model BudgetExecution {
 
   budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
   budgetLine BudgetLine? @relation(fields: [budgetLineId], references: [id], onDelete: SetNull)
+  createdBy  User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([budgetId])
   @@index([budgetLineId])
+  @@index([createdById])
 }
 
 model AccountPayable {
@@ -736,6 +1032,10 @@ model AccountPayable {
   createdByName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model AccountReceivable {
@@ -755,6 +1055,10 @@ model AccountReceivable {
   createdByName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model FinancialReport {
@@ -769,4 +1073,8 @@ model FinancialReport {
   createdByName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }

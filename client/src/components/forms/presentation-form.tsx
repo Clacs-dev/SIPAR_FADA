@@ -59,10 +59,11 @@ export function PresentationForm() {
 
       const presentationData = {
         company: formData.companyName,
-        contact: formData.contactName,
+        // Nomes reais das colunas na base de dados (ver server/prisma/schema.prisma).
+        contactName: formData.contactName,
+        contactEmail: formData.email,
+        contactPhone: formData.phone,
         position: formData.position,
-        email: formData.email,
-        phone: formData.phone,
         area: formData.businessArea,
         purpose: formData.purpose,
         content: formData.content,

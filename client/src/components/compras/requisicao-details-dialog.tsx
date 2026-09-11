@@ -66,16 +66,16 @@ export function RequisicaoDetailsDialog({
 
   const getStatusBadge = (status: StatusCompra) => {
     const badges = {
-      requisicao: { label: "Pendente", color: "bg-yellow-500" },
-      cotacao: { label: "Em Cotação", color: "bg-blue-500" },
-      aprovacao: { label: "Aprovada", color: "bg-green-500" },
-      ordem_compra: { label: "Em Compra", color: "bg-blue-600" },
-      entrega: { label: "Em Entrega", color: "bg-orange-500" },
-      recebida: { label: "Recebida", color: "bg-green-600" },
-      cancelada: { label: "Cancelada", color: "bg-gray-500" },
+      requisicao: { label: "Pendente", color: "var(--tone-warn)" },
+      cotacao: { label: "Em Cotação", color: "var(--tone-info)" },
+      aprovacao: { label: "Aprovada", color: "var(--tone-success)" },
+      ordem_compra: { label: "Em Compra", color: "var(--tone-info)" },
+      entrega: { label: "Em Entrega", color: "var(--tone-warn)" },
+      recebida: { label: "Recebida", color: "var(--tone-success)" },
+      cancelada: { label: "Cancelada", color: "var(--tone-neutral)" },
     };
     const badge = badges[status] || badges.requisicao;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const getTipoLabel = (tipo: string) => {
@@ -90,13 +90,13 @@ export function RequisicaoDetailsDialog({
 
   const getPrioridadeBadge = (prioridade: string) => {
     const badges = {
-      baixa: { label: "Baixa", color: "bg-gray-500" },
-      normal: { label: "Normal", color: "bg-blue-500" },
-      alta: { label: "Alta", color: "bg-orange-500" },
-      urgente: { label: "Urgente", color: "bg-red-500" },
+      baixa: { label: "Baixa", color: "var(--tone-neutral)" },
+      normal: { label: "Normal", color: "var(--tone-info)" },
+      alta: { label: "Alta", color: "var(--tone-warn)" },
+      urgente: { label: "Urgente", color: "var(--tone-danger)" },
     };
     const badge = badges[prioridade as keyof typeof badges] || badges.normal;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const handleAprovar = async () => {
@@ -234,10 +234,10 @@ export function RequisicaoDetailsDialog({
           <div className="border-t pt-4">
             <h5 className="font-semibold mb-3">Orçamento</h5>
             <div className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-green-600" />
+              <DollarSign className="h-5 w-5 text-tone-success" />
               <div>
                 <p className="text-xs text-muted-foreground">Valor Estimado</p>
-                <p className="text-lg font-bold text-green-600">
+                <p className="text-lg font-bold text-tone-success">
                   {requisicao.orcamento_estimado.toLocaleString('pt-AO')} AOA
                 </p>
               </div>
@@ -247,12 +247,12 @@ export function RequisicaoDetailsDialog({
           {/* Ordem de Compra Vinculada */}
           {requisicao.status === 'ordem_compra' && requisicao.ordem_compra_numero && (
             <div className="border-t pt-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h5 className="font-semibold text-blue-900 mb-2">Ordem de Compra Gerada</h5>
-                <p className="text-sm text-blue-800">
+              <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
+                <h5 className="font-semibold mb-2" style={{ color: 'var(--tone-info)' }}>Ordem de Compra Gerada</h5>
+                <p className="text-sm" style={{ color: 'var(--tone-info)' }}>
                   <strong>Número:</strong> {requisicao.ordem_compra_numero}
                 </p>
-                <p className="text-xs text-blue-700 mt-2">
+                <p className="text-xs mt-2" style={{ color: 'var(--tone-info)' }}>
                   Uma ordem de compra foi criada para esta requisição. 
                   {canManage && " Acesse a aba 'Ordens de Compra' para ver mais detalhes."}
                 </p>
@@ -270,7 +270,8 @@ export function RequisicaoDetailsDialog({
                     <Button 
                       onClick={handleAprovar} 
                       disabled={submitting}
-                      className="bg-green-600 hover:bg-green-700"
+                      className="text-white hover:opacity-90"
+                      style={{ backgroundColor: 'var(--tone-success)' }}
                     >
                       <CheckCircle className="mr-2 h-4 w-4" />
                       {submitting ? "A processar..." : "Aprovar Requisição"}
@@ -290,7 +291,8 @@ export function RequisicaoDetailsDialog({
                     <Button 
                       onClick={() => onCriarOrdem(requisicao)} 
                       disabled={submitting}
-                      className="bg-blue-600 hover:bg-blue-700"
+                      className="text-white hover:opacity-90"
+                      style={{ backgroundColor: 'var(--tone-info)' }}
                     >
                       <Package className="mr-2 h-4 w-4" />
                       Criar Ordem de Compra
@@ -301,12 +303,12 @@ export function RequisicaoDetailsDialog({
 
               {/* Formulário de Cancelamento */}
               {showCancelarForm && (
-                <div className="border rounded-lg p-4 bg-red-50 space-y-4">
-                  <h5 className="font-semibold text-red-900 flex items-center gap-2">
+                <div className="border rounded-lg p-4 space-y-4" style={{ backgroundColor: 'var(--tone-danger-soft)' }}>
+                  <h5 className="font-semibold flex items-center gap-2" style={{ color: 'var(--tone-danger)' }}>
                     <AlertTriangle className="h-5 w-5" />
                     Cancelar Requisição
                   </h5>
-                  <p className="text-sm text-red-800">
+                  <p className="text-sm" style={{ color: 'var(--tone-danger)' }}>
                     Tem certeza que deseja cancelar esta requisição? Esta ação não pode ser desfeita.
                   </p>
                   <div className="flex gap-2">
@@ -333,8 +335,8 @@ export function RequisicaoDetailsDialog({
           {/* Aviso para usuários que não são de Compras */}
           {!canManage && requisicao.status === "requisicao" && (
             <div className="border-t pt-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <p className="text-sm text-blue-800">
+              <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
+                <p className="text-sm" style={{ color: 'var(--tone-info)' }}>
                   <strong>Aguardando aprovação do Departamento de Compras</strong>
                 </p>
               </div>

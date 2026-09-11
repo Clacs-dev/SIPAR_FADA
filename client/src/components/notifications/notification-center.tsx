@@ -101,26 +101,26 @@ export function NotificationCenter() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'sent':
-        return <CheckCircle className="h-4 w-4 text-green-600" />;
+        return <CheckCircle className="h-4 w-4 text-tone-success" />;
       case 'failed':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-tone-danger" />;
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-600" />;
+        return <Clock className="h-4 w-4 text-tone-warn" />;
       default:
-        return <Clock className="h-4 w-4 text-gray-600" />;
+        return <Clock className="h-4 w-4 text-tone-neutral" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'sent':
-        return 'bg-green-100 text-green-800';
+        return 'bg-tone-success-soft text-tone-success';
       case 'failed':
-        return 'bg-red-100 text-red-800';
+        return 'bg-tone-danger-soft text-tone-danger';
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-tone-warn-soft text-tone-warn';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-tone-neutral-soft text-tone-neutral';
     }
   };
 
@@ -172,7 +172,7 @@ export function NotificationCenter() {
             <CardTitle className="text-base">Enviadas</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-tone-success">
               {notifications.filter(n => n.status === 'sent').length}
             </div>
           </CardContent>
@@ -183,7 +183,7 @@ export function NotificationCenter() {
             <CardTitle className="text-base">Pendentes</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
+            <div className="text-2xl font-bold text-tone-warn">
               {notifications.filter(n => n.status === 'pending').length}
             </div>
           </CardContent>

@@ -4,18 +4,25 @@ jspdf/
 dist/
 build/
 .env
+.env.*
+!.env.example
 
 # Local Databases
 server/*.db
 server/*.db-journal
 server/prisma/dev.db
 server/prisma/dev.db-journal
+server/prisma/dev.db.backup-pre-baseline
+server/backups/
 
 # Log files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+
+# Licenciamento - a chave privada do vendor NUNCA deve ser versionada
+license-tools/keys/
 
 # Editor directories and files
 .idea/

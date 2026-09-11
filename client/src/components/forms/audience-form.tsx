@@ -67,12 +67,13 @@ export function AudienceForm() {
       }
 
       const audienceData = {
-        company: formData.companyName,
-        contact: formData.contactName,
+        // Nomes reais das colunas na base de dados (ver server/prisma/schema.prisma).
+        organization: formData.companyName,
+        requestorName: formData.contactName,
+        requestorEmail: formData.email,
+        requestorPhone: formData.phone,
         position: formData.position,
-        email: formData.email,
-        phone: formData.phone,
-        reason: formData.reason,
+        purpose: formData.reason,
         description: formData.description,
         documentPath,
         documentName,

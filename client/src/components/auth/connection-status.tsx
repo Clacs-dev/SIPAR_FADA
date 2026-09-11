@@ -129,7 +129,7 @@ export function ConnectionStatus() {
   const getStatusBadge = (statusType: 'online' | 'offline' | 'checking') => {
     switch (statusType) {
       case 'online':
-        return <Badge className="bg-green-100 text-green-800">Online</Badge>;
+        return <Badge className="bg-tone-success-soft text-tone-success">Online</Badge>;
       case 'offline':
         return <Badge variant="destructive">Offline</Badge>;
       case 'checking':
@@ -140,9 +140,9 @@ export function ConnectionStatus() {
   const getStatusIcon = (statusType: 'online' | 'offline' | 'checking') => {
     switch (statusType) {
       case 'online':
-        return <Wifi className="h-4 w-4 text-green-600" />;
+        return <Wifi className="h-4 w-4 text-tone-success" />;
       case 'offline':
-        return <WifiOff className="h-4 w-4 text-red-600" />;
+        return <WifiOff className="h-4 w-4 text-tone-danger" />;
       case 'checking':
         return <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />;
     }

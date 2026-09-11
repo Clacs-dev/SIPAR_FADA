@@ -16,6 +16,7 @@ export interface Acta {
   local: string | null;
   tipo_reuniao: 'ordinaria' | 'extraordinaria';
   status: 'rascunho' | 'em_revisao' | 'aprovada' | 'arquivada';
+  reuniao_interna_id?: string | null;
   
   // Conteúdo
   pauta: string | null;

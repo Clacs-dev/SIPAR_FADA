@@ -6,8 +6,9 @@ import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Separator } from "../ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { toast } from "sonner@2.0.3";
-import { 
+import {
   ArrowLeft,
   FileText,
   Calendar,
@@ -26,7 +27,10 @@ import {
   Plus,
   Trash2,
   FileEdit,
-  Building2
+  Building2,
+  Vote,
+  Scale,
+  X
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -34,11 +38,77 @@ import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { Acta, DecisaoTomada, TarefaAtribuida, PontoAgenda } from "./acta-types";
 import { transformarActaParaJSON } from "../../utils/transform-acta-to-json";
+import { downloadActaPDF } from "../../utils/acta-pdf-export";
+import { hasPermission } from "../auth/permissions";
 
 interface ActaDetailsProps {
   acta: Acta;
   onBack: () => void;
   onUpdate: () => void;
+}
+
+interface AssinaturaActaBoxProps {
+  label: string;
+  papel: 'presidente' | 'secretario';
+  color: 'blue' | 'green';
+  acta: Acta;
+  podeAssinar: boolean;
+  onSigned: () => void;
+}
+
+function AssinaturaActaBox({ label, papel, color, acta, podeAssinar, onSigned }: AssinaturaActaBoxProps) {
+  const { accessToken } = useAuth();
+  const [signing, setSigning] = useState(false);
+  const assinaturasReais = Array.isArray((acta as any).assinaturas_reais) ? (acta as any).assinaturas_reais : [];
+  const assinatura = assinaturasReais.find((a: any) => a.papel === papel);
+
+  const handleAssinar = async () => {
+    setSigning(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/actas/${acta.id}/assinar`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ papel }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || 'Erro ao assinar a acta');
+      toast.success('Acta assinada com sucesso!');
+      onSigned();
+    } catch (error) {
+ console.error('Erro ao assinar acta:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao assinar a acta');
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  const toneVar = color === 'blue' ? '--tone-info' : '--tone-success';
+
+  return (
+    <div className="p-4 border-2 border-dashed rounded-lg" style={{ borderColor: `var(${toneVar})`, backgroundColor: `var(${toneVar}-soft)` }}>
+      <p className="text-xs text-muted-foreground mb-2">{label}</p>
+      {assinatura ? (
+        <div className="pt-1">
+          <img src={assinatura.assinatura_url} alt={`Assinatura de ${assinatura.nome}`} className="h-12 object-contain mb-1" />
+          <p className="font-semibold">{assinatura.nome}</p>
+          <p className="text-xs text-muted-foreground">
+            Assinado em {format(new Date(assinatura.assinado_em), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+          </p>
+        </div>
+      ) : podeAssinar ? (
+        <div className="pt-2">
+          <Button size="sm" onClick={handleAssinar} disabled={signing}>
+            {signing ? 'A assinar...' : `Assinar como ${label.replace('O ', '')}`}
+          </Button>
+          <p className="text-xs text-muted-foreground mt-2">
+            Usa a assinatura carregada em "Meu Perfil".
+          </p>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground italic pt-6">Aguarda assinatura</p>
+      )}
+    </div>
+  );
 }
 
 export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
@@ -49,6 +119,24 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
   // Estados editáveis
   const [resumo, setResumo] = useState(acta.resumo || '');
   const [discussoes, setDiscussoes] = useState(acta.discussoes || '');
+  // Lista de recomendações (nao um texto unico) - e assim que o gerador do
+  // documento oficial (transform-acta-to-json.ts) espera este campo.
+  const [recomendacoes, setRecomendacoes] = useState<string[]>(Array.isArray(acta.recomendacoes) ? acta.recomendacoes : []);
+  const [novaRecomendacao, setNovaRecomendacao] = useState('');
+
+  // Estrutura formal do documento (entidade, presidente, secretario, etc.) -
+  // sem isto o cabecalho/encerramento oficiais da acta ficam com placeholders
+  // tipo "[entidade]", "[presidente]" em vez do texto real.
+  const [estruturaFormal, setEstruturaFormal] = useState({
+    entidade: acta.entidade || '',
+    endereco_completo: acta.endereco_completo || '',
+    cidade: acta.cidade || 'Luanda',
+    numero_reuniao: acta.numero_reuniao || '',
+    presidente: acta.presidente || '',
+    cargo_presidente: acta.cargo_presidente || '',
+    secretario: acta.secretario || '',
+    cargo_secretario: acta.cargo_secretario || '',
+  });
   const [proximosPassos, setProximosPassos] = useState(acta.proximos_passos || '')
   const [observacoes, setObservacoes] = useState(acta.observacoes || '');
   const [decisoes, setDecisoes] = useState<DecisaoTomada[]>(
@@ -60,22 +148,36 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
   const [participantesPresentes, setParticipantesPresentes] = useState<string[]>(
     Array.isArray(acta.participantes_presentes) ? acta.participantes_presentes : []
   );
+  const [pontosAgenda, setPontosAgenda] = useState<PontoAgenda[]>(
+    Array.isArray(acta.pontos_agenda) ? acta.pontos_agenda : []
+  );
 
   // 🔥 Transformar acta para estrutura JSON profissional
   const actaTransformada = useMemo(() => transformarActaParaJSON(acta), [acta]);
 
   const isOrganizador = user?.id === acta.organizador_id;
-  const canEdit = isOrganizador && (acta.status === 'pendente' || acta.status === 'em_curso');
+  // Alem do organizador, quem redige/gere actas (secretaria, administrativo,
+  // gestao de topo) tambem tem de poder preencher deliberacoes, votacoes,
+  // discussoes e recomendacoes - nem sempre e o organizador da reuniao que
+  // faz esse trabalho.
+  const podeRedigirActa = Boolean(
+    user && (hasPermission(user.role, 'DRAFT_ACTAS') || hasPermission(user.role, 'MANAGE_ACTAS'))
+  );
+  const canEdit = (isOrganizador || podeRedigirActa) && (acta.status === 'rascunho' || acta.status === 'pendente' || acta.status === 'em_curso');
+
+  const assinaturasReais = Array.isArray((acta as any).assinaturas_reais) ? (acta as any).assinaturas_reais : [];
+  const papeisAssinados = new Set(assinaturasReais.map((a: any) => a.papel));
+  const ambasAssinaturasFeitas = papeisAssinados.has('presidente') && papeisAssinados.has('secretario');
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pendente: { label: 'Pendente', color: 'bg-yellow-500' },
-      em_curso: { label: 'Em Curso', color: 'bg-blue-500' },
-      finalizada: { label: 'Finalizada', color: 'bg-green-500' },
-      aprovada: { label: 'Aprovada', color: 'bg-green-700' },
+      pendente: { label: 'Pendente', color: 'var(--tone-warn)' },
+      em_curso: { label: 'Em Curso', color: 'var(--tone-info)' },
+      finalizada: { label: 'Finalizada', color: 'var(--tone-success)' },
+      aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const handleSave = async () => {
@@ -93,11 +195,14 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
           body: JSON.stringify({
             resumo,
             discussoes,
+            recomendacoes,
             proximos_passos: proximosPassos,
             observacoes,
             decisoes,
             tarefas,
             participantes_presentes: participantesPresentes,
+            pontos_agenda: pontosAgenda,
+            ...estruturaFormal,
           }),
         }
       );
@@ -147,50 +252,45 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
     }
   };
 
-  const handleDownloadPDF = async () => {
+  const [approving, setApproving] = useState(false);
+  const handleAprovarActa = async () => {
     try {
-      toast.info('A gerar PDF...');
-      
+      setApproving(true);
+
       const response = await fetch(
-        `${API_BASE_URL}/actas/${acta.id}/pdf`,
+        `${API_BASE_URL}/actas/${acta.id}/aprovar`,
         {
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
         }
       );
 
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error('Erro ao gerar PDF');
+        throw new Error(result.message || 'Erro ao aprovar acta');
       }
 
-      // Obter o blob do PDF
-      const blob = await response.blob();
-      
-      // Obter o nome do arquivo do header Content-Disposition
-      const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = 'acta.pdf';
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
-        if (filenameMatch) {
-          filename = filenameMatch[1];
-        }
-      }
-      
-      // Criar URL temporário e fazer download
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      toast.success('PDF baixado com sucesso!');
+      toast.success('Acta aprovada! Foi enviada por e-mail aos participantes.');
+      onUpdate();
+    } catch (error) {
+ console.error('Erro ao aprovar acta:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao aprovar acta');
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      // Gera o PDF directamente a partir dos dados da acta (inclui sempre as
+      // assinaturas reais quando existirem) - o endpoint "/actas/:id/pdf" no
+      // backend e apenas um stub e nunca devolveu um PDF real.
+      await downloadActaPDF(acta);
     } catch (error) {
  console.error('Erro ao baixar PDF:', error);
-      toast.error('Erro ao baixar PDF');
     }
   };
 
@@ -228,6 +328,24 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
 
   const removeDecisao = (id: string) => {
     setDecisoes(decisoes.filter(d => d.id !== id));
+  };
+
+  const addPontoAgenda = () => {
+    const novoPonto: PontoAgenda = {
+      id: `ponto-${Date.now()}`,
+      ordem: pontosAgenda.length + 1,
+      titulo: '',
+      tipo_votacao: 'sem_votacao',
+    };
+    setPontosAgenda([...pontosAgenda, novoPonto]);
+  };
+
+  const updatePontoAgenda = (id: string, field: keyof PontoAgenda, value: any) => {
+    setPontosAgenda(pontosAgenda.map(p => p.id === id ? { ...p, [field]: value } : p));
+  };
+
+  const removePontoAgenda = (id: string) => {
+    setPontosAgenda(pontosAgenda.filter(p => p.id !== id));
   };
 
   const addTarefa = () => {
@@ -283,10 +401,20 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
               </Button>
             </>
           )}
-          {canEdit && acta.status !== 'finalizada' && !editing && (
+          {canEdit && !editing && (
             <Button onClick={handleFinalizarActa} disabled={loading}>
               <CheckCircle className="mr-2 h-4 w-4" />
               Finalizar Acta
+            </Button>
+          )}
+          {isOrganizador && acta.status === 'finalizada' && (
+            <Button
+              onClick={handleAprovarActa}
+              disabled={approving || !ambasAssinaturasFeitas}
+              title={!ambasAssinaturasFeitas ? 'Aguarda a assinatura do Presidente e do Secretário' : undefined}
+            >
+              <CheckCircle className="mr-2 h-4 w-4" />
+              {approving ? 'A aprovar...' : 'Aprovar Acta'}
             </Button>
           )}
           <Button variant="outline" onClick={handleDownloadPDF}>
@@ -328,8 +456,8 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                   </p>
                 </div>
                 {actaTransformada.cabecalho.quorum && (
-                  <div className="bg-green-50 border border-green-200 p-3 rounded-lg">
-                    <p className="text-sm font-medium text-green-900">
+                  <div className="border p-3 rounded-lg" style={{ backgroundColor: 'var(--tone-success-soft)', borderColor: 'var(--tone-success)' }}>
+                    <p className="text-sm font-medium" style={{ color: 'var(--tone-success)' }}>
                       {actaTransformada.cabecalho.quorum}
                     </p>
                   </div>
@@ -351,14 +479,14 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                 <p className="text-sm font-medium">{actaTransformada.agenda.descricao}</p>
                 <div className="space-y-2">
                   {actaTransformada.agenda.pontos.map((ponto: any, index: number) => (
-                    <div key={`ponto-${index}-${ponto.titulo}`} className="flex gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 text-white font-bold text-sm flex-shrink-0">
+                    <div key={`ponto-${index}-${ponto.titulo}`} className="flex gap-3 p-3 border rounded-lg" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
+                      <div className="flex items-center justify-center w-8 h-8 rounded-full text-white font-bold text-sm flex-shrink-0" style={{ backgroundColor: 'var(--tone-info)' }}>
                         {index + 1}
                       </div>
                       <div className="flex-1">
-                        <p className="font-medium text-blue-900">{ponto.titulo}</p>
+                        <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{ponto.titulo}</p>
                         {ponto.observacao && (
-                          <p className="text-sm text-blue-700 mt-1">{ponto.observacao}</p>
+                          <p className="text-sm mt-1" style={{ color: 'var(--tone-info)' }}>{ponto.observacao}</p>
                         )}
                       </div>
                     </div>
@@ -380,8 +508,8 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
               <CardContent className="space-y-4">
                 {actaTransformada.discussoes.map((discussao: any, index: number) => (
                   <div key={`discussao-${index}-${discussao.numero}`} className="border border-border rounded-lg overflow-hidden">
-                    <div className="bg-purple-50 border-b border-purple-200 p-3">
-                      <p className="font-semibold text-purple-900">
+                    <div className="border-b p-3" style={{ backgroundColor: 'var(--tone-accent-soft)', borderColor: 'var(--tone-accent)' }}>
+                      <p className="font-semibold" style={{ color: 'var(--tone-accent)' }}>
                         {discussao.numero}: {discussao.titulo}
                       </p>
                     </div>
@@ -407,14 +535,14 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
               </CardHeader>
               <CardContent className="space-y-4">
                 {actaTransformada.deliberacoes.map((deliberacao: any, index: number) => (
-                  <div key={`deliberacao-${index}-${deliberacao.numero}`} className="border border-green-200 rounded-lg overflow-hidden">
-                    <div className="bg-green-50 border-b border-green-200 p-3">
-                      <p className="font-semibold text-green-900">
+                  <div key={`deliberacao-${index}-${deliberacao.numero}`} className="border rounded-lg overflow-hidden" style={{ borderColor: 'var(--tone-success)' }}>
+                    <div className="border-b p-3" style={{ backgroundColor: 'var(--tone-success-soft)', borderColor: 'var(--tone-success)' }}>
+                      <p className="font-semibold" style={{ color: 'var(--tone-success)' }}>
                         {deliberacao.numero}: {deliberacao.titulo}
                       </p>
                     </div>
-                    <div className="p-4 bg-green-50/30">
-                      <p className="text-sm font-medium leading-relaxed text-justify text-green-900">
+                    <div className="p-4" style={{ backgroundColor: 'var(--tone-success-soft)' }}>
+                      <p className="text-sm font-medium leading-relaxed text-justify" style={{ color: 'var(--tone-success)' }}>
                         {deliberacao.texto}
                       </p>
                     </div>
@@ -434,11 +562,11 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-gold-soft)', borderColor: 'var(--tone-gold)' }}>
                   <ul className="space-y-2">
                     {actaTransformada.recomendacoes.lista.map((rec: string, idx: number) => (
                       <li key={idx} className="flex items-start gap-2 text-sm">
-                        <span className="text-yellow-600 font-bold">{idx + 1}.</span>
+                        <span className="font-bold" style={{ color: 'var(--tone-gold)' }}>{idx + 1}.</span>
                         <span>{rec}</span>
                       </li>
                     ))}
@@ -467,36 +595,38 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
             </Card>
           )}
 
-          {/* ✍️ ASSINATURAS DIGITAIS */}
-          {actaTransformada.assinaturas && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Assinaturas</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {actaTransformada.assinaturas.presidente && (
-                    <div className="p-4 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50">
-                      <p className="text-xs text-muted-foreground mb-2">O Presidente</p>
-                      <div className="border-t-2 border-blue-600 pt-2 mt-8">
-                        <p className="font-semibold">{actaTransformada.assinaturas.presidente.nome}</p>
-                        <p className="text-sm text-muted-foreground">{actaTransformada.assinaturas.presidente.cargo}</p>
-                      </div>
-                    </div>
-                  )}
-                  {actaTransformada.assinaturas.secretario && (
-                    <div className="p-4 border-2 border-dashed border-green-300 rounded-lg bg-green-50">
-                      <p className="text-xs text-muted-foreground mb-2">O Secretário</p>
-                      <div className="border-t-2 border-green-600 pt-2 mt-8">
-                        <p className="font-semibold">{actaTransformada.assinaturas.secretario.nome}</p>
-                        <p className="text-sm text-muted-foreground">{actaTransformada.assinaturas.secretario.cargo}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* ✍️ ASSINATURAS DIGITAIS - mesmo modelo usado na Ordem de Pagamento:
+              usa a assinatura carregada em "Meu Perfil" pelo Presidente/Secretário. */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Assinaturas</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AssinaturaActaBox
+                  label="O Presidente"
+                  papel="presidente"
+                  color="blue"
+                  acta={acta}
+                  podeAssinar={user?.role === 'gabinete_pca'}
+                  onSigned={onUpdate}
+                />
+                <AssinaturaActaBox
+                  label="O Secretário"
+                  papel="secretario"
+                  color="green"
+                  acta={acta}
+                  podeAssinar={user?.role === 'secretaria'}
+                  onSigned={onUpdate}
+                />
+              </div>
+              {acta.status === 'finalizada' && !ambasAssinaturasFeitas && (
+                <p className="text-xs text-muted-foreground mt-3">
+                  Depois de assinada pelo Presidente e pelo Secretário, a acta pode ser aprovada e será enviada por e-mail a todos os participantes.
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           <Separator className="my-6" />
 
@@ -537,7 +667,8 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                       href={acta.link_reuniao} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
+                      className="hover:underline"
+                      style={{ color: 'var(--ring)' }}
                     >
                       {acta.link_reuniao}
                     </a>
@@ -554,6 +685,489 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                   </p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Discussões e Recomendações gerais da reuniao */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="h-5 w-5" />
+                Discussões e Recomendações
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="discussoes">Discussões</Label>
+                {editing ? (
+                  <Textarea
+                    id="discussoes"
+                    placeholder="Resuma os pontos discutidos na reunião..."
+                    value={discussoes}
+                    onChange={(e) => setDiscussoes(e.target.value)}
+                    rows={4}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {discussoes || 'Nenhuma discussão registada'}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Recomendações</Label>
+                {recomendacoes.length === 0 && !editing && (
+                  <p className="text-sm text-muted-foreground">Nenhuma recomendação registada</p>
+                )}
+                {recomendacoes.length > 0 && (
+                  <div className="space-y-2">
+                    {recomendacoes.map((rec, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-2 border rounded-md bg-muted/30">
+                        <p className="text-sm">{rec}</p>
+                        {editing && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setRecomendacoes(recomendacoes.filter((_, i) => i !== idx))}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {editing && (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Nova recomendação..."
+                      value={novaRecomendacao}
+                      onChange={(e) => setNovaRecomendacao(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (!novaRecomendacao.trim()) return;
+                        setRecomendacoes([...recomendacoes, novaRecomendacao.trim()]);
+                        setNovaRecomendacao('');
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Estrutura Formal do Documento */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Estrutura Formal
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {editing ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="entidade">Entidade</Label>
+                      <Input
+                        id="entidade"
+                        value={estruturaFormal.entidade}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, entidade: e.target.value })}
+                        placeholder="Ex: FADA - Fundo de Apoio ao Desenvolvimento Agrário"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="numero_reuniao">Número da Reunião</Label>
+                      <Input
+                        id="numero_reuniao"
+                        value={estruturaFormal.numero_reuniao}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, numero_reuniao: e.target.value })}
+                        placeholder="Ex: 1"
+                      />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label htmlFor="endereco_completo">Endereço</Label>
+                      <Input
+                        id="endereco_completo"
+                        value={estruturaFormal.endereco_completo}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, endereco_completo: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cidade">Cidade</Label>
+                      <Input
+                        id="cidade"
+                        value={estruturaFormal.cidade}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, cidade: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="presidente">Presidente</Label>
+                      <Input
+                        id="presidente"
+                        value={estruturaFormal.presidente}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, presidente: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cargo_presidente">Cargo do Presidente</Label>
+                      <Input
+                        id="cargo_presidente"
+                        value={estruturaFormal.cargo_presidente}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, cargo_presidente: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="secretario">Secretário</Label>
+                      <Input
+                        id="secretario"
+                        value={estruturaFormal.secretario}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, secretario: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="cargo_secretario">Cargo do Secretário</Label>
+                      <Input
+                        id="cargo_secretario"
+                        value={estruturaFormal.cargo_secretario}
+                        onChange={(e) => setEstruturaFormal({ ...estruturaFormal, cargo_secretario: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+                  <p><span className="text-foreground font-medium">Entidade:</span> {estruturaFormal.entidade || '-'}</p>
+                  <p><span className="text-foreground font-medium">Nº Reunião:</span> {estruturaFormal.numero_reuniao || '-'}</p>
+                  <p><span className="text-foreground font-medium">Presidente:</span> {estruturaFormal.presidente || '-'} {estruturaFormal.cargo_presidente && `(${estruturaFormal.cargo_presidente})`}</p>
+                  <p><span className="text-foreground font-medium">Secretário:</span> {estruturaFormal.secretario || '-'} {estruturaFormal.cargo_secretario && `(${estruturaFormal.cargo_secretario})`}</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Pontos de Agenda e Votações */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Vote className="h-5 w-5" />
+                  Pontos de Agenda e Votações ({pontosAgenda.length})
+                </CardTitle>
+                {editing && (
+                  <Button size="sm" variant="outline" onClick={addPontoAgenda}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar Ponto
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pontosAgenda.length === 0 && !editing && (
+                <p className="text-sm text-muted-foreground italic">Nenhum ponto de agenda registado</p>
+              )}
+              {pontosAgenda.map((ponto, index) => (
+                <div key={ponto.id} className="border rounded-lg p-4 space-y-3">
+                  {editing ? (
+                    <>
+                      <div className="flex items-start justify-between gap-2">
+                        <Input
+                          placeholder={`Ponto ${index + 1}: título`}
+                          value={ponto.titulo}
+                          onChange={(e) => updatePontoAgenda(ponto.id, 'titulo', e.target.value)}
+                          className="font-medium"
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => removePontoAgenda(ponto.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <Textarea
+                        placeholder="Descrição do ponto..."
+                        value={ponto.descricao || ''}
+                        onChange={(e) => updatePontoAgenda(ponto.id, 'descricao', e.target.value)}
+                        rows={2}
+                      />
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1">
+                          <MessageSquare className="h-3 w-3" />
+                          Discussão
+                        </Label>
+                        <Textarea
+                          placeholder="Descreva as discussões realizadas neste ponto..."
+                          value={ponto.discussao || ''}
+                          onChange={(e) => updatePontoAgenda(ponto.id, 'discussao', e.target.value)}
+                          rows={2}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <Label className="text-xs font-semibold flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            Intervenções dos Participantes
+                          </Label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              const novas = [...(ponto.intervencoes || []), { participante_nome: '', participante_cargo: '', texto: '' }];
+                              updatePontoAgenda(ponto.id, 'intervencoes', novas);
+                            }}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            Adicionar
+                          </Button>
+                        </div>
+                        {(ponto.intervencoes || []).map((interv, intIndex) => (
+                          <div key={intIndex} className="p-2 border rounded bg-muted/30 space-y-2 mb-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">Intervenção {intIndex + 1}</span>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  const novas = (ponto.intervencoes || []).filter((_, i) => i !== intIndex);
+                                  updatePontoAgenda(ponto.id, 'intervencoes', novas);
+                                }}
+                                className="h-6 w-6 p-0"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <Input
+                              placeholder="Nome do participante"
+                              value={interv.participante_nome}
+                              onChange={(e) => {
+                                const novas = [...(ponto.intervencoes || [])];
+                                novas[intIndex] = { ...novas[intIndex], participante_nome: e.target.value };
+                                updatePontoAgenda(ponto.id, 'intervencoes', novas);
+                              }}
+                              className="text-xs"
+                            />
+                            <Input
+                              placeholder="Cargo do participante"
+                              value={interv.participante_cargo}
+                              onChange={(e) => {
+                                const novas = [...(ponto.intervencoes || [])];
+                                novas[intIndex] = { ...novas[intIndex], participante_cargo: e.target.value };
+                                updatePontoAgenda(ponto.id, 'intervencoes', novas);
+                              }}
+                              className="text-xs"
+                            />
+                            <Textarea
+                              placeholder="Texto da intervenção"
+                              value={interv.texto}
+                              onChange={(e) => {
+                                const novas = [...(ponto.intervencoes || [])];
+                                novas[intIndex] = { ...novas[intIndex], texto: e.target.value };
+                                updatePontoAgenda(ponto.id, 'intervencoes', novas);
+                              }}
+                              rows={2}
+                              className="text-xs"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1">
+                          <Scale className="h-3 w-3" />
+                          Deliberação / Decisão
+                        </Label>
+                        <Textarea
+                          placeholder="Descreva a decisão tomada neste ponto..."
+                          value={ponto.decisao || ''}
+                          onChange={(e) => updatePontoAgenda(ponto.id, 'decisao', e.target.value)}
+                          rows={2}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold flex items-center gap-1">
+                          <Vote className="h-3 w-3" />
+                          Votação
+                        </Label>
+                        <Select
+                          value={ponto.tipo_votacao || 'sem_votacao'}
+                          onValueChange={(value: any) => updatePontoAgenda(ponto.id, 'tipo_votacao', value)}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="sem_votacao">Sem votação</SelectItem>
+                            <SelectItem value="unanimidade">Unanimidade</SelectItem>
+                            <SelectItem value="maioria">Maioria</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {ponto.tipo_votacao === 'maioria' && (
+                          <div className="grid grid-cols-3 gap-2 mt-2">
+                            <div>
+                              <Label className="text-xs">Votos a favor</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={ponto.votos_favor || 0}
+                                onChange={(e) => updatePontoAgenda(ponto.id, 'votos_favor', parseInt(e.target.value) || 0)}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Votos contra</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={ponto.votos_contra || 0}
+                                onChange={(e) => updatePontoAgenda(ponto.id, 'votos_contra', parseInt(e.target.value) || 0)}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Abstenções</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={ponto.abstencoes || 0}
+                                onChange={(e) => updatePontoAgenda(ponto.id, 'abstencoes', parseInt(e.target.value) || 0)}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {ponto.tipo_votacao === 'unanimidade' && (
+                          <Input
+                            className="mt-2"
+                            placeholder="Resultado (ex: Aprovado por unanimidade)"
+                            value={ponto.resultado_votacao || ''}
+                            onChange={(e) => updatePontoAgenda(ponto.id, 'resultado_votacao', e.target.value)}
+                          />
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-medium">{index + 1}. {ponto.titulo || 'Sem título'}</p>
+                      {ponto.descricao && <p className="text-sm text-muted-foreground">{ponto.descricao}</p>}
+                      {ponto.discussao && (
+                        <p className="text-sm text-muted-foreground whitespace-pre-wrap">{ponto.discussao}</p>
+                      )}
+                      {(ponto.intervencoes || []).length > 0 && (
+                        <div className="space-y-1">
+                          {(ponto.intervencoes || []).map((interv, i) => (
+                            <div key={i} className="bg-muted/30 p-2 rounded text-sm">
+                              <p className="font-medium">{interv.participante_nome} ({interv.participante_cargo})</p>
+                              <p className="text-muted-foreground mt-1">{interv.texto}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {ponto.decisao && (
+                        <p className="text-sm font-medium p-2 rounded" style={{ color: 'var(--tone-success)', backgroundColor: 'var(--tone-success-soft)' }}>{ponto.decisao}</p>
+                      )}
+                      {ponto.tipo_votacao && ponto.tipo_votacao !== 'sem_votacao' && (
+                        <div className="border p-3 rounded space-y-2" style={{ backgroundColor: 'var(--tone-accent-soft)', borderColor: 'var(--tone-accent)' }}>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="secondary" className="text-white" style={{ backgroundColor: 'var(--tone-accent)' }}>
+                              {ponto.tipo_votacao === 'unanimidade' ? 'Unanimidade' : 'Maioria'}
+                            </Badge>
+                            {ponto.resultado_votacao && (
+                              <span className="text-sm font-medium" style={{ color: 'var(--tone-accent)' }}>{ponto.resultado_votacao}</span>
+                            )}
+                          </div>
+                          {ponto.tipo_votacao === 'maioria' && (
+                            <div className="grid grid-cols-3 gap-2 text-sm">
+                              <div className="bg-white p-2 rounded text-center">
+                                <p className="text-xs text-muted-foreground">A Favor</p>
+                                <p className="font-bold" style={{ color: 'var(--tone-success)' }}>{ponto.votos_favor || 0}</p>
+                              </div>
+                              <div className="bg-white p-2 rounded text-center">
+                                <p className="text-xs text-muted-foreground">Contra</p>
+                                <p className="font-bold" style={{ color: 'var(--tone-danger)' }}>{ponto.votos_contra || 0}</p>
+                              </div>
+                              <div className="bg-white p-2 rounded text-center">
+                                <p className="text-xs text-muted-foreground">Abstenções</p>
+                                <p className="font-bold" style={{ color: 'var(--tone-neutral)' }}>{ponto.abstencoes || 0}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          {/* Decisões Gerais (não ligadas a um ponto de agenda especifico) */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Scale className="h-5 w-5" />
+                  Decisões ({decisoes.length})
+                </CardTitle>
+                {editing && (
+                  <Button size="sm" variant="outline" onClick={addDecisao}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Adicionar Decisão
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {decisoes.length === 0 && !editing && (
+                <p className="text-sm text-muted-foreground italic">Nenhuma decisão registada</p>
+              )}
+              {decisoes.map((decisao) => (
+                <div key={decisao.id} className="border rounded-lg p-3 space-y-2">
+                  {editing ? (
+                    <>
+                      <div className="flex items-start gap-2">
+                        <Textarea
+                          placeholder="Descrição da decisão"
+                          value={decisao.descricao}
+                          onChange={(e) => updateDecisao(decisao.id, 'descricao', e.target.value)}
+                          rows={2}
+                          className="flex-1"
+                        />
+                        <Button size="sm" variant="ghost" onClick={() => removeDecisao(decisao.id)}>
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="Responsável"
+                          value={decisao.responsavel || ''}
+                          onChange={(e) => updateDecisao(decisao.id, 'responsavel', e.target.value)}
+                        />
+                        <Input
+                          type="date"
+                          value={decisao.prazo || ''}
+                          onChange={(e) => updateDecisao(decisao.id, 'prazo', e.target.value)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm">{decisao.descricao}</p>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        {decisao.responsavel && <span>Responsável: {decisao.responsavel}</span>}
+                        {decisao.prazo && (
+                          <span>Prazo: {format(new Date(decisao.prazo), "dd/MM/yyyy", { locale: ptBR })}</span>
+                        )}
+                        <Badge variant="outline">{decisao.status || 'pendente'}</Badge>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
             </CardContent>
           </Card>
 
@@ -577,11 +1191,10 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
                     className="flex items-center justify-between p-3 border rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${
-                        isPresente
-                          ? 'bg-green-500' 
-                          : 'bg-gray-300'
-                      }`} />
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: isPresente ? 'var(--tone-success)' : 'var(--tone-neutral)' }}
+                      />
                       <div>
                         <p className="font-medium">{participante.nome}</p>
                         <p className="text-sm text-muted-foreground">{participante.email}</p>
@@ -663,7 +1276,7 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Presentes</span>
-                <span className="font-medium text-green-600">
+                <span className="font-medium" style={{ color: 'var(--tone-success)' }}>
                   {participantesPresentes.length}
                 </span>
               </div>
@@ -678,13 +1291,13 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
               {actaTransformada.discussoes && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Discussões</span>
-                  <span className="font-medium text-purple-600">{actaTransformada.discussoes.length}</span>
+                  <span className="font-medium" style={{ color: 'var(--tone-accent)' }}>{actaTransformada.discussoes.length}</span>
                 </div>
               )}
               {actaTransformada.deliberacoes && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Deliberações</span>
-                  <span className="font-medium text-green-600">{actaTransformada.deliberacoes.length}</span>
+                  <span className="font-medium" style={{ color: 'var(--tone-success)' }}>{actaTransformada.deliberacoes.length}</span>
                 </div>
               )}
             </CardContent>

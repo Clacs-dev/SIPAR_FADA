@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Alert, AlertDescription } from '../ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { useAuth } from '../auth/auth-context';
+import { hasPermission } from '../auth/permissions';
 import { toast } from 'sonner@2.0.3';
 import { 
   Shield, 
@@ -101,7 +102,7 @@ export function AuditDashboard() {
   });
 
   useEffect(() => {
-    if (user?.role === 'admin' && accessToken) {
+    if (user && hasPermission(user.role, 'MANAGE_SETTINGS') && accessToken) {
       loadAuditData();
     }
   }, [user, accessToken]);
@@ -135,7 +136,7 @@ export function AuditDashboard() {
 
       if (logsResponse.ok) {
         const logsData = await logsResponse.json();
-        setLogs(logsData.logs);
+        setLogs(logsData.logs || []);
       }
 
       // Carregar alertas
@@ -148,7 +149,7 @@ export function AuditDashboard() {
 
       if (alertsResponse.ok) {
         const alertsData = await alertsResponse.json();
-        setAlerts(alertsData.alerts);
+        setAlerts(alertsData.alerts || []);
       }
 
     } catch (error) {
@@ -186,45 +187,45 @@ export function AuditDashboard() {
   const getLevelIcon = (level: string) => {
     switch (level) {
       case 'info':
-        return <Activity className="h-4 w-4 text-blue-600" />;
+        return <Activity className="h-4 w-4 text-tone-info" />;
       case 'warning':
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />;
+        return <AlertTriangle className="h-4 w-4 text-tone-gold" />;
       case 'error':
-        return <XCircle className="h-4 w-4 text-red-600" />;
+        return <XCircle className="h-4 w-4 text-tone-danger" />;
       case 'critical':
-        return <AlertCircle className="h-4 w-4 text-purple-600" />;
+        return <AlertCircle className="h-4 w-4 text-tone-accent" />;
       default:
-        return <Activity className="h-4 w-4 text-gray-600" />;
+        return <Activity className="h-4 w-4 text-tone-neutral" />;
     }
   };
 
   const getLevelColor = (level: string) => {
     switch (level) {
       case 'info':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-tone-info-soft text-tone-info';
       case 'warning':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-tone-gold-soft text-tone-gold';
       case 'error':
-        return 'bg-red-100 text-red-800';
+        return 'bg-tone-danger-soft text-tone-danger';
       case 'critical':
-        return 'bg-purple-100 text-purple-800';
+        return 'bg-tone-accent-soft text-tone-accent';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-tone-neutral-soft text-tone-neutral';
     }
   };
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'low':
-        return 'bg-green-100 text-green-800';
+        return 'bg-tone-success-soft text-tone-success';
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-tone-gold-soft text-tone-gold';
       case 'high':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-tone-warn-soft text-tone-warn';
       case 'critical':
-        return 'bg-red-100 text-red-800';
+        return 'bg-tone-danger-soft text-tone-danger';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-tone-neutral-soft text-tone-neutral';
     }
   };
 
@@ -232,11 +233,11 @@ export function AuditDashboard() {
     return new Date(dateString).toLocaleString('pt-BR');
   };
 
-  if (user?.role !== 'admin') {
+  if (!user || !hasPermission(user.role, 'MANAGE_SETTINGS')) {
     return (
       <div className="space-y-6">
         <Alert>
-          <AlertDescription>Acesso negado. Apenas administradores podem acessar esta seção.</AlertDescription>
+          <AlertDescription>Acesso negado. Apenas administradores do sistema podem acessar esta seção.</AlertDescription>
         </Alert>
       </div>
     );
@@ -301,12 +302,12 @@ export function AuditDashboard() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
+              <AlertTriangle className="h-4 w-4 text-tone-danger" />
               Alertas Críticos
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{stats.criticalAlerts}</div>
+            <div className="text-2xl font-bold text-tone-danger">{stats.criticalAlerts}</div>
             <p className="text-xs text-muted-foreground">Requerem atenção imediata</p>
           </CardContent>
         </Card>
@@ -314,12 +315,12 @@ export function AuditDashboard() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CheckCircle className="h-4 w-4 text-tone-success" />
               Taxa de Resolução
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold text-tone-success">
               {stats.totalAlerts > 0 ? 
                 Math.round(((stats.totalAlerts - stats.unresolvedAlerts) / stats.totalAlerts) * 100) : 0}%
             </div>
@@ -397,9 +398,9 @@ export function AuditDashboard() {
                                 {log.level}
                               </Badge>
                               {log.success ? (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
+                                <CheckCircle className="h-4 w-4 text-tone-success" />
                               ) : (
-                                <XCircle className="h-4 w-4 text-red-600" />
+                                <XCircle className="h-4 w-4 text-tone-danger" />
                               )}
                               
                               <Dialog>
@@ -443,8 +444,8 @@ export function AuditDashboard() {
                                     
                                     {log.errorMessage && (
                                       <div>
-                                        <h4 className="font-medium text-red-600">Erro</h4>
-                                        <p className="text-sm text-red-600">{log.errorMessage}</p>
+                                        <h4 className="font-medium text-tone-danger">Erro</h4>
+                                        <p className="text-sm text-tone-danger">{log.errorMessage}</p>
                                       </div>
                                     )}
                                     
@@ -530,16 +531,16 @@ export function AuditDashboard() {
                       <div
                         key={alert.id}
                         className={`flex items-start gap-4 p-4 border rounded-lg ${
-                          alert.severity === 'critical' ? 'border-red-200 bg-red-50' : 
-                          alert.severity === 'high' ? 'border-orange-200 bg-orange-50' : ''
+                          alert.severity === 'critical' ? 'border-tone-danger/30 bg-tone-danger-soft' :
+                          alert.severity === 'high' ? 'border-tone-warn/30 bg-tone-warn-soft' : ''
                         }`}
                       >
                         <div className="flex-shrink-0">
                           <AlertTriangle className={`h-5 w-5 ${
-                            alert.severity === 'critical' ? 'text-red-600' :
-                            alert.severity === 'high' ? 'text-orange-600' :
-                            alert.severity === 'medium' ? 'text-yellow-600' :
-                            'text-green-600'
+                            alert.severity === 'critical' ? 'text-tone-danger' :
+                            alert.severity === 'high' ? 'text-tone-warn' :
+                            alert.severity === 'medium' ? 'text-tone-gold' :
+                            'text-tone-success'
                           }`} />
                         </div>
                         
@@ -552,7 +553,7 @@ export function AuditDashboard() {
                               </Badge>
                               
                               {alert.resolved ? (
-                                <Badge className="bg-green-100 text-green-800">
+                                <Badge className="bg-tone-success-soft text-tone-success">
                                   Resolvido
                                 </Badge>
                               ) : (
@@ -596,7 +597,7 @@ export function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(stats.byAction)
+                  {Object.entries(stats.byAction || {})
                     .sort(([,a], [,b]) => b - a)
                     .slice(0, 10)
                     .map(([action, count]) => (
@@ -616,7 +617,7 @@ export function AuditDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  {Object.entries(stats.byDay)
+                  {Object.entries(stats.byDay || {})
                     .sort(([a], [b]) => b.localeCompare(a))
                     .slice(0, 7)
                     .map(([date, data]) => (
@@ -625,7 +626,7 @@ export function AuditDashboard() {
                         <div className="flex gap-2">
                           <Badge variant="outline">{data.logs} logs</Badge>
                           {data.alerts > 0 && (
-                            <Badge className="bg-red-100 text-red-800">{data.alerts} alertas</Badge>
+                            <Badge className="bg-tone-danger-soft text-tone-danger">{data.alerts} alertas</Badge>
                           )}
                         </div>
                       </div>

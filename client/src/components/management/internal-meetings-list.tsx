@@ -14,7 +14,11 @@ import { useAuth } from "../auth/auth-context";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../ui/alert-dialog";
 import { useActas } from "../../hooks/useActas";
 
-export function InternalMeetingsList() {
+interface InternalMeetingsListProps {
+  onNavigateToActa?: (actaId: string) => void;
+}
+
+export function InternalMeetingsList({ onNavigateToActa }: InternalMeetingsListProps = {}) {
   const { user } = useAuth();
   const { createActa } = useActas();
   const [meetings, setMeetings] = useState<any[]>([]);
@@ -62,20 +66,22 @@ export function InternalMeetingsList() {
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
-      'pendente': 'bg-yellow-500',
-      'confirmado': 'bg-blue-500',
-      'concluido': 'bg-green-500',
-      'cancelado': 'bg-red-500',
-      'reagendado': 'bg-orange-500'
+      'pendente': 'bg-tone-warn',
+      'confirmado': 'bg-tone-info',
+      'concluido': 'bg-tone-success',
+      'nao_realizada': 'bg-tone-warn',
+      'cancelado': 'bg-tone-danger',
+      'reagendado': 'bg-tone-warn'
     };
-    return colors[status] || 'bg-gray-500';
+    return `${colors[status] || 'bg-tone-neutral'} text-white`;
   };
 
   const getStatusLabel = (status: string) => {
     const labels: Record<string, string> = {
       'pendente': 'Pendente',
       'confirmado': 'Confirmado',
-      'concluido': 'Concluído',
+      'concluido': 'Realizada',
+      'nao_realizada': 'Não Realizada',
       'cancelado': 'Cancelado',
       'reagendado': 'Reagendado'
     };
@@ -84,12 +90,12 @@ export function InternalMeetingsList() {
 
   const getPriorityColor = (priority: string) => {
     const colors: Record<string, string> = {
-      'baixa': 'bg-gray-500',
-      'normal': 'bg-blue-500',
-      'alta': 'bg-orange-500',
-      'urgente': 'bg-red-500'
+      'baixa': 'bg-tone-neutral',
+      'normal': 'bg-tone-info',
+      'alta': 'bg-tone-warn',
+      'urgente': 'bg-tone-danger'
     };
-    return colors[priority] || 'bg-gray-500';
+    return `${colors[priority] || 'bg-tone-neutral'} text-white`;
   };
 
   const getPriorityLabel = (priority: string) => {
@@ -114,10 +120,8 @@ export function InternalMeetingsList() {
       const acta = res.actas?.find(a => a.reuniao_interna_id === meeting.id);
 
       if (acta) {
-        toast.success('Acta encontrada! Redirecionando...');
-        setTimeout(() => {
-          window.location.hash = '#/actas';
-        }, 1000);
+        // Navega para o Livro de Actas (menu principal) já com esta acta aberta.
+        onNavigateToActa?.(acta.id);
       } else {
         toast.info('Nenhuma acta encontrada para esta reunião.');
       }
@@ -129,7 +133,40 @@ export function InternalMeetingsList() {
     }
   };
 
-  const MeetingDetails = ({ meeting }: { meeting: any }) => (
+  const MeetingDetails = ({ meeting }: { meeting: any }) => {
+    const [adiando, setAdiando] = useState(false);
+    const [novaData, setNovaData] = useState({
+      data: meeting.meeting_date || '',
+      inicio: meeting.start_time || '',
+      fim: meeting.end_time || '',
+    });
+    const [salvandoAdiamento, setSalvandoAdiamento] = useState(false);
+
+    const handleAdiar = async () => {
+      if (!novaData.data || !novaData.inicio || !novaData.fim) {
+        toast.error('Preencha a nova data e os novos horários');
+        return;
+      }
+      setSalvandoAdiamento(true);
+      try {
+        await api.put(`/internal-meetings/${meeting.id}`, {
+          meeting_date: novaData.data,
+          start_time: novaData.inicio,
+          end_time: novaData.fim,
+          status: 'reagendado',
+        });
+        toast.success('Reunião adiada com sucesso!');
+        setAdiando(false);
+        loadMeetings();
+      } catch (error) {
+ console.error('Erro ao adiar reunião:', error);
+        toast.error('Erro ao adiar reunião');
+      } finally {
+        setSalvandoAdiamento(false);
+      }
+    };
+
+    return (
     <Dialog>
       <DialogTrigger asChild>
         <Button size="sm" variant="outline">
@@ -211,7 +248,7 @@ export function InternalMeetingsList() {
           {meeting.meeting_link && (
             <div>
               <h4 className="mb-1">Link da Reunião</h4>
-              <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+              <a href={meeting.meeting_link} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline" style={{ color: 'var(--ring)' }}>
                 {meeting.meeting_link}
               </a>
             </div>
@@ -233,10 +270,10 @@ export function InternalMeetingsList() {
             </div>
           )}
 
-          {meeting.organizer_id === user?.id && meeting.status === 'pendente' && (
+          {meeting.organizer_id === user?.id && (meeting.status === 'pendente' || meeting.status === 'reagendado') && (
             <div className="flex gap-2 pt-4">
-              <Button 
-                className="flex-1" 
+              <Button
+                className="flex-1"
                 variant="outline"
                 onClick={() => handleStatusChange(meeting.id, 'confirmado')}
               >
@@ -268,6 +305,73 @@ export function InternalMeetingsList() {
             </div>
           )}
 
+          {/* Resultado da reuniao: so faz sentido depois de confirmada - e o
+              que "fecha" a reuniao (aconteceu/nao aconteceu) ou a adia para
+              nova data. Marcar como realizada liberta a acta para registar
+              decisoes, discussoes, votacoes e recomendacoes. */}
+          {meeting.organizer_id === user?.id && meeting.status === 'confirmado' && !adiando && (
+            <div className="pt-4 space-y-2">
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1"
+                  onClick={() => handleStatusChange(meeting.id, 'concluido')}
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Aconteceu
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  onClick={() => handleStatusChange(meeting.id, 'nao_realizada')}
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Não Aconteceu
+                </Button>
+              </div>
+              <Button className="w-full" variant="outline" onClick={() => setAdiando(true)}>
+                <Calendar className="h-4 w-4 mr-2" />
+                Adiar Reunião
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                "Aconteceu" liberta a acta para registar decisões, discussões e votações.
+              </p>
+            </div>
+          )}
+
+          {meeting.organizer_id === user?.id && meeting.status === 'confirmado' && adiando && (
+            <div className="pt-4 space-y-3 border rounded-lg p-3">
+              <p className="text-sm font-medium">Nova data e horário</p>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  type="date"
+                  className="col-span-1 border rounded-md px-2 py-1 text-sm"
+                  value={novaData.data}
+                  onChange={(e) => setNovaData({ ...novaData, data: e.target.value })}
+                />
+                <input
+                  type="time"
+                  className="border rounded-md px-2 py-1 text-sm"
+                  value={novaData.inicio}
+                  onChange={(e) => setNovaData({ ...novaData, inicio: e.target.value })}
+                />
+                <input
+                  type="time"
+                  className="border rounded-md px-2 py-1 text-sm"
+                  value={novaData.fim}
+                  onChange={(e) => setNovaData({ ...novaData, fim: e.target.value })}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setAdiando(false)} disabled={salvandoAdiamento}>
+                  Cancelar
+                </Button>
+                <Button className="flex-1" onClick={handleAdiar} disabled={salvandoAdiamento}>
+                  {salvandoAdiamento ? 'A guardar...' : 'Confirmar Adiamento'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Botão para Ver Acta */}
           <div className="pt-4 border-t">
             <Button 
@@ -295,7 +399,8 @@ export function InternalMeetingsList() {
         </div>
       </DialogContent>
     </Dialog>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -324,10 +429,12 @@ export function InternalMeetingsList() {
             <TabsTrigger value="todas">Todas</TabsTrigger>
             <TabsTrigger value="pendente">Pendentes</TabsTrigger>
             <TabsTrigger value="confirmado">Confirmadas</TabsTrigger>
-            <TabsTrigger value="concluido">Concluídas</TabsTrigger>
+            <TabsTrigger value="concluido">Realizadas</TabsTrigger>
+            <TabsTrigger value="nao_realizada">Não Realizadas</TabsTrigger>
+            <TabsTrigger value="reagendado">Adiadas</TabsTrigger>
           </TabsList>
 
-          {['todas', 'pendente', 'confirmado', 'concluido'].map(status => (
+          {['todas', 'pendente', 'confirmado', 'concluido', 'nao_realizada', 'reagendado'].map(status => (
             <TabsContent key={status} value={status}>
               {filterMeetings(status).length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">

@@ -110,10 +110,10 @@ export function FacturasDashboard({ stats, moeda = 'AOA' }: FacturasDashboardPro
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Pago</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
+            <CheckCircle className="h-4 w-4" style={{ color: 'var(--tone-success)' }} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>
               {formatCurrency(stats.total_pago)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -125,10 +125,10 @@ export function FacturasDashboard({ stats, moeda = 'AOA' }: FacturasDashboardPro
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pendente</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
+            <Clock className="h-4 w-4" style={{ color: 'var(--tone-warn)' }} />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">
+            <div className="text-2xl font-bold" style={{ color: 'var(--tone-warn)' }}>
               {formatCurrency(stats.total_pendente)}
             </div>
             <p className="text-xs text-muted-foreground">
@@ -141,16 +141,16 @@ export function FacturasDashboard({ stats, moeda = 'AOA' }: FacturasDashboardPro
       {/* Alertas */}
       <div className="grid gap-4 md:grid-cols-2">
         {stats.vencidas > 0 && (
-          <Card className="border-red-200 bg-red-50">
+          <Card style={{ borderColor: 'var(--tone-danger)', backgroundColor: 'var(--tone-danger-soft)' }}>
             <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2 text-red-700">
+              <CardTitle className="text-sm flex items-center gap-2" style={{ color: 'var(--tone-danger)' }}>
                 <AlertCircle className="h-4 w-4" />
                 Facturas Vencidas
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-red-600">
-                <span className="text-2xl font-bold">{stats.vencidas}</span> factura(s) 
+              <p className="text-sm" style={{ color: 'var(--tone-danger)' }}>
+                <span className="text-2xl font-bold">{stats.vencidas}</span> factura(s)
                 com data de vencimento ultrapassada. Processe os pagamentos urgentemente.
               </p>
             </CardContent>
@@ -158,16 +158,16 @@ export function FacturasDashboard({ stats, moeda = 'AOA' }: FacturasDashboardPro
         )}
 
         {stats.a_vencer_30dias > 0 && (
-          <Card className="border-yellow-200 bg-yellow-50">
+          <Card style={{ borderColor: 'var(--tone-warn)', backgroundColor: 'var(--tone-warn-soft)' }}>
             <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2 text-yellow-700">
+              <CardTitle className="text-sm flex items-center gap-2" style={{ color: 'var(--tone-warn)' }}>
                 <Calendar className="h-4 w-4" />
                 A Vencer (30 dias)
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-yellow-600">
-                <span className="text-2xl font-bold">{stats.a_vencer_30dias}</span> factura(s) 
+              <p className="text-sm" style={{ color: 'var(--tone-warn)' }}>
+                <span className="text-2xl font-bold">{stats.a_vencer_30dias}</span> factura(s)
                 vencem nos próximos 30 dias. Planifique os pagamentos.
               </p>
             </CardContent>

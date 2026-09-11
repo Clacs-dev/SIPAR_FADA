@@ -29,7 +29,8 @@ export type UserRole =
   | 'planeamento'
   | 'organizacao_qualidade'
   | 'compliance'
-  | 'risco';
+  | 'risco'
+  | 'admin_sistema';
 
 export interface User {
   id: string;
@@ -38,6 +39,17 @@ export interface User {
   role: UserRole;
   created_at: string;
   last_login?: string;
+  department?: string;
+  position?: string;
+  // Coordenadas bancarias reutilizaveis (utilizadores externos / fornecedores)
+  bankName?: string;
+  bankAccountHolder?: string;
+  bankIban?: string;
+  bankNib?: string;
+  bankSwift?: string;
+  bankCity?: string;
+  bankCountry?: string;
+  signatureImage?: string;
 }
 
 export interface RegisterUserData {
@@ -58,9 +70,11 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
   resetPassword: (email: string) => Promise<boolean>;
+  confirmPasswordReset: (token: string, newPassword: string) => Promise<boolean>;
   register: (userData: RegisterUserData) => Promise<any>;
   isLoading: boolean;
   accessToken: string | null;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -112,6 +126,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
  console.warn(' Falha ao validar sessão salva (JWT expirado ou servidor offline):', error);
           localStorage.removeItem('access_token');
           localStorage.removeItem('user');
+          // Antes disto era totalmente silencioso (so console.warn): o
+          // utilizador via o ecra voltar ao login sem perceber porque, logo
+          // a seguir a um login aparentemente bem sucedido (quando o
+          // AuthProvider remonta - ex: apos um refresh de pagina ou HMR - e
+          // volta a validar a sessao guardada, que entretanto deixou de ser
+          // valida porque o servidor reiniciou ou o token expirou).
+          toast.error('A sua sessão expirou ou o servidor não respondeu. Inicie sessão novamente.');
         }
       }
     } catch (error) {
@@ -121,33 +142,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Efetua login. Em caso de falha, lanca um Error com a mensagem real
+   * devolvida pelo backend (credenciais invalidas, conta pendente/inativa,
+   * demasiadas tentativas, etc.) para o formulario poder mostrar a razao
+   * exata ao utilizador, em vez de uma mensagem generica.
+   */
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     try {
-      const res = await api.post<{ user: User; session: { access_token: string } }>('/auth/login', {
+      const res = await api.post<{ user: User; session: { access_token: string; refresh_token?: string } }>('/auth/login', {
         email,
         password
       });
 
-      if (res && res.session?.access_token) {
-        setUser(res.user);
-        setAccessToken(res.session.access_token);
-        
-        // Guardar credenciais no localStorage
-        localStorage.setItem('access_token', res.session.access_token);
-        localStorage.setItem('user', JSON.stringify(res.user));
-        
-        setIsLoading(false);
-        return true;
+      if (!res || !res.session?.access_token) {
+        throw new Error('Não foi possível iniciar sessão. Tente novamente.');
       }
-      
+
+      setUser(res.user);
+      setAccessToken(res.session.access_token);
+
+      // Guardar credenciais no localStorage
+      localStorage.setItem('access_token', res.session.access_token);
+      localStorage.setItem('user', JSON.stringify(res.user));
+      if (res.session.refresh_token) {
+        localStorage.setItem('refresh_token', res.session.refresh_token);
+      }
+
+      return true;
+    } finally {
       setIsLoading(false);
-      return false;
-    } catch (error) {
- console.error('Erro ao efetuar login:', error);
-      toast.error(error instanceof Error ? error.message : 'E-mail ou senha incorretos.');
-      setIsLoading(false);
-      return false;
     }
   };
 
@@ -161,19 +186,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setAccessToken(null);
     localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
     localStorage.removeItem('fornecedor_auth');
     toast.success('Sessão encerrada.');
   };
 
   const resetPassword = async (email: string): Promise<boolean> => {
-    try {
-      await api.post('/auth/reset-password', { email });
-      return true;
-    } catch (error) {
- console.error('Erro ao solicitar reset de senha:', error);
-      return false;
-    }
+    await api.post('/auth/reset-password', { email });
+    return true;
+  };
+
+  const confirmPasswordReset = async (token: string, newPassword: string): Promise<boolean> => {
+    await api.post('/auth/reset-password/confirm', { token, newPassword });
+    return true;
   };
 
   const register = async (userData: RegisterUserData): Promise<any> => {
@@ -186,8 +212,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const refreshUser = async (): Promise<void> => {
+    try {
+      const res = await api.get<{ user: User }>('/auth/me');
+      setUser(res.user);
+      localStorage.setItem('user', JSON.stringify(res.user));
+    } catch (error) {
+ console.warn('Falha ao atualizar dados do utilizador:', error);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, resetPassword, register, isLoading, accessToken }}>
+    <AuthContext.Provider value={{ user, login, logout, resetPassword, confirmPasswordReset, register, isLoading, accessToken, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

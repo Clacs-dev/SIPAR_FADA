@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { 
-  Receipt, 
-  Calendar, 
-  User, 
-  Building2, 
+import {
+  Receipt,
+  Calendar,
+  User,
+  Building2,
   Paperclip,
   History,
   CheckCircle,
@@ -14,7 +14,9 @@ import {
   DollarSign,
   AlertTriangle,
   Upload,
-  Building
+  Building,
+  FileSignature,
+  PenTool
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
@@ -22,6 +24,10 @@ import { Badge } from "../ui/badge";
 import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import { Factura } from "./types";
+import { useAuth } from "../auth/auth-context";
+import { API_BASE_URL } from '@/services/api';
+import { gerarPDFOrdemPagamento, urlParaDataUrl } from "../../utils/pdf-generator";
+import { toast } from "sonner@2.0.3";
 
 interface FacturaDetailsProps {
   factura: Factura;
@@ -36,7 +42,15 @@ interface FacturaDetailsProps {
   onReject: (motivo: string) => void;
   onPay: (metodo: string, referencia: string, comprovativo?: File) => void;
   onSubmitToBanco?: (banco: string, referencia: string) => void;
+  onGerarOrdemPagamento?: (numeroDespacho: string, contaDebito: string) => void;
+  onAssinarOrdemPagamento?: (papel: 'presidente' | 'administrador') => void;
 }
+
+// Cargos que assinam a Ordem de Pagamento e o role de sistema correspondente
+const PAPEIS_ASSINATURA: { papel: 'presidente' | 'administrador'; label: string; role: string }[] = [
+  { papel: 'presidente', label: 'Presidente', role: 'gabinete_pca' },
+  { papel: 'administrador', label: 'Administrador', role: 'gabinete_administrador' },
+];
 
 export function FacturaDetails({
   factura,
@@ -50,13 +64,21 @@ export function FacturaDetails({
   onApprove,
   onReject,
   onPay,
-  onSubmitToBanco
+  onSubmitToBanco,
+  onGerarOrdemPagamento,
+  onAssinarOrdemPagamento
 }: FacturaDetailsProps) {
+  const { user, accessToken, refreshUser } = useAuth();
   const [showValidateForm, setShowValidateForm] = useState(false);
   const [showApproveForm, setShowApproveForm] = useState(false);
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [showPayForm, setShowPayForm] = useState(false);
   const [showSubmitBancoForm, setShowSubmitBancoForm] = useState(false);
+  const [showOrdemPagamentoForm, setShowOrdemPagamentoForm] = useState(false);
+  const [numeroDespacho, setNumeroDespacho] = useState('');
+  const [contaDebito, setContaDebito] = useState(() => localStorage.getItem('fada_conta_debito_default') || '');
+  const [uploadingSignature, setUploadingSignature] = useState(false);
+  const [gerandoPdfOp, setGerandoPdfOp] = useState(false);
   const [comentario, setComentario] = useState('');
   const [motivo, setMotivo] = useState('');
   const [metodoPagamento, setMetodoPagamento] = useState('');
@@ -65,23 +87,101 @@ export function FacturaDetails({
   const [bancoDestino, setBancoDestino] = useState('');
   const [referenciaSubmissao, setReferenciaSubmissao] = useState('');
 
+  const podeGerirOrdemPagamento = canApprove || canPay;
+  const assinaturas = factura.ordem_pagamento?.assinaturas || [];
+  const meuPapel = PAPEIS_ASSINATURA.find((p) => p.role === userRole);
+  const jaAssineiComoMeuPapel = meuPapel ? assinaturas.some((a) => a.papel === meuPapel.papel) : false;
+
+  const handleGerarOrdemPagamento = () => {
+    if (!numeroDespacho.trim() || !contaDebito.trim()) return;
+    localStorage.setItem('fada_conta_debito_default', contaDebito.trim());
+    onGerarOrdemPagamento?.(numeroDespacho.trim(), contaDebito.trim());
+    setShowOrdemPagamentoForm(false);
+  };
+
+  const handleUploadESignAssinatura = async (file: File) => {
+    if (!accessToken || !meuPapel) return;
+    setUploadingSignature(true);
+    try {
+      // Upload e associacao ao perfil num unico pedido multipart - ver nota em
+      // meu-perfil-dialog.tsx sobre porque isto deixou de ser dois fetch() separados.
+      const form = new FormData();
+      form.append('file', file);
+      const response = await fetch(`${API_BASE_URL}/auth/me/signature`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: form,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || 'Erro ao carregar a assinatura');
+
+      await refreshUser();
+      toast.success('Assinatura carregada. Pode agora assinar a Ordem de Pagamento.');
+    } catch (err) {
+ console.error('Erro ao carregar assinatura:', err);
+      toast.error(err instanceof Error ? err.message : 'Erro ao carregar assinatura');
+    } finally {
+      setUploadingSignature(false);
+    }
+  };
+
+  const handleBaixarOrdemPagamento = async () => {
+    setGerandoPdfOp(true);
+    try {
+      const assinaturasComImagem = await Promise.all(
+        assinaturas.map(async (assinatura) => {
+          if (!assinatura.assinatura_url) return assinatura;
+          try {
+            const dataUrl = await urlParaDataUrl(assinatura.assinatura_url);
+            return { ...assinatura, assinatura_url: dataUrl };
+          } catch {
+            return { ...assinatura, assinatura_url: undefined };
+          }
+        })
+      );
+
+      const doc = gerarPDFOrdemPagamento({
+        numero: factura.numero_ordem_pagamento || 'OP/N.º —',
+        contaDebito: factura.ordem_pagamento?.conta_debito,
+        numeroDespacho: factura.ordem_pagamento?.numero_despacho,
+        numeroFacturas: factura.numero,
+        descricao: factura.descricao,
+        valor: factura.total || factura.valor || 0,
+        moeda: factura.moeda,
+        fornecedor: fornecedorNomeExibicao || factura.banco_titular || 'Fornecedor',
+        bancoNome: factura.banco_nome,
+        bancoIban: factura.banco_iban,
+        bancoCidade: factura.ordem_pagamento?.banco_destino_cidade || factura.banco_cidade,
+        bancoPais: factura.ordem_pagamento?.banco_destino_pais || factura.banco_pais,
+        data: factura.ordem_pagamento?.gerada_em,
+        assinaturas: assinaturasComImagem,
+      });
+      doc.save(`Ordem_Pagamento_${(factura.numero_ordem_pagamento || factura.numero).replace(/[\/\s]/g, '-')}.pdf`);
+    } catch (err) {
+ console.error('Erro ao gerar PDF da Ordem de Pagamento:', err);
+      toast.error('Erro ao gerar o PDF da Ordem de Pagamento');
+    } finally {
+      setGerandoPdfOp(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const badges = {
-      registada: { label: 'Registada', color: 'bg-blue-500' },
-      rascunho: { label: 'Rascunho', color: 'bg-gray-500' },
-      pendente: { label: 'Pendente', color: 'bg-blue-500' },
-      validado: { label: 'Validado', color: 'bg-purple-500' },
-      em_validacao: { label: 'Em Validação', color: 'bg-purple-500' },
-      aprovada: { label: 'Aprovada', color: 'bg-green-500' },
-      aprovado: { label: 'Aprovado', color: 'bg-green-500' },
-      rejeitada: { label: 'Rejeitada', color: 'bg-red-500' },
-      rejeitado: { label: 'Rejeitado', color: 'bg-red-500' },
-      submetido_ao_banco: { label: 'Submetido ao Banco', color: 'bg-indigo-500' },
-      paga: { label: 'Paga', color: 'bg-green-700' },
-      pago: { label: 'Pago', color: 'bg-green-700' },
+      registada: { label: 'Registada', color: 'var(--tone-info)' },
+      rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
+      pendente: { label: 'Pendente', color: 'var(--tone-info)' },
+      validado: { label: 'Validado', color: 'var(--tone-info)' },
+      em_validacao: { label: 'Em Validação', color: 'var(--tone-info)' },
+      aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
+      aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
+      rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)' },
+      rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
+      submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
+      paga: { label: 'Paga', color: 'var(--tone-success)' },
+      pago: { label: 'Pago', color: 'var(--tone-success)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const itensFactura = Array.isArray(factura.itens) ? factura.itens : [];
@@ -94,8 +194,28 @@ export function FacturaDetails({
     }).format(Number.isFinite(Number(value)) ? Number(value) : 0);
   };
 
-  const isVencida = new Date(factura.data_vencimento) < new Date() && 
-    factura.status !== 'paga';
+  const formatDate = (value?: string | null) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('pt-PT');
+  };
+
+  const dataVencimentoValida = factura.data_vencimento ? new Date(factura.data_vencimento) : null;
+  const isVencida = !!dataVencimentoValida && !Number.isNaN(dataVencimentoValida.getTime())
+    && dataVencimentoValida < new Date() && factura.status !== 'paga';
+
+  // O backend guarda o fornecedor como texto simples (fornecedor_nome/fornecedor); o tipo
+  // Fornecedor (objeto) so existe quando alguem explicitamente estrutura os dados assim.
+  const fornecedorNomeExibicao =
+    (typeof factura.fornecedor === 'object' && factura.fornecedor
+      ? (factura.fornecedor as any).nome
+      : factura.fornecedor) || (factura as any).fornecedor_nome || 'Fornecedor não especificado';
+  const fornecedorNifExibicao =
+    (typeof factura.fornecedor === 'object' && factura.fornecedor ? (factura.fornecedor as any).nif : null)
+    || (factura as any).fornecedor_nif || factura.nif;
+  const fornecedorEmailExibicao =
+    (typeof factura.fornecedor === 'object' && factura.fornecedor ? (factura.fornecedor as any).email : null)
+    || (factura as any).fornecedor_email;
 
   const handleValidate = () => {
     if (comentario.trim() && onValidate) {
@@ -169,7 +289,8 @@ export function FacturaDetails({
           {/* Botão Validar (Compras) - sempre visível se tiver permissão */}
           {canValidate && (
             <Button 
-              className="bg-purple-600 hover:bg-purple-700 text-white" 
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-accent)' }}
               onClick={() => setShowValidateForm(true)}
               disabled={factura.status !== 'pendente'}
               title={factura.status !== 'pendente' ? `Status atual: ${factura.status}. Necessário: pendente` : 'Validar factura'}
@@ -182,7 +303,8 @@ export function FacturaDetails({
           {/* Botão Aprovar (Admin/Gabinetes) - sempre visível se tiver permissão */}
           {canApprove && (
             <Button 
-              className="bg-green-600 hover:bg-green-700 text-white" 
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowApproveForm(true)}
               disabled={factura.status !== 'validado'}
               title={factura.status !== 'validado' ? `Status atual: ${factura.status}. Necessário: validado` : 'Aprovar factura'}
@@ -195,7 +317,8 @@ export function FacturaDetails({
           {/* Botão Pagar (Financeiro) - sempre visível se tiver permissão */}
           {canPay && (factura.status === 'aprovado' || factura.status === 'submetido_ao_banco') && (
             <Button 
-              className="bg-blue-600 hover:bg-blue-700 text-white" 
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowPayForm(true)}
               disabled={factura.status !== 'aprovado' && factura.status !== 'submetido_ao_banco'}
               title={
@@ -212,7 +335,8 @@ export function FacturaDetails({
           {/* Botão Submeter ao Banco (Financeiro) */}
           {canPay && (
             <Button 
-              className="bg-indigo-600 hover:bg-indigo-700 text-white" 
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-gold)' }}
               onClick={() => setShowSubmitBancoForm(true)}
               disabled={factura.status !== 'aprovado'}
               title={factura.status !== 'aprovado' ? `Status atual: ${factura.status}. Necessário: aprovado` : 'Submeter ao banco'}
@@ -240,12 +364,12 @@ export function FacturaDetails({
         {getStatusBadge(factura.status)}
         <Badge variant="outline">{factura.moeda}</Badge>
         {isVencida && (
-          <Badge className="bg-red-500 text-white">
+          <Badge className="text-white" style={{ backgroundColor: 'var(--tone-danger)' }}>
             ⚠️ Vencida
           </Badge>
         )}
         {factura.integracao_status === 'confirmado' && (
-          <Badge className="bg-blue-500 text-white">
+          <Badge className="text-white" style={{ backgroundColor: 'var(--tone-info)' }}>
             ✓ Integrado Primavera
           </Badge>
         )}
@@ -253,9 +377,9 @@ export function FacturaDetails({
 
       {/* Alerta de Vencimento */}
       {isVencida && (
-        <Card className="border-red-200 bg-red-50">
+        <Card style={{ borderColor: 'var(--tone-danger)', backgroundColor: 'var(--tone-danger-soft)' }}>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-red-700">
+            <div className="flex items-center gap-2" style={{ color: 'var(--tone-danger)' }}>
               <AlertTriangle className="h-5 w-5" />
               <span className="font-medium">
                 Atenção: Factura vencida desde{' '}
@@ -282,14 +406,14 @@ export function FacturaDetails({
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Nº Factura Fornecedor</p>
-                  <p className="font-medium">{factura.numero_fornecedor}</p>
+                  <p className="font-medium">{factura.numero_fornecedor || '-'}</p>
                 </div>
               </div>
 
               {factura.numero_submissao && (
                 <div>
                   <p className="text-sm text-muted-foreground">Nº de Submissão do Registo</p>
-                  <p className="font-medium text-blue-600">{factura.numero_submissao}</p>
+                  <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_submissao}</p>
                 </div>
               )}
 
@@ -306,32 +430,35 @@ export function FacturaDetails({
 
               <div>
                 <p className="text-sm text-muted-foreground">Fornecedor</p>
-                <p className="font-medium">{factura.fornecedor?.nome || 'Fornecedor não especificado'}</p>
-                {factura.fornecedor && (
+                <p className="font-medium">{fornecedorNomeExibicao}</p>
+                {(fornecedorNifExibicao || fornecedorEmailExibicao) && (
                   <p className="text-sm text-muted-foreground">
-                    NIF: {factura.fornecedor.nif} • {factura.fornecedor.email}
+                    {fornecedorNifExibicao && `NIF: ${fornecedorNifExibicao}`}
+                    {fornecedorNifExibicao && fornecedorEmailExibicao && ' • '}
+                    {fornecedorEmailExibicao}
                   </p>
                 )}
               </div>
 
+              {factura.numero_ordem && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Ordem de Compra vinculada (Procurement)</p>
+                  <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
+                </div>
+              )}
+
               <div className="grid gap-4 md:grid-cols-3">
                 <div>
                   <p className="text-sm text-muted-foreground">Data de Emissão</p>
-                  <p className="font-medium">
-                    {new Date(factura.data_emissao).toLocaleDateString('pt-PT')}
-                  </p>
+                  <p className="font-medium">{formatDate(factura.data_emissao)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Data de Vencimento</p>
-                  <p className="font-medium">
-                    {new Date(factura.data_vencimento).toLocaleDateString('pt-PT')}
-                  </p>
+                  <p className="font-medium">{formatDate(factura.data_vencimento)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Data de Recebimento</p>
-                  <p className="font-medium">
-                    {new Date(factura.data_recebimento).toLocaleDateString('pt-PT')}
-                  </p>
+                  <p className="font-medium">{formatDate(factura.data_recebimento)}</p>
                 </div>
               </div>
 
@@ -399,6 +526,50 @@ export function FacturaDetails({
             </CardContent>
           </Card>
 
+          {/* Dados Bancários para Pagamento */}
+          {(factura.banco_iban || factura.banco_nib || factura.banco_swift) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Dados Bancários para Pagamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                {factura.banco_titular && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Titular da Conta</p>
+                    <p className="font-medium">{factura.banco_titular}</p>
+                  </div>
+                )}
+                {factura.banco_nome && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Banco</p>
+                    <p className="font-medium">{factura.banco_nome}</p>
+                  </div>
+                )}
+                {factura.banco_iban && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">IBAN</p>
+                    <p className="font-medium font-mono">{factura.banco_iban}</p>
+                  </div>
+                )}
+                {factura.banco_nib && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">NIB</p>
+                    <p className="font-medium font-mono">{factura.banco_nib}</p>
+                  </div>
+                )}
+                {factura.banco_swift && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Código SWIFT/BIC</p>
+                    <p className="font-medium font-mono">{factura.banco_swift}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Anexos */}
           {factura.anexos && factura.anexos.length > 0 && (
             <Card>
@@ -436,7 +607,7 @@ export function FacturaDetails({
                                 {anexo?.tipo && ` • ${anexo.tipo}`}
                               </p>
                               {!hasUrl && (
-                                <p className="text-xs text-red-500 mt-1">⚠️ URL não disponível</p>
+                                <p className="text-xs mt-1" style={{ color: 'var(--tone-danger)' }}>⚠️ URL não disponível</p>
                               )}
                             </div>
                           </div>
@@ -576,7 +747,7 @@ export function FacturaDetails({
               )}
 
               {showRejectForm && (
-                <div className="space-y-3 p-3 border border-red-200 bg-red-50 rounded-lg">
+                <div className="space-y-3 p-3 border rounded-lg" style={{ borderColor: 'var(--tone-danger)', backgroundColor: 'var(--tone-danger-soft)' }}>
                   <Textarea
                     placeholder="Motivo da rejeição..."
                     rows={3}
@@ -594,16 +765,23 @@ export function FacturaDetails({
                 </div>
               )}
 
-              {/* Pagar */}
-              {canPay && (factura.status === 'aprovado' || factura.status === 'submetido_ao_banco') && !showPayForm && (
-                <Button className="w-full bg-green-600 hover:bg-green-700" onClick={() => setShowPayForm(true)}>
+              {canPay && (factura.status === 'aprovado' || factura.status === 'submetido_ao_banco') && !factura.numero_ordem_pagamento && (
+                <p className="text-xs rounded-lg p-2" style={{ color: 'var(--tone-warn)', backgroundColor: 'var(--tone-warn-soft)', border: '1px solid var(--tone-warn)' }}>
+                  Gere a Ordem de Pagamento (abaixo) antes de submeter ao banco ou registar o pagamento.
+                </p>
+              )}
+
+              {/* Pagar: so depois de submetida ao banco - "aprovado" tem de passar
+                  primeiro por "Submeter ao Banco", nunca ir directo a pago. */}
+              {canPay && factura.status === 'submetido_ao_banco' && factura.numero_ordem_pagamento && !showPayForm && (
+                <Button className="w-full text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => setShowPayForm(true)}>
                   <DollarSign className="mr-2 h-4 w-4" />
                   Registar Pagamento
                 </Button>
               )}
 
               {showPayForm && (
-                <div className="space-y-3 p-3 border border-green-200 bg-green-50 rounded-lg">
+                <div className="space-y-3 p-3 border rounded-lg" style={{ borderColor: 'var(--tone-success)', backgroundColor: 'var(--tone-success-soft)' }}>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Método de Pagamento</label>
                     <select
@@ -637,7 +815,7 @@ export function FacturaDetails({
                     <Button size="sm" variant="outline" onClick={() => setShowPayForm(false)}>
                       Cancelar
                     </Button>
-                    <Button size="sm" className="bg-green-600" onClick={handlePay}>
+                    <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={handlePay}>
                       Confirmar Pagamento
                     </Button>
                   </div>
@@ -645,15 +823,15 @@ export function FacturaDetails({
               )}
 
               {/* Submeter ao Banco */}
-              {canPay && factura.status === 'aprovado' && !showSubmitBancoForm && (
-                <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={() => setShowSubmitBancoForm(true)}>
+              {canPay && factura.status === 'aprovado' && factura.numero_ordem_pagamento && !showSubmitBancoForm && (
+                <Button className="w-full text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-gold)' }} onClick={() => setShowSubmitBancoForm(true)}>
                   <Upload className="mr-2 h-4 w-4" />
                   Submeter ao Banco
                 </Button>
               )}
 
               {showSubmitBancoForm && (
-                <div className="space-y-3 p-3 border border-indigo-200 bg-indigo-50 rounded-lg">
+                <div className="space-y-3 p-3 border rounded-lg" style={{ borderColor: 'var(--tone-gold)', backgroundColor: 'var(--tone-gold-soft)' }}>
                   <div className="space-y-2">
                     <label className="text-sm font-medium">Banco Destino</label>
                     <Input
@@ -674,7 +852,7 @@ export function FacturaDetails({
                     <Button size="sm" variant="outline" onClick={() => setShowSubmitBancoForm(false)}>
                       Cancelar
                     </Button>
-                    <Button size="sm" className="bg-indigo-600" onClick={handleSubmitToBanco}>
+                    <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-gold)' }} onClick={handleSubmitToBanco}>
                       Submeter
                     </Button>
                   </div>
@@ -682,6 +860,153 @@ export function FacturaDetails({
               )}
             </CardContent>
           </Card>
+
+          {/* Ordem de Pagamento */}
+          {podeGerirOrdemPagamento && (factura.status === 'aprovado' || factura.status === 'submetido_ao_banco' || factura.status === 'pago' || factura.numero_ordem_pagamento) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileSignature className="h-4 w-4" />
+                  Ordem de Pagamento
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {!factura.numero_ordem_pagamento && !showOrdemPagamentoForm && (
+                  <Button className="w-full" variant="outline" onClick={() => setShowOrdemPagamentoForm(true)}>
+                    <FileSignature className="mr-2 h-4 w-4" />
+                    Gerar Ordem de Pagamento
+                  </Button>
+                )}
+
+                {showOrdemPagamentoForm && (
+                  <div className="space-y-3 p-3 border border-border rounded-lg">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">N.º de Despacho</label>
+                      <Input
+                        placeholder="Ex: 080/2026"
+                        value={numeroDespacho}
+                        onChange={(e) => setNumeroDespacho(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Conta a Debitar (FADA)</label>
+                      <Input
+                        placeholder="Nº da conta domiciliada no banco"
+                        value={contaDebito}
+                        onChange={(e) => setContaDebito(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setShowOrdemPagamentoForm(false)}>
+                        Cancelar
+                      </Button>
+                      <Button size="sm" onClick={handleGerarOrdemPagamento} disabled={!numeroDespacho.trim() || !contaDebito.trim()}>
+                        Gerar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {factura.numero_ordem_pagamento && (
+                  <>
+                    <div>
+                      <p className="text-sm text-muted-foreground">N.º da Ordem</p>
+                      <p className="font-medium">{factura.numero_ordem_pagamento}</p>
+                    </div>
+
+                    {factura.ordem_pagamento?.numero_despacho && factura.ordem_pagamento?.conta_debito ? (
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">N.º de Despacho</p>
+                          <p className="font-medium">{factura.ordem_pagamento.numero_despacho}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Conta a Debitar</p>
+                          <p className="font-medium">{factura.ordem_pagamento.conta_debito}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 p-3 border rounded-lg" style={{ borderColor: 'var(--tone-warn)', backgroundColor: 'var(--tone-warn-soft)' }}>
+                        <p className="text-xs" style={{ color: 'var(--tone-warn)' }}>
+                          Gerada automaticamente ao aprovar. Complete o despacho e a conta a debitar antes de submeter ao banco.
+                        </p>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">N.º de Despacho</label>
+                          <Input
+                            placeholder="Ex: 080/2026"
+                            value={numeroDespacho}
+                            onChange={(e) => setNumeroDespacho(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">Conta a Debitar (FADA)</label>
+                          <Input
+                            placeholder="Nº da conta domiciliada no banco"
+                            value={contaDebito}
+                            onChange={(e) => setContaDebito(e.target.value)}
+                          />
+                        </div>
+                        <Button size="sm" onClick={handleGerarOrdemPagamento} disabled={!numeroDespacho.trim() || !contaDebito.trim()}>
+                          Guardar dados
+                        </Button>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      {PAPEIS_ASSINATURA.map(({ papel, label, role }) => {
+                        const assinatura = assinaturas.find((a) => a.papel === papel);
+                        const souEsteAssinante = userRole === role;
+                        return (
+                          <div key={papel} className="flex items-center justify-between text-sm p-2 border border-border rounded-lg">
+                            <div>
+                              <p className="font-medium">{label}</p>
+                              {assinatura ? (
+                                <p className="text-xs" style={{ color: 'var(--tone-success)' }}>✓ Assinado por {assinatura.nome}</p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">Assinatura pendente</p>
+                              )}
+                            </div>
+                            {!assinatura && souEsteAssinante && (
+                              user?.signatureImage ? (
+                                <Button size="sm" variant="outline" onClick={() => onAssinarOrdemPagamento?.(papel)}>
+                                  <PenTool className="mr-1 h-3 w-3" />
+                                  Assinar
+                                </Button>
+                              ) : (
+                                <label>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    disabled={uploadingSignature}
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) handleUploadESignAssinatura(file);
+                                    }}
+                                  />
+                                  <Button size="sm" variant="outline" disabled={uploadingSignature} asChild>
+                                    <span>
+                                      <Upload className="mr-1 h-3 w-3" />
+                                      {uploadingSignature ? 'A carregar...' : 'Carregar assinatura'}
+                                    </span>
+                                  </Button>
+                                </label>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <Button className="w-full" variant="outline" onClick={handleBaixarOrdemPagamento} disabled={gerandoPdfOp}>
+                      <Download className="mr-2 h-4 w-4" />
+                      {gerandoPdfOp ? 'A gerar...' : 'Baixar Ordem de Pagamento'}
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Informações de Validação */}
           {factura.validado_at && (
@@ -739,9 +1064,9 @@ export function FacturaDetails({
 
           {/* Informações de Rejeição */}
           {factura.rejeitado_at && (
-            <Card className="border-red-200">
+            <Card style={{ borderColor: 'var(--tone-danger)' }}>
               <CardHeader>
-                <CardTitle className="text-sm text-red-700">Rejeição</CardTitle>
+                <CardTitle className="text-sm" style={{ color: 'var(--tone-danger)' }}>Rejeição</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div>
@@ -757,7 +1082,7 @@ export function FacturaDetails({
                 {factura.rejeicao_motivo && (
                   <div>
                     <p className="text-sm text-muted-foreground">Motivo</p>
-                    <p className="text-sm text-red-600">{factura.rejeicao_motivo}</p>
+                    <p className="text-sm" style={{ color: 'var(--tone-danger)' }}>{factura.rejeicao_motivo}</p>
                   </div>
                 )}
               </CardContent>
@@ -766,9 +1091,9 @@ export function FacturaDetails({
 
           {/* Informações de Submissão ao Banco */}
           {factura.submetido_banco_at && (
-            <Card className="border-indigo-200">
+            <Card style={{ borderColor: 'var(--tone-gold)' }}>
               <CardHeader>
-                <CardTitle className="text-sm text-indigo-700">Submissão ao Banco</CardTitle>
+                <CardTitle className="text-sm" style={{ color: 'var(--tone-gold)' }}>Submissão ao Banco</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div>
@@ -799,9 +1124,9 @@ export function FacturaDetails({
 
           {/* Informações de Pagamento */}
           {factura.pago_at && (
-            <Card className="border-green-200">
+            <Card style={{ borderColor: 'var(--tone-success)' }}>
               <CardHeader>
-                <CardTitle className="text-sm text-green-700">Pagamento</CardTitle>
+                <CardTitle className="text-sm" style={{ color: 'var(--tone-success)' }}>Pagamento</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div>

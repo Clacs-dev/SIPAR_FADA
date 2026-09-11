@@ -4,14 +4,13 @@
  */
 
 import { useState, useEffect } from "react";
-import { 
-  Package, Plus, Search, Eye, FileText, Clock, 
-  CheckCircle2, XCircle, TrendingUp, AlertCircle, 
+import {
+  Package, Plus, Eye, FileText, Clock,
+  CheckCircle2, XCircle, TrendingUp, AlertCircle,
   DollarSign, Building2, ShoppingBag, Calendar, Send
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { format } from "date-fns";
@@ -24,7 +23,6 @@ import { FornecedoresGestao } from "./fornecedores-gestao";
 import type { PedidoCompra, StatusPedidoCompra } from "./types";
 
 export function ComprasMain() {
-  const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("todos");
   const [formOpen, setFormOpen] = useState(false);
   const [fornecedoresView, setFornecedoresView] = useState(false);
@@ -53,20 +51,20 @@ export function ComprasMain() {
 
   const getStatusBadge = (status: StatusPedidoCompra) => {
     const badges: Record<StatusPedidoCompra, { label: string; color: string; icon: any }> = {
-      criado: { label: "Criado", color: "bg-gray-500", icon: FileText },
-      aguardando_cotacoes: { label: "Aguardando Cotações", color: "bg-blue-500", icon: Clock },
-      em_cotacao: { label: "Em Cotação", color: "bg-yellow-500", icon: TrendingUp },
-      em_analise: { label: "Em Análise", color: "bg-purple-500", icon: AlertCircle },
-      aprovado: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
-      ordem_emitida: { label: "Ordem Emitida", color: "bg-indigo-500", icon: FileText },
-      em_entrega: { label: "Em Entrega", color: "bg-orange-500", icon: Package },
-      concluido: { label: "Concluído", color: "bg-green-600", icon: CheckCircle2 },
-      cancelado: { label: "Cancelado", color: "bg-red-500", icon: AlertCircle },
+      criado: { label: "Criado", color: "var(--tone-neutral)", icon: FileText },
+      aguardando_cotacoes: { label: "Aguardando Cotações", color: "var(--tone-info)", icon: Clock },
+      em_cotacao: { label: "Em Cotação", color: "var(--tone-gold)", icon: TrendingUp },
+      em_analise: { label: "Em Análise", color: "var(--tone-accent)", icon: AlertCircle },
+      aprovado: { label: "Aprovado", color: "var(--tone-success)", icon: CheckCircle2 },
+      ordem_emitida: { label: "Ordem Emitida", color: "var(--tone-accent)", icon: FileText },
+      em_entrega: { label: "Em Entrega", color: "var(--tone-warn)", icon: Package },
+      concluido: { label: "Concluído", color: "var(--tone-success)", icon: CheckCircle2 },
+      cancelado: { label: "Cancelado", color: "var(--tone-danger)", icon: AlertCircle },
     };
     const badge = badges[status] || badges.criado;
     const Icon = badge.icon;
     return (
-      <Badge className={`${badge.color} text-white flex items-center gap-1`}>
+      <Badge className="text-white flex items-center gap-1" style={{ backgroundColor: badge.color }}>
         <Icon className="h-3 w-3" />
         {badge.label}
       </Badge>
@@ -75,14 +73,14 @@ export function ComprasMain() {
 
   const getPrioridadeBadge = (prioridade: string) => {
     const badges: Record<string, { label: string; color: string }> = {
-      urgente: { label: "Urgente", color: "bg-red-600" },
-      alta: { label: "Alta", color: "bg-orange-500" },
-      normal: { label: "Normal", color: "bg-blue-500" },
-      baixa: { label: "Baixa", color: "bg-gray-500" },
+      urgente: { label: "Urgente", color: "var(--tone-danger)" },
+      alta: { label: "Alta", color: "var(--tone-warn)" },
+      normal: { label: "Normal", color: "var(--tone-info)" },
+      baixa: { label: "Baixa", color: "var(--tone-neutral)" },
     };
     const badge = badges[prioridade] || badges.normal;
     return (
-      <Badge variant="outline" className={`${badge.color} text-white border-0`}>
+      <Badge variant="outline" className="text-white border-0" style={{ backgroundColor: badge.color }}>
         {badge.label}
       </Badge>
     );
@@ -145,15 +143,6 @@ export function ComprasMain() {
         break;
     }
 
-    // Filtrar por pesquisa
-    if (searchTerm) {
-      filtered = filtered.filter(p => 
-        p.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.departamento_solicitante.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
     return filtered;
   };
 
@@ -200,32 +189,32 @@ export function ComprasMain() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-blue-600">{stats.aguardando_cotacoes}</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--tone-info)' }}>{stats.aguardando_cotacoes}</div>
               <p className="text-xs text-muted-foreground">Aguardando Cotações</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-yellow-600">{stats.em_cotacao}</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--tone-gold)' }}>{stats.em_cotacao}</div>
               <p className="text-xs text-muted-foreground">Em Cotação</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-purple-600">{stats.em_analise}</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--tone-accent)' }}>{stats.em_analise}</div>
               <p className="text-xs text-muted-foreground">Em Análise</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-green-600">{stats.concluidos}</div>
+              <div className="text-2xl font-bold" style={{ color: 'var(--tone-success)' }}>{stats.concluidos}</div>
               <p className="text-xs text-muted-foreground">Concluídos</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-1">
-                <DollarSign className="h-4 w-4 text-green-600" />
+                <DollarSign className="h-4 w-4" style={{ color: 'var(--tone-success)' }} />
                 <div className="text-lg font-bold">{(stats.valor_total_mes / 1000000).toFixed(1)}M</div>
               </div>
               <p className="text-xs text-muted-foreground">Valor Total Mês</p>
@@ -233,23 +222,6 @@ export function ComprasMain() {
           </Card>
         </div>
       )}
-
-      {/* Filtros e Pesquisa */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Pesquisar por número, título ou departamento..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -302,7 +274,7 @@ export function ComprasMain() {
                       {getStatusBadge(pedido.status)}
                       {getPrioridadeBadge(pedido.prioridade)}
                       {pedido.total_cotacoes > 0 && (
-                        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        <Badge variant="outline" style={{ backgroundColor: 'var(--tone-info-soft)', color: 'var(--tone-info)', borderColor: 'var(--tone-info)' }}>
                           {pedido.total_cotacoes} cotação(ões)
                         </Badge>
                       )}
@@ -335,11 +307,11 @@ export function ComprasMain() {
                     {/* Informações adicionais para pedidos em andamento */}
                     {pedido.valor_aprovado && (
                       <div className="mt-3 flex items-center gap-2">
-                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        <Badge variant="outline" style={{ backgroundColor: 'var(--tone-success-soft)', color: 'var(--tone-success)', borderColor: 'var(--tone-success)' }}>
                           Valor Aprovado: {pedido.valor_aprovado.toLocaleString('pt-AO')} AOA
                         </Badge>
                         {pedido.fornecedor_vencedor_nome && (
-                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">
+                          <Badge variant="outline" style={{ backgroundColor: 'var(--tone-accent-soft)', color: 'var(--tone-accent)', borderColor: 'var(--tone-accent)' }}>
                             Fornecedor: {pedido.fornecedor_vencedor_nome}
                           </Badge>
                         )}
@@ -362,19 +334,19 @@ export function ComprasMain() {
                       Ver Detalhes
                     </Button>
                     {pedido.status === "criado" && (
-                      <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={(e) => handlePublicarPedido(pedido.id, e)}>
+                      <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-info)' }} onClick={(e) => handlePublicarPedido(pedido.id, e)}>
                         <Send className="h-4 w-4 mr-1" />
                         Publicar para Fornecedores
                       </Button>
                     )}
                     {pedido.status === "em_cotacao" && (
-                      <Button size="sm" className="bg-purple-600 hover:bg-purple-700 text-white" onClick={() => handleAnalisar(pedido.id)}>
+                      <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-accent)' }} onClick={() => handleAnalisar(pedido.id)}>
                         <AlertCircle className="h-4 w-4 mr-1" />
                         Analisar Cotações
                       </Button>
                     )}
                     {pedido.status === "em_analise" && (
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => handleAprovar(pedido.id, pedido.cotacao_vencedora_id)}>
+                      <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => handleAprovar(pedido.id, pedido.cotacao_vencedora_id)}>
                         <CheckCircle2 className="h-4 w-4 mr-1" />
                         Aprovar Cotação
                       </Button>

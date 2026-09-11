@@ -1,20 +1,29 @@
 import { Router, Response, NextFunction } from 'express';
-import { AuthenticatedRequest, requireAuth, requireAdmin } from '../middlewares/auth';
+import { requireLicenseModule } from '../middlewares/license';
+import { licenseService } from '../services/license.service';
+import { AuthenticatedRequest, requireAuth, requireSystemAdmin } from '../middlewares/auth';
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 import { auditService } from '../services/audit.service';
 
 const router = Router();
+router.use(requireLicenseModule('users'));
 
-// LISTAR TODOS OS USUÁRIOS ATIVOS (Qualquer logado - necessário para agendamentos)
+// LISTAR TODOS OS UTILIZADORES INTERNOS ATIVOS (staff interno - necessário para agendamentos)
 router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
     const { roles, excludeId } = req.query;
 
+    // Utilizadores externos (publico) nao devem ver o directorio interno de funcionarios
+    if (user.role === 'externo') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para listar utilizadores' });
+    }
+
     const dbUsers = await prisma.user.findMany({
       where: {
-        status: 'active'
+        status: 'active',
+        role: { not: 'externo' },
       }
     });
 
@@ -36,7 +45,10 @@ router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Respo
       id: u.id,
       name: u.name,
       email: u.email,
-      role: u.role
+      role: u.role,
+      position: u.position,
+      department: u.department,
+      document: u.document,
     }));
 
     return res.status(200).json({ data: usersResponse });
@@ -45,11 +57,12 @@ router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Respo
   }
 });
 
-// LISTAR TODOS OS UTILIZADORES (Apenas Admin)
-router.get('/all', requireAuth as any, requireAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// LISTAR TODOS OS UTILIZADORES (Apenas Administrador do Sistema)
+router.get('/all', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const dbUsers = await prisma.user.findMany({
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: { departmentRef: true },
     });
 
     const enrichedUsers = dbUsers.map((u) => ({
@@ -59,6 +72,8 @@ router.get('/all', requireAuth as any, requireAdmin as any, async (req: Authenti
       role: u.role,
       status: u.status,
       department: u.department,
+      department_id: u.departmentId,
+      department_nome: u.departmentRef?.nome || null,
       position: u.position,
       phone: u.phone,
       organization: u.organization,
@@ -73,8 +88,8 @@ router.get('/all', requireAuth as any, requireAdmin as any, async (req: Authenti
   }
 });
 
-// CRIAR UTILIZADOR MANUALLY (Apenas Admin)
-router.post('/create', requireAuth as any, requireAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// CRIAR UTILIZADOR MANUALLY (Apenas Administrador do Sistema)
+router.post('/create', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const startTime = Date.now();
   const ipAddress = req.ip || 'unknown';
   const userAgent = req.headers['user-agent'] || 'unknown';
@@ -88,6 +103,7 @@ router.post('/create', requireAuth as any, requireAdmin as any, async (req: Auth
       organization,
       phone,
       department,
+      departmentId,
       position,
       address,
       document
@@ -108,6 +124,20 @@ router.post('/create', requireAuth as any, requireAdmin as any, async (req: Auth
       return res.status(409).json({ error: 'EMAIL_DUPLICADO', message: 'Este e-mail já está registrado no sistema' });
     }
 
+    const userLimit = await licenseService.checkUserLimit(role === 'admin_sistema' ? 'admin' : 'user');
+    if (!userLimit.allowed) {
+      await auditService.logAction(
+        'LICENSE_USER_LIMIT_REACHED',
+        'warning',
+        { current: userLimit.current, max: userLimit.max, role },
+        { userId: req.user?.id, userEmail: req.user?.email, userRole: req.user?.role, resource: 'license', success: false }
+      );
+      return res.status(403).json({
+        error: 'LICENSE_USER_LIMIT_REACHED',
+        message: `O limite de ${userLimit.max} utilizador(es) da licenca atual foi atingido (${userLimit.current}/${userLimit.max}). Contacte o administrador para rever a licenca.`,
+      });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = await prisma.user.create({
@@ -119,6 +149,7 @@ router.post('/create', requireAuth as any, requireAdmin as any, async (req: Auth
         organization: organization.trim(),
         phone,
         department: department?.trim() || '',
+        departmentId: departmentId || null,
         position: position?.trim() || '',
         address: address?.trim() || '',
         document,
@@ -160,8 +191,83 @@ router.post('/create', requireAuth as any, requireAdmin as any, async (req: Auth
   }
 });
 
-// ATUALIZAR STATUS DO UTILIZADOR (Apenas Admin)
-router.put('/:userId/status', requireAuth as any, requireAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+// ATUALIZAR ROLE/DEPARTAMENTO/CARGO DO UTILIZADOR (Apenas Administrador do Sistema)
+router.put('/:userId', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.params;
+    const { name, role, departmentId, position } = req.body;
+
+    const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existingUser) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+    }
+
+    if (role) {
+      const roleExists = await prisma.role.findUnique({ where: { slug: role } });
+      if (!roleExists) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: `Role "${role}" não existe` });
+      }
+    }
+
+    let departmentNome: string | undefined;
+    if (departmentId !== undefined) {
+      if (departmentId) {
+        const dept = await prisma.department.findUnique({ where: { id: departmentId } });
+        if (!dept) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Departamento não encontrado' });
+        }
+        departmentNome = dept.nome;
+      } else {
+        departmentNome = '';
+      }
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(name !== undefined ? { name: name.trim() } : {}),
+        ...(role !== undefined ? { role } : {}),
+        ...(departmentId !== undefined ? { departmentId: departmentId || null, department: departmentNome } : {}),
+        ...(position !== undefined ? { position: position.trim() } : {}),
+      },
+      include: { departmentRef: true },
+    });
+
+    await auditService.logAction(
+      'user_updated_by_system_admin',
+      'info',
+      { targetUserId: userId, changes: { role, departmentId, position, name } },
+      {
+        userId: req.user!.id,
+        userEmail: req.user!.email,
+        userRole: req.user!.role,
+        success: true,
+        resource: 'user',
+        resourceId: userId,
+      }
+    );
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        role: updated.role,
+        department: updated.department,
+        department_id: updated.departmentId,
+        department_nome: updated.departmentRef?.nome || null,
+        position: updated.position,
+        status: updated.status,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ATUALIZAR STATUS DO UTILIZADOR (Apenas Administrador do Sistema)
+router.put('/:userId/status', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;
     const { status } = req.body;

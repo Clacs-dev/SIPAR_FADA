@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Building2, Mail, Phone, MapPin, Globe, User, AlertCircle, X, Plus } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, Globe, User, AlertCircle, X, Plus, Tag } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Checkbox } from "../ui/checkbox";
 import { toast } from "sonner@2.0.3";
 import type { Fornecedor } from "./types";
+import { useCategorias } from "../../hooks/use-categorias";
+import { CategoriaFormDialog } from "./categoria-form-dialog";
 
 interface Prestacao {
   id: string;
@@ -35,6 +37,8 @@ export function FornecedorFormDialog({
 }: FornecedorFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const isEdit = !!fornecedor;
+  const { categorias, createCategoria } = useCategorias();
+  const [categoriaDialogOpen, setCategoriaDialogOpen] = useState(false);
 
   // Dados básicos
   const [nome, setNome] = useState("");
@@ -59,7 +63,7 @@ export function FornecedorFormDialog({
   const [contatoEmail, setContatoEmail] = useState("");
   
   // Informações comerciais
-  const [categoriasProduto, setCategoriasProduto] = useState("");
+  const [categoriasProduto, setCategoriasProduto] = useState<string[]>([]);
   const [condicoesPagamento, setCondicoesPagamento] = useState<string[]>([]);
   const [prestacoes, setPrestacoes] = useState<Prestacao[]>([]);
   const [prazoEntrega, setPrazoEntrega] = useState("");
@@ -84,9 +88,7 @@ export function FornecedorFormDialog({
       setContatoTelefone(fornecedor.contato_telefone || "");
       setContatoEmail(fornecedor.contato_email || "");
       setCategoriasProduto(
-        Array.isArray(fornecedor.categorias_produto) 
-          ? fornecedor.categorias_produto.join(", ")
-          : ""
+        Array.isArray(fornecedor.categorias_produto) ? fornecedor.categorias_produto : []
       );
       setCondicoesPagamento(fornecedor.condicoes_pagamento_padrao || []);
       setPrestacoes(fornecedor.prestacoes || []);
@@ -115,6 +117,11 @@ export function FornecedorFormDialog({
       return;
     }
 
+    if (categoriasProduto.length === 0) {
+      toast.error("Seleccione pelo menos uma categoria de produtos/serviços");
+      return;
+    }
+
     // Validar email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -139,9 +146,7 @@ export function FornecedorFormDialog({
       contato_cargo: contatoCargo.trim() || undefined,
       contato_telefone: contatoTelefone.trim() || undefined,
       contato_email: contatoEmail.trim() || undefined,
-      categorias_produto: categoriasProduto.trim() 
-        ? categoriasProduto.split(",").map(c => c.trim()).filter(c => c)
-        : [],
+      categorias_produto: categoriasProduto,
       condicoes_pagamento_padrao: condicoesPagamento,
       prestacoes: prestacoes,
       prazo_entrega_padrao_dias: prazoEntrega ? parseInt(prazoEntrega) : 0,
@@ -176,7 +181,7 @@ export function FornecedorFormDialog({
       setContatoCargo("");
       setContatoTelefone("");
       setContatoEmail("");
-      setCategoriasProduto("");
+      setCategoriasProduto([]);
       setCondicoesPagamento([]);
       setPrestacoes([]);
       setPrazoEntrega("");
@@ -298,16 +303,62 @@ export function FornecedorFormDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="categorias">Categorias de Produtos/Serviços</Label>
-              <Input
-                id="categorias"
-                value={categoriasProduto}
-                onChange={(e) => setCategoriasProduto(e.target.value)}
-                placeholder="Ex: Material de Escritório, Equipamentos, Serviços"
-              />
-              <p className="text-xs text-muted-foreground">Separe por vírgulas</p>
+              <div className="flex items-center justify-between">
+                <Label>Categorias de Produtos/Serviços *</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setCategoriaDialogOpen(true)}
+                  className="h-7"
+                >
+                  <Tag className="h-3.5 w-3.5 mr-1" />
+                  Nova Categoria
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Seleccione todas as categorias que este fornecedor fornece. Só será notificado por
+                e-mail sobre pedidos de compra que correspondam a estas categorias.
+              </p>
+              <div className="border rounded-lg p-4 grid gap-2 sm:grid-cols-2 bg-gray-50">
+                {categorias.length === 0 ? (
+                  <p className="text-sm text-muted-foreground sm:col-span-2">
+                    Nenhuma categoria criada ainda. Use "Nova Categoria" para começar.
+                  </p>
+                ) : (
+                  categorias.map((categoria) => (
+                    <div key={categoria.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`categoria-${categoria.id}`}
+                        checked={categoriasProduto.includes(categoria.nome)}
+                        onCheckedChange={(checked) => {
+                          setCategoriasProduto((prev) =>
+                            checked ? [...prev, categoria.nome] : prev.filter((c) => c !== categoria.nome)
+                          );
+                        }}
+                      />
+                      <label
+                        htmlFor={`categoria-${categoria.id}`}
+                        className="text-sm font-medium leading-none cursor-pointer"
+                      >
+                        {categoria.nome}
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
+
+          <CategoriaFormDialog
+            open={categoriaDialogOpen}
+            onClose={() => setCategoriaDialogOpen(false)}
+            onCreate={async (nome) => {
+              const categoria = await createCategoria(nome);
+              setCategoriasProduto((prev) => (prev.includes(categoria.nome) ? prev : [...prev, categoria.nome]));
+              return categoria;
+            }}
+          />
 
           {/* Endereço */}
           <div className="space-y-4">
@@ -487,9 +538,9 @@ export function FornecedorFormDialog({
 
             {/* Sub-formulário de Prestações */}
             {condicoesPagamento.includes("prestacoes") && (
-              <div className="border border-blue-200 rounded-lg p-4 space-y-3 bg-blue-50">
+              <div className="border rounded-lg p-4 space-y-3" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
                 <div className="flex items-center justify-between">
-                  <Label className="text-blue-900">Detalhes das Prestações</Label>
+                  <Label style={{ color: 'var(--tone-info)' }}>Detalhes das Prestações</Label>
                   <Button
                     type="button"
                     size="sm"
@@ -503,7 +554,7 @@ export function FornecedorFormDialog({
                 </div>
 
                 {prestacoes.length === 0 ? (
-                  <p className="text-sm text-blue-700 italic">
+                  <p className="text-sm italic" style={{ color: 'var(--tone-info)' }}>
                     Nenhuma prestação adicionada. Clique em "Adicionar Prestação" para começar.
                   </p>
                 ) : (
@@ -539,7 +590,8 @@ export function FornecedorFormDialog({
                           size="sm"
                           variant="ghost"
                           onClick={() => handleRemovePrestacao(prestacao.id)}
-                          className="h-9 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          className="h-9 px-2 hover:opacity-80"
+                          style={{ color: 'var(--tone-danger)' }}
                         >
                           <X className="h-4 w-4" />
                         </Button>
@@ -547,11 +599,12 @@ export function FornecedorFormDialog({
                     ))}
 
                     {/* Total das Prestações */}
-                    <div className={`text-sm font-medium p-2 rounded ${
-                      totalPrestacoes === 100 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-yellow-100 text-yellow-800'
-                    }`}>
+                    <div
+                      className="text-sm font-medium p-2 rounded"
+                      style={totalPrestacoes === 100
+                        ? { backgroundColor: 'var(--tone-success-soft)', color: 'var(--tone-success)' }
+                        : { backgroundColor: 'var(--tone-warn-soft)', color: 'var(--tone-warn)' }}
+                    >
                       Total: {totalPrestacoes.toFixed(2)}% 
                       {totalPrestacoes !== 100 && ` (Faltam ${(100 - totalPrestacoes).toFixed(2)}% para completar 100%)`}
                     </div>
@@ -600,11 +653,11 @@ export function FornecedorFormDialog({
           </div>
 
           {/* Aviso */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex gap-3">
-            <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-900">
+          <div className="border rounded-lg p-4 flex gap-3" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
+            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" style={{ color: 'var(--tone-info)' }} />
+            <div className="text-sm" style={{ color: 'var(--tone-info)' }}>
               <p className="font-medium mb-1">Importante:</p>
-              <ul className="list-disc list-inside space-y-1 text-blue-800">
+              <ul className="list-disc list-inside space-y-1" style={{ color: 'var(--tone-info)' }}>
                 <li>O fornecedor poderá fazer login no sistema usando o email cadastrado</li>
                 <li>Ele receberá notificações sobre novos pedidos de compra</li>
                 <li>Poderá submeter cotações através do portal de fornecedores</li>

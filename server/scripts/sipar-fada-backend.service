@@ -1,0 +1,35 @@
+# Unidade systemd para o backend do SIPAR-FADA (Linux).
+# Resolve OPS-11/OPS-28 da auditoria de pre-producao para instalacoes Linux.
+#
+# Instalacao (como root, uma vez por servidor):
+#   1. Editar WorkingDirectory/ExecStart/User abaixo para o caminho e utilizador reais.
+#   2. sudo cp server/scripts/sipar-fada-backend.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now sipar-fada-backend
+#   5. curl http://localhost:5000/api/v1/health
+#
+# Ver logs:   sudo journalctl -u sipar-fada-backend -f
+# Reiniciar:  sudo systemctl restart sipar-fada-backend
+# Parar:      sudo systemctl stop sipar-fada-backend
+
+[Unit]
+Description=SIPAR-FADA Backend (Express API)
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Ajustar para o caminho real da instalacao:
+WorkingDirectory=/opt/sipar-fada/server
+ExecStartPre=/usr/bin/npm run build
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+# Correr como um utilizador dedicado sem privilegios, nao root:
+User=sipar-fada
+Group=sipar-fada
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

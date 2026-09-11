@@ -4,8 +4,6 @@
  * Define fluxos de aprovação baseados em departamentos e valores
  */
 
-import { getDepartmentById, DepartmentCategory } from "./departments";
-
 export interface ApprovalLevel {
   level: number;
   name: string;

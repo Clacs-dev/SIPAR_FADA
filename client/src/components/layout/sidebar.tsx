@@ -23,7 +23,13 @@ import {
   AlertCircle,
   FileKey,
   ShoppingCart,
-  ShoppingBag
+  ShoppingBag,
+  DoorOpen,
+  Building,
+  Layers,
+  KeyRound,
+  Activity,
+  Trash2
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../ui/button";
@@ -31,6 +37,8 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../auth/auth-context";
 import { getMenuItems, getProfileBadge } from "../auth/permissions";
 import { toast } from "sonner@2.0.3";
+import { MeuPerfilDialog } from "./meu-perfil-dialog";
+import siparMark from "@/assets/sipar-mark.png";
 
 interface SidebarProps {
   activeTab: string;
@@ -44,6 +52,7 @@ export function Sidebar({
 }: SidebarProps) {
   const { user, logout } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(false);
   
   // Get menu items based on user role
   const menuItems = getMenuItems(
@@ -109,39 +118,63 @@ export function Sidebar({
     AlertCircle,
     FileKey,
     ShoppingCart,
-    ShoppingBag
+    ShoppingBag,
+    DoorOpen,
+    Building,
+    Layers,
+    KeyRound,
+    Activity,
+    Trash2
   } as const;
 
   return (
-    <div className="w-64 bg-card border-r border-border h-screen p-4 flex flex-col">
-      <div className="mb-8">
-        <h2 className="text-primary">Sistema Integrado de Gestão</h2>
-        <p className="text-muted-foreground text-sm">Processos, Aprovações e Registos</p>
+    <div
+      className="w-64 h-screen p-4 flex flex-col overflow-hidden text-sidebar-foreground"
+      style={{ background: 'linear-gradient(180deg, var(--sidebar) 0%, #17253f 100%)' }}
+    >
+      <div className="mb-6 pb-4 shrink-0 border-b border-sidebar-border">
+        <div className="flex items-center gap-2.5 mb-1">
+          <img src={siparMark} alt="SIPAR" className="w-9 h-9 object-contain shrink-0" />
+          <h2 className="text-white font-serif" style={{ fontSize: '20px', fontWeight: 600 }}>SIPAR</h2>
+        </div>
+        <p className="text-sidebar-foreground/70 text-xs leading-snug">Sistema Integrado de Processos, Aprovações &amp; Registos</p>
       </div>
 
       {/* User Info */}
-      <div className="mb-6 p-3 bg-accent rounded-lg">
+      <button
+        type="button"
+        onClick={() => setPerfilOpen(true)}
+        className="mb-4 p-3 bg-sidebar-accent border border-sidebar-border rounded-md text-left hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+        title="Editar o meu perfil"
+      >
         <div className="flex items-center gap-2 mb-2">
-          <User className="h-4 w-4" />
-          <span className="font-medium text-sm">{user.name}</span>
+          <User className="h-4 w-4 text-sidebar-foreground" />
+          <span className="font-medium text-sm text-white">{user.name}</span>
         </div>
-        <p className="text-xs text-muted-foreground mb-2">{user.email}</p>
+        <p className="text-xs text-sidebar-foreground/70 mb-2">{user.email}</p>
         <Badge className={`${badgeInfo.color} text-white`}>{badgeInfo.label}</Badge>
-      </div>
-      
+      </button>
+
+      <MeuPerfilDialog open={perfilOpen} onOpenChange={setPerfilOpen} />
+
       {/* Navigation */}
-      <nav className="space-y-2 flex-1">
+      <nav className="space-y-1 flex-1 overflow-y-auto overscroll-contain -mr-2 pr-2">
         {menuItems.map((item) => {
           const Icon = iconMap[item.icon as keyof typeof iconMap];
+          const isActive = activeTab === item.id;
           return (
             <Button
               key={item.id}
-              variant={activeTab === item.id ? "default" : "ghost"}
-              className="w-full justify-start"
+              variant="ghost"
+              className={`w-full justify-start rounded-sm border ${
+                isActive
+                  ? "bg-white/[0.08] border-sidebar-primary/35 text-white hover:bg-white/[0.08] hover:text-white"
+                  : "border-transparent text-sidebar-foreground hover:bg-sidebar-accent hover:text-white"
+              }`}
               onClick={() => onTabChange(item.id)}
               data-tab={item.id}
             >
-              <Icon className="mr-2 h-4 w-4" />
+              <Icon className={`mr-2 h-4 w-4 ${isActive ? "text-sidebar-primary" : "opacity-85"}`} />
               {item.label}
             </Button>
           );
@@ -149,10 +182,10 @@ export function Sidebar({
       </nav>
 
       {/* Logout Button */}
-      <div className="mt-auto pt-4 border-t border-border">
+      <div className="mt-auto pt-4 border-t border-sidebar-border shrink-0">
         <Button
           variant="ghost"
-          className="w-full justify-start text-destructive hover:text-destructive"
+          className="w-full justify-start rounded-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-destructive"
           onClick={handleLogout}
         >
           {isLoggingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}

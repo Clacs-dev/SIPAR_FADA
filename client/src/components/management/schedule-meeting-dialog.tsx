@@ -7,11 +7,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { CalendarIcon, Loader2 } from "lucide-react";
+import { CalendarIcon, Loader2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns@4.1.0";
 import { ptBR } from "date-fns@4.1.0/locale";
 import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { Alert, AlertDescription } from "../ui/alert";
+import { useAvailableMeetingPlatforms } from "../../hooks/use-available-meeting-platforms";
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -32,6 +34,7 @@ export function ScheduleMeetingDialog({
 }: ScheduleMeetingDialogProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [date, setDate] = useState<Date>();
+  const { platforms: availablePlatforms, loading: loadingPlatforms } = useAvailableMeetingPlatforms();
   const [meetingData, setMeetingData] = useState({
     meetingType: '',
     platform: '',
@@ -99,7 +102,7 @@ export function ScheduleMeetingDialog({
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || 'Erro ao agendar reunião');
+        throw new Error(error.message || error.error || 'Erro ao agendar reunião');
       }
 
       toast.success("Reunião agendada com sucesso! O requerente foi notificado.");
@@ -171,21 +174,34 @@ export function ScheduleMeetingDialog({
 
           {/* Plataforma (se online) */}
           {meetingData.meetingType === 'online' && (
-            <div className="space-y-2">
-              <Label htmlFor="platform">Plataforma de Reunião *</Label>
-              <Select onValueChange={(value) => handleInputChange('platform', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a plataforma" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="googlemeet">Google Meet</SelectItem>
-                  <SelectItem value="zoom">Zoom</SelectItem>
-                  <SelectItem value="teams">Microsoft Teams</SelectItem>
-                  <SelectItem value="skype">Skype</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp Video</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            !loadingPlatforms && availablePlatforms.length === 0 ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Nenhuma plataforma de reunião está configurada nesta instalação. Peça a um administrador
+                  do sistema para configurar em <strong>Configurações → Integrações</strong> antes de agendar
+                  uma reunião online.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="platform">Plataforma de Reunião *</Label>
+                <Select
+                  value={meetingData.platform}
+                  onValueChange={(value) => handleInputChange('platform', value)}
+                  disabled={loadingPlatforms}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a plataforma" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePlatforms.map((platform) => (
+                      <SelectItem key={platform.key} value={platform.key}>{platform.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )
           )}
 
           {/* Local (se presencial) */}

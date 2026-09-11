@@ -6,6 +6,13 @@ export interface ActaParticipante {
   email: string;
   role: string;
   presente?: boolean; // Marcado após a reunião
+  externo?: boolean; // Nao tem conta na plataforma - so recebeu convite por e-mail
+}
+
+export interface Intervencao {
+  participante_nome: string;
+  participante_cargo: string;
+  texto: string;
 }
 
 export interface PontoAgenda {
@@ -15,6 +22,14 @@ export interface PontoAgenda {
   descricao?: string;
   responsavel?: string;
   tempo_estimado?: number; // em minutos
+  discussao?: string; // Discussão detalhada do ponto
+  intervencoes?: Intervencao[]; // Intervenções dos participantes
+  decisao?: string; // Deliberação/decisão tomada neste ponto
+  tipo_votacao?: 'unanimidade' | 'maioria' | 'sem_votacao';
+  resultado_votacao?: string;
+  votos_favor?: number;
+  votos_contra?: number;
+  abstencoes?: number;
 }
 
 export interface DecisaoTomada {
@@ -48,17 +63,29 @@ export interface Acta {
   local?: string;
   tipo: 'online' | 'presencial';
   link_reuniao?: string;
-  
+
+  // Estrutura formal do documento (usada para gerar o cabeçalho/encerramento
+  // oficiais da acta - ver utils/transform-acta-to-json.ts)
+  entidade?: string;
+  endereco_completo?: string;
+  cidade?: string;
+  numero_reuniao?: string;
+  presidente?: string;
+  cargo_presidente?: string;
+  secretario?: string;
+  cargo_secretario?: string;
+
   // Participantes
   organizador_id: string;
   organizador_nome: string;
   participantes: ActaParticipante[];
   participantes_presentes?: string[]; // IDs dos que compareceram
-  
+
   // Agenda e Conteúdo
   pontos_agenda: PontoAgenda[];
   resumo?: string; // Resumo da reunião
   discussoes?: string; // Pontos discutidos
+  recomendacoes?: string[]; // Recomendações da reunião
   decisoes: DecisaoTomada[];
   tarefas: TarefaAtribuida[];
   proximos_passos?: string;

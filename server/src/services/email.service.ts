@@ -1,5 +1,6 @@
 import logger from '../config/logger';
 import nodemailer from 'nodemailer';
+import { SettingsService } from './settings.service';
 
 export interface EmailOptions {
   to: string;
@@ -14,15 +15,27 @@ export interface EmailOptions {
 export class EmailService {
   private static transporter: nodemailer.Transporter | null = null;
 
+  /** Chamar depois de gravar definicoes novas de email, para a proxima chamada reconstruir o transporter. */
+  static resetTransporter() {
+    this.transporter = null;
+  }
+
+  private static resolveConfig() {
+    const gmailUser = SettingsService.get('email_gmail_user', 'GMAIL_USER') || process.env.GOOGLE_SMTP_USER;
+    const gmailPass = SettingsService.get('email_gmail_app_password', 'GMAIL_APP_PASSWORD') || process.env.GOOGLE_SMTP_PASS;
+    const smtpHostSetting = SettingsService.get('email_smtp_host', 'SMTP_HOST');
+    const smtpHost = smtpHostSetting || (gmailUser && gmailPass ? 'smtp.gmail.com' : undefined);
+    const smtpPort = parseInt(SettingsService.get('email_smtp_port', 'SMTP_PORT') || (smtpHost === 'smtp.gmail.com' ? '465' : '587'));
+    const smtpUser = SettingsService.get('email_smtp_user', 'SMTP_USER') || gmailUser;
+    const smtpPass = SettingsService.get('email_smtp_pass', 'SMTP_PASS') || gmailPass;
+    const from = SettingsService.get('email_from', 'EMAIL_FROM') || smtpUser || gmailUser || 'sipar20@sistema.com';
+    return { gmailUser, gmailPass, smtpHost, smtpPort, smtpUser, smtpPass, from };
+  }
+
   private static getTransporter() {
     if (this.transporter) return this.transporter;
 
-    const gmailUser = process.env.GMAIL_USER || process.env.GOOGLE_SMTP_USER;
-    const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_SMTP_PASS;
-    const smtpHost = process.env.SMTP_HOST || (gmailUser && gmailPass ? 'smtp.gmail.com' : undefined);
-    const smtpPort = parseInt(process.env.SMTP_PORT || (smtpHost === 'smtp.gmail.com' ? '465' : '587'));
-    const smtpUser = process.env.SMTP_USER || gmailUser;
-    const smtpPass = process.env.SMTP_PASS || gmailPass;
+    const { smtpHost, smtpPort, smtpUser, smtpPass } = this.resolveConfig();
 
     if (smtpHost && smtpUser && smtpPass) {
       logger.info('[EmailService] Inicializando Nodemailer via SMTP...');
@@ -46,7 +59,7 @@ export class EmailService {
    * Envia um e-mail transacional
    */
   static async sendEmail(options: EmailOptions): Promise<boolean> {
-    const fromAddress = options.from || process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.GMAIL_USER || 'sipar20@sistema.com';
+    const fromAddress = options.from || this.resolveConfig().from;
     
     try {
       const transporter = this.getTransporter();
@@ -77,18 +90,14 @@ export class EmailService {
   }
 
   static getStatus() {
-    const gmailUser = process.env.GMAIL_USER || process.env.GOOGLE_SMTP_USER;
-    const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.GOOGLE_SMTP_PASS;
-    const smtpUser = process.env.SMTP_USER || gmailUser;
-    const smtpPass = process.env.SMTP_PASS || gmailPass;
-    const smtpHost = process.env.SMTP_HOST || (gmailUser && gmailPass ? 'smtp.gmail.com' : undefined);
+    const { smtpHost, smtpUser, smtpPass, from } = this.resolveConfig();
 
     return {
       configured: Boolean(smtpHost && smtpUser && smtpPass),
       provider: smtpHost === 'smtp.gmail.com' ? 'gmail' : smtpHost ? 'smtp' : 'logs',
       host: smtpHost || null,
       user: smtpUser ? smtpUser.replace(/(^.).*(@.*$)/, '$1***$2') : null,
-      from: process.env.EMAIL_FROM || smtpUser || 'sipar20@sistema.com',
+      from,
     };
   }
 

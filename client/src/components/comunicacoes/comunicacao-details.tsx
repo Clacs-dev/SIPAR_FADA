@@ -17,9 +17,19 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Textarea } from "../ui/textarea";
 import { Separator } from "../ui/separator";
-import { Comunicacao, Despacho } from "./types";
+import { Comunicacao, Despacho, Delegacao } from "./types";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useTrackView } from "../../hooks/use-track-view";
+
+// Formata uma data com segurança: devolve '-' em vez de rebentar com
+// "RangeError: Invalid time value" quando o valor vem vazio/malformado.
+function formatSafeDate(value: any, pattern: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return format(date, pattern, { locale: ptBR });
+}
 
 interface ComunicacaoDetailsProps {
   comunicacao: Comunicacao;
@@ -42,28 +52,29 @@ export function ComunicacaoDetails({
   onArquivar,
   onShare,
 }: ComunicacaoDetailsProps) {
+  useTrackView('comunicacao', comunicacao?.id);
   const [showDespachoForm, setShowDespachoForm] = useState(false);
   const [despachoTexto, setDespachoTexto] = useState('');
 
   const getStatusBadge = (status: string) => {
     const badges = {
-      pendente: { label: 'Pendente', color: 'bg-yellow-500' },
-      em_analise: { label: 'Em Análise', color: 'bg-blue-500' },
-      despachado: { label: 'Despachado', color: 'bg-green-500' },
-      arquivado: { label: 'Arquivado', color: 'bg-gray-600' },
+      pendente: { label: 'Pendente', color: 'var(--tone-warn)' },
+      em_analise: { label: 'Em Análise', color: 'var(--tone-info)' },
+      despachado: { label: 'Despachado', color: 'var(--tone-success)' },
+      arquivado: { label: 'Arquivado', color: 'var(--tone-neutral)' },
     };
     const badge = badges[status as keyof typeof badges] || badges.pendente;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const getPrioridadeBadge = (prioridade: string) => {
     const badges = {
-      normal: { label: 'Normal', color: 'bg-blue-500' },
-      alta: { label: 'Alta', color: 'bg-orange-500' },
-      urgente: { label: 'Urgente', color: 'bg-red-600' },
+      normal: { label: 'Normal', color: 'var(--tone-info)' },
+      alta: { label: 'Alta', color: 'var(--tone-warn)' },
+      urgente: { label: 'Urgente', color: 'var(--tone-danger)' },
     };
     const badge = badges[prioridade as keyof typeof badges] || badges.normal;
-    return <Badge className={`${badge.color} text-white`}>{badge.label}</Badge>;
+    return <Badge className="text-white" style={{ backgroundColor: badge.color }}>{badge.label}</Badge>;
   };
 
   const handleSubmitDespacho = () => {
@@ -175,7 +186,7 @@ export function ComunicacaoDetails({
                 <div className="flex items-center gap-2 mt-1">
                   <Calendar className="h-4 w-4" />
                   <p className="font-medium">
-                    {format(new Date(comunicacao.created_at), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}
+                    {formatSafeDate(comunicacao.created_at, "dd 'de' MMMM 'de' yyyy 'às' HH:mm")}
                   </p>
                 </div>
               </div>
@@ -243,24 +254,76 @@ export function ComunicacaoDetails({
                 {comunicacao.despachos.map((despacho: Despacho) => (
                   <div
                     key={despacho.id}
-                    className="p-4 border rounded-lg bg-blue-50 border-blue-200"
+                    className="p-4 border rounded-lg"
+                    style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div>
-                        <p className="font-semibold text-blue-900">{despacho.despachado_por_nome}</p>
-                        <p className="text-sm text-blue-700">{despacho.despachado_por_cargo}</p>
+                        <p className="font-semibold" style={{ color: 'var(--tone-info)' }}>{despacho.despachado_por_nome}</p>
+                        <p className="text-sm" style={{ color: 'var(--tone-info)' }}>{despacho.despachado_por_cargo}</p>
                         {despacho.departamento && (
-                          <p className="text-xs text-blue-600">{despacho.departamento}</p>
+                          <p className="text-xs" style={{ color: 'var(--tone-info)' }}>{despacho.departamento}</p>
                         )}
                       </div>
-                      <p className="text-xs text-blue-600">
-                        {format(new Date(despacho.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      <p className="text-xs" style={{ color: 'var(--tone-info)' }}>
+                        {formatSafeDate(despacho.created_at, "dd/MM/yyyy HH:mm")}
                       </p>
                     </div>
-                    <Separator className="my-3 bg-blue-200" />
-                    <p className="text-sm text-blue-900 whitespace-pre-wrap">
+                    <Separator className="my-3" style={{ backgroundColor: 'var(--tone-info)' }} />
+                    <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--tone-info)' }}>
                       {despacho.texto_despacho}
                     </p>
+                    {despacho.assinatura_url && (
+                      <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--tone-info)' }}>
+                        <img src={despacho.assinatura_url} alt={`Assinatura de ${despacho.despachado_por_nome}`} className="h-12 object-contain" />
+                        <p className="text-xs mt-1" style={{ color: 'var(--tone-info)' }}>Assinado digitalmente por {despacho.despachado_por_nome}</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Delegações */}
+          {comunicacao.delegacoes && comunicacao.delegacoes.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Delegações ({comunicacao.delegacoes.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {comunicacao.delegacoes.map((delegacao: Delegacao) => (
+                  <div
+                    key={delegacao.id}
+                    className="p-4 border rounded-lg"
+                    style={{ backgroundColor: 'var(--tone-accent-soft)', borderColor: 'var(--tone-accent)' }}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className="font-semibold" style={{ color: 'var(--tone-accent)' }}>
+                          {delegacao.delegado_por_nome} <span className="font-normal">delegou para</span> {delegacao.delegado_para_nome}
+                        </p>
+                        <p className="text-sm" style={{ color: 'var(--tone-accent)' }}>{delegacao.delegado_para_cargo}</p>
+                        {delegacao.departamento && (
+                          <p className="text-xs" style={{ color: 'var(--tone-accent)' }}>{delegacao.departamento}</p>
+                        )}
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--tone-accent)' }}>
+                        {formatSafeDate(delegacao.created_at, "dd/MM/yyyy HH:mm")}
+                      </p>
+                    </div>
+                    {delegacao.motivo && (
+                      <>
+                        <Separator className="my-3" style={{ backgroundColor: 'var(--tone-accent)' }} />
+                        <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--tone-accent)' }}>{delegacao.motivo}</p>
+                      </>
+                    )}
+                    {delegacao.assinatura_url && (
+                      <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--tone-accent)' }}>
+                        <img src={delegacao.assinatura_url} alt={`Assinatura de ${delegacao.delegado_por_nome}`} className="h-12 object-contain" />
+                        <p className="text-xs mt-1" style={{ color: 'var(--tone-accent)' }}>Assinado digitalmente por {delegacao.delegado_por_nome}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </CardContent>
@@ -330,7 +393,7 @@ export function ComunicacaoDetails({
               <div>
                 <p className="text-muted-foreground">Criado em</p>
                 <p className="font-medium">
-                  {format(new Date(comunicacao.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                  {formatSafeDate(comunicacao.created_at, "dd/MM/yyyy HH:mm")}
                 </p>
               </div>
               {comunicacao.updated_at && comunicacao.updated_at !== comunicacao.created_at && (
@@ -339,7 +402,7 @@ export function ComunicacaoDetails({
                   <div>
                     <p className="text-muted-foreground">Última actualização</p>
                     <p className="font-medium">
-                      {format(new Date(comunicacao.updated_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      {formatSafeDate(comunicacao.updated_at, "dd/MM/yyyy HH:mm")}
                     </p>
                   </div>
                 </>
@@ -350,7 +413,7 @@ export function ComunicacaoDetails({
                   <div>
                     <p className="text-muted-foreground">Despachado em</p>
                     <p className="font-medium">
-                      {format(new Date(comunicacao.despachado_em), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      {formatSafeDate(comunicacao.despachado_em, "dd/MM/yyyy HH:mm")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       por {comunicacao.despachado_por_nome}
@@ -364,7 +427,7 @@ export function ComunicacaoDetails({
                   <div>
                     <p className="text-muted-foreground">Arquivado em</p>
                     <p className="font-medium">
-                      {format(new Date(comunicacao.arquivado_em), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                      {formatSafeDate(comunicacao.arquivado_em, "dd/MM/yyyy HH:mm")}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       por {comunicacao.arquivado_por_nome}

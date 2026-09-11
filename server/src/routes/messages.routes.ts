@@ -1,9 +1,11 @@
 import { Router, Response, NextFunction } from 'express';
+import { requireLicenseModule } from '../middlewares/license';
 import { AuthenticatedRequest, requireAuth } from '../middlewares/auth';
 import prisma from '../config/database';
 import { notifications } from '../services/notification.service';
 
 const router = Router();
+router.use(requireLicenseModule('messages'));
 
 function toMessage(record: any) {
   return {

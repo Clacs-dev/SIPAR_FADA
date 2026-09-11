@@ -8,11 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { toast } from "sonner@2.0.3";
 import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
-import { CalendarIcon, Users, Plus, Trash2, ListTodo, X } from "lucide-react";
+import { CalendarIcon, Users, Plus, Trash2, ListTodo, X, Search, Link2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { useMeetingRooms, checkRoomAvailability, type RoomConflict } from "../../hooks/use-meeting-rooms";
+import { useAvailableMeetingPlatforms } from "../../hooks/use-available-meeting-platforms";
+import { Alert, AlertDescription } from "../ui/alert";
+import { AlertTriangle } from "lucide-react";
 
 interface InternalMeetingFormProps {
   onSuccess?: () => void;
@@ -26,27 +30,37 @@ interface PontoAgenda {
 }
 
 interface Participante {
-  id: string;
+  id: string; // id real do utilizador no sistema, ou "guest_..." para externos
   nome: string;
+  email: string;
   cargo: string;
   departamento: string;
+  externo?: boolean; // nao tem conta na plataforma - convidado so por e-mail
+}
+
+interface SystemUser {
+  id: string;
+  nome: string;
+  email: string;
+  cargo: string;
+  departamento: string;
+  document?: string;
 }
 
 export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
   const { user, accessToken } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<SystemUser[]>([]);
   const [pontosAgenda, setPontosAgenda] = useState<PontoAgenda[]>([]);
-  
-  // Estados para o novo sistema de participantes
+
+  // Participantes: normalmente utilizadores reais do sistema (pesquisa), mas
+  // tambem e possivel convidar alguem externo que nao tem conta na plataforma
+  // (recebe apenas um convite por e-mail, sem notificacoes internas).
   const [participantes, setParticipantes] = useState<Participante[]>([]);
-  const [showParticipantForm, setShowParticipantForm] = useState(false);
-  const [newParticipant, setNewParticipant] = useState({
-    nome: '',
-    cargo: '',
-    departamento: ''
-  });
-  
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [showGuestForm, setShowGuestForm] = useState(false);
+  const [newGuest, setNewGuest] = useState({ nome: '', email: '', organizacao: '' });
+
   const [formData, setFormData] = useState({
     participantId: "",
     title: "",
@@ -56,23 +70,51 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
     endTime: "",
     meetingType: "presencial",
     location: "",
+    roomId: "",
     platform: "",
-    meetingLink: "",
     priority: "normal",
     tipoReuniao: "ordinaria", // ordinaria ou extraordinaria
     orgao: "", // Conselho, Direcção, etc.
   });
 
+  const { rooms } = useMeetingRooms();
+  const { platforms: availablePlatforms, loading: loadingPlatforms } = useAvailableMeetingPlatforms();
+  const [roomConflict, setRoomConflict] = useState<RoomConflict[] | null>(null);
+  const [checkingRoom, setCheckingRoom] = useState(false);
+
   useEffect(() => {
     loadUsers();
   }, []);
 
+  useEffect(() => {
+    if (!formData.roomId || !formData.meetingDate || !formData.startTime || !formData.endTime) {
+      setRoomConflict(null);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingRoom(true);
+    checkRoomAvailability({
+      roomId: formData.roomId,
+      data: format(formData.meetingDate, 'yyyy-MM-dd'),
+      horaInicio: formData.startTime,
+      horaFim: formData.endTime,
+    })
+      .then((result) => {
+        if (!cancelled) setRoomConflict(result.disponivel ? null : result.conflitos);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomConflict(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingRoom(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [formData.roomId, formData.meetingDate, formData.startTime, formData.endTime]);
+
   const loadUsers = async () => {
     try {
- console.log('Iniciando carregamento de usuários...');
- console.log('Usuário atual:', user);
- console.log('Access token:', accessToken ? 'Presente' : 'Ausente');
-      
       if (!accessToken) {
         toast.error('Token de autenticação não encontrado');
         return;
@@ -95,19 +137,33 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
       }
 
       const result = await response.json();
- console.log('Usuários carregados:', result.data);
- console.log('Total de usuários:', result.data?.length);
       setUsers(result.data.map((u: any) => ({
         id: u.id,
         nome: u.name,
-        cargo: getRoleLabel(u.role),
-        departamento: u.department || 'Não especificado'
+        email: u.email,
+        cargo: u.position || getRoleLabel(u.role),
+        departamento: u.department || 'Não especificado',
+        document: u.document,
       })));
     } catch (error: any) {
  console.error('Erro ao carregar utilizadores:', error);
       toast.error(`Erro ao carregar lista de utilizadores: ${error.message || 'Erro desconhecido'}`);
     }
   };
+
+  const participantMatches = (() => {
+    const term = participantSearch.trim().toLowerCase();
+    if (!term) return [];
+    const addedIds = new Set(participantes.map((p) => p.id));
+    return users
+      .filter((u) => !addedIds.has(u.id))
+      .filter((u) =>
+        u.nome.toLowerCase().includes(term) ||
+        u.email.toLowerCase().includes(term) ||
+        (u.document || '').toLowerCase().includes(term)
+      )
+      .slice(0, 8);
+  })();
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -133,34 +189,34 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
     ))
   };
 
-  // Funções para gerenciar participantes
-  const handleAddParticipant = () => {
-    if (!newParticipant.nome.trim()) {
-      toast.error('Por favor, preencha o nome do participante');
-      return;
-    }
-
-    const participante: Participante = {
-      id: `participante-${Date.now()}`,
-      nome: newParticipant.nome,
-      cargo: newParticipant.cargo,
-      departamento: newParticipant.departamento
-    };
-
-    setParticipantes([...participantes, participante]);
-    setNewParticipant({ nome: '', cargo: '', departamento: '' });
-    setShowParticipantForm(false);
-    toast.success('Participante adicionado com sucesso!');
+  // Participantes vem sempre do directorio real de utilizadores do sistema
+  const handleAddParticipant = (u: SystemUser) => {
+    setParticipantes((prev) => [...prev, { id: u.id, nome: u.nome, email: u.email, cargo: u.cargo, departamento: u.departamento }]);
+    setParticipantSearch('');
   };
 
   const handleRemoveParticipant = (id: string) => {
     setParticipantes(participantes.filter(p => p.id !== id));
-    toast.success('Participante removido');
   };
 
-  const handleCancelAddParticipant = () => {
-    setNewParticipant({ nome: '', cargo: '', departamento: '' });
-    setShowParticipantForm(false);
+  // Convidado externo: nao tem conta na plataforma, entra so com nome/e-mail
+  // e recebe o convite da reuniao por e-mail (sem notificacoes internas, ja
+  // que nunca vai fazer login).
+  const handleAddGuest = () => {
+    if (!newGuest.nome.trim() || !newGuest.email.trim()) {
+      toast.error('Indique o nome e o e-mail do participante externo');
+      return;
+    }
+    setParticipantes((prev) => [...prev, {
+      id: `guest_${Date.now()}`,
+      nome: newGuest.nome.trim(),
+      email: newGuest.email.trim(),
+      cargo: newGuest.organizacao.trim() || 'Externo',
+      departamento: 'Externo',
+      externo: true,
+    }]);
+    setNewGuest({ nome: '', email: '', organizacao: '' });
+    setShowGuestForm(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -176,6 +232,16 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
       return;
     }
 
+    if (formData.meetingType === 'online' && !formData.platform) {
+      toast.error('Por favor, selecione a plataforma de reunião');
+      return;
+    }
+
+    if (formData.roomId && roomConflict && roomConflict.length > 0) {
+      toast.error('A sala escolhida já está reservada nesse horário. Escolha outro horário ou sala.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -188,31 +254,33 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
         end_time: formData.endTime,
         meeting_type: formData.meetingType,
         location: formData.meetingType === 'presencial' ? formData.location : null,
+        room_id: formData.meetingType === 'presencial' && formData.roomId ? formData.roomId : null,
         platform: formData.meetingType === 'online' ? formData.platform : null,
-        meeting_link: formData.meetingType === 'online' ? formData.meetingLink : null,
+        // O link nunca e digitado manualmente - o backend gera-o automaticamente
+        // (MeetingLinkService) para reunioes online.
         priority: formData.priority,
         tipo_reuniao: formData.tipoReuniao,
         orgao: formData.orgao,
         status: 'pendente',
-        
+
         // Incluir pontos de agenda
         pontos_agenda: pontosAgenda.map(p => ({
           titulo: p.titulo,
           descricao: p.descricao,
           tempo_estimado: p.tempo_estimado
         })),
-        
-        // Incluir participantes
+
+        // Incluir participantes - sempre utilizadores reais, por isso user_id
+        // vai sempre preenchido (necessario para as notificacoes/email automaticos)
         participantes: participantes.map(p => ({
           id: p.id,
+          user_id: p.id,
           nome: p.nome,
+          email: p.email,
           cargo: p.cargo,
           departamento: p.departamento,
-          user_id: null // TODO: Mapear para user_id se o participante for usuário do sistema
         }))
       };
-
- console.log(' Enviando dados da reunião:', meetingData);
 
       // Enviar para backend
       const response = await fetch(
@@ -229,11 +297,10 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || errorData.details || 'Erro ao criar reunião');
+        throw new Error(errorData.message || errorData.error || errorData.details || 'Erro ao criar reunião');
       }
 
       const result = await response.json();
- console.log(' Resposta do backend:', result);
 
       toast.success(result.message || 'Reunião interna agendada com sucesso!');
       
@@ -247,15 +314,18 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
         endTime: "",
         meetingType: "presencial",
         location: "",
+        roomId: "",
         platform: "",
-        meetingLink: "",
         priority: "normal",
         tipoReuniao: "ordinaria",
         orgao: "",
       });
+      setRoomConflict(null);
       setPontosAgenda([]);
       setParticipantes([]);
-      setShowParticipantForm(false);
+      setParticipantSearch('');
+      setShowGuestForm(false);
+      setNewGuest({ nome: '', email: '', organizacao: '' });
 
       if (onSuccess) onSuccess();
     } catch (error: any) {
@@ -340,9 +410,8 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
           </div>
         </div>
 
-        {/* Sistema de Participantes - Novo Design do Figma */}
+        {/* Participantes - sempre pesquisados no directorio real de utilizadores */}
         <div className="space-y-3 border rounded-lg p-4 bg-muted/50">
-          {/* Cabeçalho com contador e botão */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -354,96 +423,87 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setShowParticipantForm(!showParticipantForm)}
+              onClick={() => setShowGuestForm(!showGuestForm)}
               className="gap-2"
             >
               <Plus className="h-4 w-4" />
-              Adicionar Participante
+              Convidar Externo
             </Button>
           </div>
 
-          {/* Mini-formulário de adição */}
-          {showParticipantForm && (
-            <div className="space-y-3 p-4 border rounded-lg bg-background">
-              <div className="space-y-2">
-                <Label htmlFor="nome">Nome *</Label>
-                <Input
-                  id="nome"
-                  value={newParticipant.nome}
-                  onChange={(e) => setNewParticipant({ ...newParticipant, nome: e.target.value })}
-                  placeholder="Nome completo"
-                  className="bg-[#f3f3f5]"
-                />
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="cargo">Cargo</Label>
-                  <Input
-                    id="cargo"
-                    value={newParticipant.cargo}
-                    onChange={(e) => setNewParticipant({ ...newParticipant, cargo: e.target.value })}
-                    placeholder="Ex: Diretor Geral"
-                    className="bg-[#f3f3f5]"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="departamento">Departamento</Label>
-                  <Select 
-                    value={newParticipant.departamento}
-                    onValueChange={(value) => setNewParticipant({ ...newParticipant, departamento: value })}
-                  >
-                    <SelectTrigger className="bg-[#f3f3f5]">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="conselho_administracao">Conselho de Administração</SelectItem>
-                      <SelectItem value="direcao">Direcção</SelectItem>
-                      <SelectItem value="gabinete_pca">Gabinete do PCA</SelectItem>
-                      <SelectItem value="gabinete_pce">Gabinete do PCE</SelectItem>
-                      <SelectItem value="gabinete_administrador">Gabinete do Administrador</SelectItem>
-                      <SelectItem value="gabinete_director">Gabinete do Director</SelectItem>
-                      <SelectItem value="gestao">Gestão</SelectItem>
-                      <SelectItem value="compras">Compras</SelectItem>
-                      <SelectItem value="financeiro">Financeiro</SelectItem>
-                      <SelectItem value="recursos_humanos">Recursos Humanos</SelectItem>
-                      <SelectItem value="ti">Tecnologias de Informação</SelectItem>
-                      <SelectItem value="comercial">Comercial</SelectItem>
-                      <SelectItem value="marketing">Marketing</SelectItem>
-                      <SelectItem value="juridico">Jurídico</SelectItem>
-                      <SelectItem value="operacoes">Operações</SelectItem>
-                      <SelectItem value="logistica">Logística</SelectItem>
-                      <SelectItem value="outro">Outro</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
+          {showGuestForm && (
+            <div className="space-y-3 p-3 border rounded-lg bg-background">
+              <p className="text-xs text-muted-foreground">
+                Para alguém que não faz parte da plataforma. Recebe o convite por e-mail, mas não terá acesso ao sistema.
+              </p>
+              <Input
+                placeholder="Nome completo *"
+                value={newGuest.nome}
+                onChange={(e) => setNewGuest({ ...newGuest, nome: e.target.value })}
+              />
+              <Input
+                type="email"
+                placeholder="E-mail *"
+                value={newGuest.email}
+                onChange={(e) => setNewGuest({ ...newGuest, email: e.target.value })}
+              />
+              <Input
+                placeholder="Organização/Cargo (opcional)"
+                value={newGuest.organizacao}
+                onChange={(e) => setNewGuest({ ...newGuest, organizacao: e.target.value })}
+              />
               <div className="flex gap-2 justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelAddParticipant}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={() => setShowGuestForm(false)}>
                   Cancelar
                 </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleAddParticipant}
-                >
+                <Button type="button" size="sm" onClick={handleAddGuest}>
                   Adicionar
                 </Button>
               </div>
             </div>
           )}
 
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Pesquise por nome, email ou número de documento..."
+              value={participantSearch}
+              onChange={(e) => setParticipantSearch(e.target.value)}
+              className="pl-10 bg-background"
+              autoComplete="off"
+            />
+            {participantSearch.trim().length > 0 && (
+              <div className="mt-2 border rounded-md bg-background max-h-56 overflow-y-auto">
+                {participantMatches.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhum utilizador encontrado
+                  </p>
+                ) : (
+                  participantMatches.map((u) => (
+                    <button
+                      type="button"
+                      key={u.id}
+                      onClick={() => handleAddParticipant(u)}
+                      className="w-full flex items-center gap-2 p-3 text-left hover:bg-accent transition-colors border-b last:border-b-0"
+                    >
+                      <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{u.nome}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {u.email} · {u.cargo} · {u.departamento}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Lista de participantes */}
           {participantes.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              Nenhum participante adicionado. Clique em "Adicionar Participante" para começar.
+              Nenhum participante adicionado. Pesquise acima para adicionar.
             </p>
           ) : (
             <div className="space-y-2">
@@ -453,9 +513,16 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
                   className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-muted/50 transition-colors"
                 >
                   <div className="flex-1">
-                    <p className="font-medium text-sm">{participante.nome}</p>
+                    <p className="font-medium text-sm flex items-center gap-2">
+                      {participante.nome}
+                      {participante.externo && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">
+                          Externo
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground">
-                      {participante.cargo && `${participante.cargo} • `}
+                      {participante.email} · {participante.cargo && `${participante.cargo} • `}
                       {participante.departamento || 'Sem departamento'}
                     </p>
                   </div>
@@ -635,43 +702,85 @@ export function InternalMeetingForm({ onSuccess }: InternalMeetingFormProps) {
 
         {formData.meetingType === 'presencial' ? (
           <div className="space-y-2">
-            <Label htmlFor="location">Local da Reunião</Label>
+            <Label htmlFor="roomId">Sala de Reunião</Label>
+            <Select
+              value={formData.roomId || "nenhuma"}
+              onValueChange={(value) => handleInputChange('roomId', value === "nenhuma" ? "" : value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione uma sala (opcional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="nenhuma">Nenhuma / Local externo</SelectItem>
+                {rooms.map((room) => (
+                  <SelectItem key={room.id} value={room.id}>
+                    {room.nome} {room.capacidade ? `(até ${room.capacidade} pessoas)` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {formData.roomId && checkingRoom && (
+              <p className="text-xs text-muted-foreground">A verificar disponibilidade...</p>
+            )}
+            {formData.roomId && !checkingRoom && roomConflict && roomConflict.length > 0 && (
+              <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  Sala já reservada nesse horário por "{roomConflict[0].titulo}" ({roomConflict[0].hora_inicio}-{roomConflict[0].hora_fim}).
+                  Escolha outro horário ou sala.
+                </span>
+              </div>
+            )}
+
+            <Label htmlFor="location" className="pt-2 block">Local da Reunião (opcional se escolheu uma sala)</Label>
             <Input
               id="location"
               value={formData.location}
               onChange={(e) => handleInputChange('location', e.target.value)}
-              placeholder="Ex: Sala de Reuniões 1, Escritório Principal"
+              placeholder="Ex: Escritório Principal, 2º Piso"
             />
           </div>
         ) : (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="platform">Plataforma</Label>
-              <Select onValueChange={(value) => handleInputChange('platform', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a plataforma" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Zoom">Zoom</SelectItem>
-                  <SelectItem value="Microsoft Teams">Microsoft Teams</SelectItem>
-                  <SelectItem value="Google Meet">Google Meet</SelectItem>
-                  <SelectItem value="Skype">Skype</SelectItem>
-                  <SelectItem value="WhatsApp">WhatsApp</SelectItem>
-                  <SelectItem value="Outra">Outra</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {!loadingPlatforms && availablePlatforms.length === 0 ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Nenhuma plataforma de reunião está configurada nesta instalação. Peça a um administrador
+                  do sistema para configurar em <strong>Configurações → Integrações</strong> antes de agendar
+                  uma reunião online.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="platform">Plataforma</Label>
+                  <Select
+                    value={formData.platform}
+                    onValueChange={(value) => handleInputChange('platform', value)}
+                    disabled={loadingPlatforms}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a plataforma" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePlatforms.map((platform) => (
+                        <SelectItem key={platform.key} value={platform.key}>{platform.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="meetingLink">Link da Reunião</Label>
-              <Input
-                id="meetingLink"
-                type="url"
-                value={formData.meetingLink}
-                onChange={(e) => handleInputChange('meetingLink', e.target.value)}
-                placeholder="https://..."
-              />
-            </div>
+                <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/50 border rounded-lg p-3">
+                  <Link2 className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    O link da reunião é gerado automaticamente pelo sistema assim que a reunião for agendada,
+                    e enviado a todos os participantes por email e por notificação interna.
+                  </span>
+                </div>
+              </>
+            )}
           </>
         )}
 

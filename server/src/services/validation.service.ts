@@ -66,6 +66,35 @@ function hasRequiredField(module: string, payload: Record<string, any>, field: s
   return aliases.some((alias) => hasValue(payload[alias]));
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isEmailField(field: string) {
+  return /email/i.test(field);
+}
+
+function isDateField(field: string) {
+  return /^data|Data$|date$|Date$/.test(field);
+}
+
+function validateFormats(payload: Record<string, any>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  for (const [field, value] of Object.entries(payload)) {
+    if (!hasValue(value) || typeof value !== 'string') continue;
+
+    if (isEmailField(field) && !EMAIL_REGEX.test(value.trim())) {
+      errors.push({ field, message: `Formato de e-mail invalido em "${field}"` });
+      continue;
+    }
+
+    if (isDateField(field) && Number.isNaN(Date.parse(value))) {
+      errors.push({ field, message: `Data invalida em "${field}"` });
+    }
+  }
+
+  return errors;
+}
+
 export class ValidationService {
   static async validate(module: string, payload: Record<string, any>, status?: string): Promise<ValidationError[]> {
     const configuredRules = await prisma.validationRule.findMany({
@@ -81,11 +110,13 @@ export class ValidationService {
       ? configuredRules.filter((rule) => rule.required).map((rule) => ({ field: rule.field, message: rule.message }))
       : (businessRequired || REQUIRED_FIELDS_BY_MODULE[module] || []).map((field) => ({ field, message: undefined }));
 
-    return requiredFields
+    const missing = requiredFields
       .filter((rule) => !hasRequiredField(module, payload, rule.field))
       .map((rule) => ({
         field: rule.field,
         message: rule.message || `Campo obrigatorio ausente: ${rule.field}`,
       }));
+
+    return [...missing, ...validateFormats(payload)];
   }
 }

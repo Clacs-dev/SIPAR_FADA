@@ -1,6 +1,42 @@
 import { toast } from 'sonner';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+// Endereco do servidor central. Por omissao, vem compilado no build
+// (VITE_API_URL) - mas pode ser substituido em runtime, persistido em
+// localStorage, a partir do icone de configuracao no ecra de login. Isto
+// existe precisamente porque o endereco de build nem sempre bate com o
+// servidor real de uma instalacao especifica, e antes de fazer login nao
+// ha nenhum outro sitio (ex.: admin_sistema) onde o corrigir.
+const API_BASE_URL_STORAGE_KEY = 'sipar_api_base_url_override';
+export const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
+
+function readStoredApiBaseUrl(): string | null {
+  try {
+    const stored = localStorage.getItem(API_BASE_URL_STORAGE_KEY);
+    return stored && stored.trim() ? stored.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+export let API_BASE_URL = readStoredApiBaseUrl() || DEFAULT_API_BASE_URL;
+
+/** Devolve o valor guardado manualmente, ou null se a app estiver a usar o endereco de build. */
+export function getApiBaseUrlOverride(): string | null {
+  return readStoredApiBaseUrl();
+}
+
+/** Define um endereco de servidor novo, persiste-o, e atualiza o valor em memoria usado pelo resto da app. */
+export function setApiBaseUrl(url: string): void {
+  const trimmed = url.trim().replace(/\/+$/, '');
+  localStorage.setItem(API_BASE_URL_STORAGE_KEY, trimmed);
+  API_BASE_URL = trimmed;
+}
+
+/** Remove o endereco guardado manualmente, voltando ao valor de build (VITE_API_URL). */
+export function resetApiBaseUrl(): void {
+  localStorage.removeItem(API_BASE_URL_STORAGE_KEY);
+  API_BASE_URL = DEFAULT_API_BASE_URL;
+}
 
 export function getStoredAuthHeader(): string | null {
   const userToken = localStorage.getItem('access_token');
@@ -27,6 +63,36 @@ export function getAuthHeaders(includeContentType = true): Record<string, string
 
 export function apiUrl(path = ''): string {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+// Tempo maximo de espera por um pedido antes de desistir e mostrar erro.
+// Sem isto, um servidor inalcancavel de forma "silenciosa" (rede que deixa
+// cair os pacotes, em vez de recusar a ligacao de imediato) faz o fetch()
+// ficar pendurado indefinidamente - nem sucesso, nem erro, nunca - e o
+// utilizador ve o botao em "Entrando..." para sempre, sem nenhuma mensagem.
+const REQUEST_TIMEOUT_MS = 15000;
+
+/**
+ * Converte um erro de rede/fetch (ex.: "Failed to fetch", quando o
+ * servidor esta offline ou nao ha internet; ou um timeout de pedido) numa
+ * mensagem legivel em portugues. Mensagens que ja vieram do backend (com
+ * texto proprio) sao devolvidas sem alteracao.
+ */
+export function getFriendlyErrorMessage(error: unknown, fallback = 'Ocorreu um erro. Tente novamente.'): string {
+  if (!(error instanceof Error)) return fallback;
+
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+    return 'O servidor não respondeu a tempo. Verifique se o servidor está disponível e tente novamente.';
+  }
+
+  const raw = error.message || '';
+  const looksLikeNetworkError = /failed to fetch|networkerror|load failed|network request failed/i.test(raw);
+
+  if (looksLikeNetworkError) {
+    return 'Não foi possível ligar ao servidor. Verifique a sua ligação à internet e tente novamente.';
+  }
+
+  return raw || fallback;
 }
 
 /**
@@ -80,28 +146,14 @@ export class ApiClient {
   }
 
   /**
-   * Tratamento centralizado de respostas e erros globais (como 401)
+   * Tratamento centralizado de respostas e erros globais.
+   * O 401 de sessao expirada e tratado de forma centralizada pelo
+   * interceptor global (installApiFetchInterceptor), que exclui os
+   * endpoints publicos de autenticacao (login/registo/reset). Aqui so
+   * propagamos a mensagem real devolvida pelo backend, para qualquer
+   * status de erro, incluindo 401.
    */
   private async handleResponse<T>(response: Response): Promise<T> {
-    if (response.status === 401) {
- console.warn(' [API] Token inválido ou expirado (401)');
-      
-      // Limpar sessão local
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user');
-      localStorage.removeItem('fornecedor_auth');
-      
-      toast.error('Sessão expirada. Por favor, faça login novamente.');
-      
-      // Recarregar a página para forçar logout após breve atraso
-      setTimeout(() => {
-        window.location.hash = '/login';
-        window.location.reload();
-      }, 1500);
-      
-      throw new Error('Sessão Expirada');
-    }
-
     if (!response.ok) {
       const errorText = await response.text();
       let errorMessage = 'Erro na comunicação com o servidor';
@@ -136,7 +188,8 @@ export class ApiClient {
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: this.getHeaders()
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     return this.handleResponse<T>(response);
@@ -149,7 +202,8 @@ export class ApiClient {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'POST',
       headers: this.getHeaders(),
-      body: data ? JSON.stringify(data) : undefined
+      body: data ? JSON.stringify(data) : undefined,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     return this.handleResponse<T>(response);
@@ -162,7 +216,8 @@ export class ApiClient {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'PUT',
       headers: this.getHeaders(),
-      body: data ? JSON.stringify(data) : undefined
+      body: data ? JSON.stringify(data) : undefined,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     return this.handleResponse<T>(response);
@@ -174,7 +229,8 @@ export class ApiClient {
   async delete<T>(endpoint: string): Promise<T> {
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'DELETE',
-      headers: this.getHeaders()
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     return this.handleResponse<T>(response);
@@ -191,10 +247,13 @@ export class ApiClient {
       headers['Authorization'] = `${tokenInfo.type} ${tokenInfo.token}`;
     }
 
+    // Uploads podem legitimamente demorar mais que um pedido normal
+    // (ficheiros maiores) - janela mais larga que REQUEST_TIMEOUT_MS.
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'POST',
       headers,
-      body: formData
+      body: formData,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS * 4),
     });
 
     return this.handleResponse<T>(response);
@@ -203,6 +262,52 @@ export class ApiClient {
 
 export const api = new ApiClient();
 export default api;
+
+// Endpoints publicos de autenticacao: um 401 aqui significa credenciais
+// invalidas/conta inativa/etc, nunca uma sessao expirada - nao deve
+// disparar o fluxo de "sessao expirada" (limpar sessao + recarregar a
+// pagina), que so faz sentido para pedidos feitos com um token existente.
+const PUBLIC_AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/reset-password', '/auth/refresh'];
+
+function isPublicAuthRequest(url: string) {
+  return PUBLIC_AUTH_PATHS.some((path) => url.includes(path));
+}
+
+// Troca silenciosa do access_token expirado por um novo, usando o refresh_token
+// guardado no login. Deduplica pedidos concorrentes (varios 401 em simultaneo
+// so disparam UM pedido de refresh).
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshAccessToken(originalFetch: typeof fetch): Promise<boolean> {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return false;
+
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await originalFetch(`${API_BASE_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!response.ok) return false;
+        const data = await response.json();
+        if (!data?.session?.access_token) return false;
+        localStorage.setItem('access_token', data.session.access_token);
+        if (data.session.refresh_token) {
+          localStorage.setItem('refresh_token', data.session.refresh_token);
+        }
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+
+  return refreshInFlight;
+}
 
 export function installApiFetchInterceptor() {
   if (typeof window === 'undefined') return;
@@ -228,11 +333,20 @@ export function installApiFetchInterceptor() {
     }
 
     const response = await originalFetch(url, nextInit);
-    if (isApiRequest && response.status === 401) {
+    if (isApiRequest && response.status === 401 && !isPublicAuthRequest(url)) {
+      const refreshed = await tryRefreshAccessToken(originalFetch);
+      if (refreshed) {
+        const retryHeaders = new Headers(nextInit.headers || {});
+        const authHeader = getStoredAuthHeader();
+        if (authHeader) retryHeaders.set('Authorization', authHeader);
+        return originalFetch(url, { ...nextInit, headers: retryHeaders });
+      }
+
       localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
       localStorage.removeItem('user');
       localStorage.removeItem('fornecedor_auth');
-      toast.error('Sessao expirada. Por favor, faca login novamente.');
+      toast.error('Sessão expirada. Por favor, faça login novamente.');
       setTimeout(() => window.location.reload(), 1000);
     }
 

@@ -90,20 +90,20 @@ export function PedidoDetailsDialog({
 
   const getStatusBadge = (status: string) => {
     const badges: Record<string, { label: string; color: string; icon: any }> = {
-      criado: { label: "Criado", color: "bg-gray-500", icon: FileText },
-      aguardando_cotacoes: { label: "Aguardando Cotações", color: "bg-blue-500", icon: Clock },
-      em_cotacao: { label: "Em Cotação", color: "bg-yellow-500", icon: TrendingUp },
-      em_analise: { label: "Em Análise", color: "bg-purple-500", icon: AlertCircle },
-      aprovado: { label: "Aprovado", color: "bg-green-500", icon: CheckCircle2 },
-      ordem_emitida: { label: "Ordem Emitida", color: "bg-indigo-500", icon: FileText },
-      em_entrega: { label: "Em Entrega", color: "bg-orange-500", icon: Package },
-      concluido: { label: "Concluído", color: "bg-green-600", icon: CheckCircle2 },
-      cancelado: { label: "Cancelado", color: "bg-red-500", icon: XCircle },
+      criado: { label: "Criado", color: "var(--tone-neutral)", icon: FileText },
+      aguardando_cotacoes: { label: "Aguardando Cotações", color: "var(--tone-info)", icon: Clock },
+      em_cotacao: { label: "Em Cotação", color: "var(--tone-gold)", icon: TrendingUp },
+      em_analise: { label: "Em Análise", color: "var(--tone-accent)", icon: AlertCircle },
+      aprovado: { label: "Aprovado", color: "var(--tone-success)", icon: CheckCircle2 },
+      ordem_emitida: { label: "Ordem Emitida", color: "var(--tone-accent)", icon: FileText },
+      em_entrega: { label: "Em Entrega", color: "var(--tone-warn)", icon: Package },
+      concluido: { label: "Concluído", color: "var(--tone-success)", icon: CheckCircle2 },
+      cancelado: { label: "Cancelado", color: "var(--tone-danger)", icon: XCircle },
     };
     const badge = badges[status] || badges.criado;
     const Icon = badge.icon;
     return (
-      <Badge className={`${badge.color} text-white flex items-center gap-1`}>
+      <Badge className="text-white flex items-center gap-1" style={{ backgroundColor: badge.color }}>
         <Icon className="h-3 w-3" />
         {badge.label}
       </Badge>
@@ -155,7 +155,7 @@ export function PedidoDetailsDialog({
                 {/* Status e Prioridade */}
                 <div className="flex items-center gap-2">
                   {getStatusBadge(pedido.status)}
-                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                  <Badge variant="outline" className="bg-tone-warn-soft text-tone-warn border-tone-warn/30">
                     Prioridade: {pedido.prioridade}
                   </Badge>
                 </div>
@@ -188,7 +188,7 @@ export function PedidoDetailsDialog({
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <h4 className="text-sm font-semibold text-muted-foreground mb-1">Orçamento Estimado</h4>
-                    <p className="font-semibold text-lg text-green-700">
+                    <p className="font-semibold text-lg text-tone-success">
                       <DollarSign className="h-4 w-4 inline" />
                       {pedido.orcamento_estimado?.toLocaleString('pt-AO') || '0'} AOA
                     </p>
@@ -240,16 +240,16 @@ export function PedidoDetailsDialog({
 
             {/* Ações */}
             {pedido.status === "em_cotacao" && cotacoes.length > 0 && onAnalisar && (
-              <Card className="bg-blue-50 border-blue-200">
+              <Card style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
                 <CardContent className="pt-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-semibold text-blue-900">Pedido pronto para análise</h4>
-                      <p className="text-sm text-blue-700">
+                      <h4 className="font-semibold text-tone-info">Pedido pronto para análise</h4>
+                      <p className="text-sm text-tone-info">
                         {cotacoes.length} cotação(ões) recebida(s). Inicie a análise comparativa.
                       </p>
                     </div>
-                    <Button onClick={handleAnalisar} className="bg-blue-600 hover:bg-blue-700">
+                    <Button onClick={handleAnalisar} style={{ backgroundColor: 'var(--tone-info)' }} className="text-white hover:opacity-90">
                       <BarChart3 className="mr-2 h-4 w-4" />
                       Iniciar Análise
                     </Button>
@@ -339,7 +339,7 @@ export function PedidoDetailsDialog({
                   <Card
                     key={cotacao.id}
                     className={`${
-                      selectedCotacao === cotacao.id ? "ring-2 ring-blue-500" : ""
+                      selectedCotacao === cotacao.id ? "ring-2 ring-tone-info" : ""
                     } cursor-pointer hover:shadow-md transition-shadow`}
                     onClick={() => setSelectedCotacao(cotacao.id)}
                   >
@@ -348,7 +348,7 @@ export function PedidoDetailsDialog({
                       <div className="flex items-start justify-between">
                         <div>
                           <h4 className="font-semibold text-lg flex items-center gap-2">
-                            {index === 0 && <Award className="h-5 w-5 text-yellow-500" />}
+                            {index === 0 && <Award className="h-5 w-5 text-tone-gold" />}
                             {cotacao.fornecedor_nome}
                           </h4>
                           <p className="text-sm text-muted-foreground">{cotacao.fornecedor_email}</p>
@@ -358,7 +358,7 @@ export function PedidoDetailsDialog({
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-muted-foreground">Valor Total</p>
-                          <p className="text-2xl font-bold text-green-700">
+                          <p className="text-2xl font-bold text-tone-success">
                             {cotacao.valor_total.toLocaleString('pt-AO')} AOA
                           </p>
                         </div>
@@ -370,25 +370,25 @@ export function PedidoDetailsDialog({
                       <div className="grid grid-cols-4 gap-4">
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground mb-1">Score Total</p>
-                          <div className="text-xl font-bold text-blue-700">
+                          <div className="text-xl font-bold text-tone-info">
                             {cotacao.score_total?.toFixed(1) || 0}
                           </div>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground mb-1">Preço</p>
-                          <div className="text-xl font-bold text-green-700">
+                          <div className="text-xl font-bold text-tone-success">
                             {cotacao.score_preco?.toFixed(1) || 0}
                           </div>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground mb-1">Disponibilidade</p>
-                          <div className="text-xl font-bold text-purple-700">
+                          <div className="text-xl font-bold text-tone-accent">
                             {cotacao.percentual_atendimento?.toFixed(0) || 0}%
                           </div>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground mb-1">Prazo</p>
-                          <div className="text-xl font-bold text-orange-700">
+                          <div className="text-xl font-bold text-tone-warn">
                             {cotacao.score_prazo?.toFixed(1) || 0}
                           </div>
                         </div>
@@ -403,17 +403,17 @@ export function PedidoDetailsDialog({
                               key={idx}
                               className={`p-3 rounded-lg border ${
                                 item.disponivel === "sim"
-                                  ? "bg-green-50 border-green-200"
-                                  : "bg-red-50 border-red-200"
+                                  ? "bg-tone-success-soft border-tone-success/30"
+                                  : "bg-tone-danger-soft border-tone-danger/30"
                               }`}
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <p className="font-medium text-sm">
                                     {item.disponivel === "sim" ? (
-                                      <CheckCircle2 className="h-4 w-4 inline text-green-600 mr-1" />
+                                      <CheckCircle2 className="h-4 w-4 inline text-tone-success mr-1" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 inline text-red-600 mr-1" />
+                                      <XCircle className="h-4 w-4 inline text-tone-danger mr-1" />
                                     )}
                                     {item.item_descricao}
                                   </p>
@@ -426,7 +426,7 @@ export function PedidoDetailsDialog({
                                 </div>
                                 {item.disponivel === "sim" && item.preco_unitario && (
                                   <div className="text-right ml-4">
-                                    <p className="font-semibold text-green-700">
+                                    <p className="font-semibold text-tone-success">
                                       {(item.preco_unitario * item.quantidade_disponivel).toLocaleString('pt-AO')} AOA
                                     </p>
                                   </div>
@@ -457,7 +457,8 @@ export function PedidoDetailsDialog({
                           <Button
                             size="sm"
                             onClick={() => handleAprovar(cotacao.id)}
-                            className="bg-green-600 hover:bg-green-700"
+                            style={{ backgroundColor: 'var(--tone-success)' }}
+                            className="text-white hover:opacity-90"
                           >
                             <CheckCircle2 className="mr-2 h-4 w-4" />
                             Aprovar Esta Cotação

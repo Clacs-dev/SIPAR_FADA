@@ -35,10 +35,14 @@ export function SendGridStatusBanner({ onConfigure }: SendGridStatusBannerProps)
         }
 
         const data = await response.json();
-        
-        if (!data.success) {
+
+        // "success" e so "o pedido correu bem" - o que importa aqui e se o
+        // e-mail esta de facto configurado (data.email.configured). Com o
+        // check antigo (!data.success), este aviso nunca aparecia, porque a
+        // rota /email/test devolve sempre success:true.
+        if (!data.email?.configured) {
           setShowBanner(true);
-          setStatusMessage(data.message || 'Gmail SMTP não configurado');
+          setStatusMessage('Nenhum servidor de e-mail configurado nesta instalação.');
         }
       } catch (error) {
         // Silenciar erros de rede (CORS, connection failed, etc)
@@ -70,7 +74,8 @@ export function SendGridStatusBanner({ onConfigure }: SendGridStatusBannerProps)
             size="sm"
             variant="outline"
             onClick={onConfigure}
-            className="bg-white text-red-600 hover:bg-red-50"
+            className="bg-white hover:opacity-90"
+            style={{ color: 'var(--destructive)' }}
           >
             <Settings className="mr-2 h-4 w-4" />
             Configurar Gmail
@@ -79,7 +84,7 @@ export function SendGridStatusBanner({ onConfigure }: SendGridStatusBannerProps)
             size="sm"
             variant="ghost"
             onClick={() => setDismissed(true)}
-            className="text-white hover:bg-red-600/20"
+            className="text-white hover:bg-white/20"
           >
             <X className="h-4 w-4" />
           </Button>

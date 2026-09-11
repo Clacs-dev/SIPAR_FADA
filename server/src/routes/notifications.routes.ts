@@ -1,8 +1,10 @@
 import { Router, Response, NextFunction } from 'express';
+import { requireLicenseModule } from '../middlewares/license';
 import { AuthenticatedRequest, requireAuth } from '../middlewares/auth';
 import prisma from '../config/database';
 
 const router = Router();
+router.use(requireLicenseModule('notifications'));
 
 function toEmailNotification(record: any) {
   const metadata = record.metadata ? JSON.parse(record.metadata) : {};

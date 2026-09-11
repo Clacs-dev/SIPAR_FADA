@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
+import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
@@ -11,14 +10,13 @@ import { AcceptRequestDialog } from "./accept-request-dialog";
 import { DelegateDialog } from "./delegate-dialog";
 import { ScheduleMeetingDialog } from "./schedule-meeting-dialog";
 import { DocumentViewer } from "../forms/document-viewer";
-import { Search, Eye, Check, X, UserCheck, FileText, Calendar as CalendarIcon } from "lucide-react";
+import { Eye, Check, X, UserCheck, FileText, Calendar as CalendarIcon } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { format, isToday, isYesterday, isWithinInterval, subDays, startOfMonth, endOfMonth } from "date-fns@4.1.0";
 import { ptBR } from "date-fns@4.1.0/locale";
 
 export function RequestsList() {
-  const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
   const [presentations, setPresentations] = useState<any[]>([]);
@@ -111,9 +109,11 @@ export function RequestsList() {
       case 'agendado': return 'bg-[var(--status-agendado)] text-[var(--status-agendado-foreground)]';
       case 'confirmado': return 'bg-[var(--status-agendado)] text-[var(--status-agendado-foreground)]';
       case 'revisada': return 'bg-[var(--status-aceite)] text-[var(--status-aceite-foreground)]';
+      case 'realizado': return 'bg-[var(--tone-success)] text-white';
+      case 'nao_compareceu': return 'bg-[var(--tone-warn)] text-white';
       case 'rejeitado': return 'bg-[var(--status-rejeitado)] text-[var(--status-rejeitado-foreground)]';
       case 'cancelado': return 'bg-[var(--status-rejeitado)] text-[var(--status-rejeitado-foreground)]';
-      default: return 'bg-gray-100 text-gray-800';
+      default: return 'bg-[var(--tone-neutral-soft)] text-[var(--tone-neutral)]';
     }
   };
 
@@ -125,6 +125,8 @@ export function RequestsList() {
       'agendado': 'Agendado',
       'aprovado': 'Aprovado',
       'revisada': 'Revisada',
+      'realizado': 'Reunião Realizada',
+      'nao_compareceu': 'Não Compareceu',
       'rejeitado': 'Rejeitado',
       'confirmado': 'Confirmado',
       'cancelado': 'Cancelado'
@@ -187,6 +189,46 @@ export function RequestsList() {
     } catch (error) {
  console.error('Error updating status:', error);
       toast.error('Erro ao alterar status');
+    }
+  };
+
+  // Confirma se a reuniao agendada (carta de apresentacao ou audiencia)
+  // aconteceu ou nao - sem isto o pedido ficava para sempre em "Agendado",
+  // mesmo depois da data da reuniao ja ter passado.
+  const handleMeetingOutcome = async (
+    id: string,
+    type: 'presentation' | 'audience',
+    outcome: 'realizado' | 'nao_compareceu'
+  ) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        toast.error("Sessão expirada");
+        return;
+      }
+
+      const endpoint = type === 'presentation' ? 'presentations' : 'audiences';
+      const response = await fetch(
+        `${API_BASE_URL}/${endpoint}/${id}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: outcome })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao actualizar o estado da reunião');
+      }
+
+      toast.success(outcome === 'realizado' ? 'Reunião marcada como realizada' : 'Reunião marcada como não realizada');
+      fetchData();
+    } catch (error) {
+ console.error('Error updating meeting outcome:', error);
+      toast.error('Erro ao actualizar o estado da reunião');
     }
   };
 
@@ -311,7 +353,7 @@ export function RequestsList() {
                     <div>
                       <h4>Link da Reunião</h4>
                       <p className="text-sm break-all">
-                        <a href={item.meetingLink} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                        <a href={item.meetingLink} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: 'var(--ring)' }}>
                           {item.meetingLink}
                         </a>
                       </p>
@@ -342,21 +384,23 @@ export function RequestsList() {
         </DialogContent>
       </Dialog>
       
-      {item.status === 'pendente' && (
+      {(item.status === 'pendente' || item.status === 'delegado') && (
         <>
-          <Button 
-            size="sm" 
-            onClick={() => {
-              setSelectedRequest(item);
-              setSelectedType('presentation');
-              setAcceptDialogOpen(true);
-            }}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            Aceitar
-          </Button>
-          <Button 
-            size="sm" 
+          {item.status === 'pendente' && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedRequest(item);
+                setSelectedType('presentation');
+                setAcceptDialogOpen(true);
+              }}
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Aceitar
+            </Button>
+          )}
+          <Button
+            size="sm"
             variant="outline"
             onClick={() => {
               setSelectedRequest(item);
@@ -367,8 +411,8 @@ export function RequestsList() {
             <CalendarIcon className="h-4 w-4 mr-1" />
             Agendar
           </Button>
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             variant="outline"
             onClick={() => {
               setSelectedRequest(item);
@@ -377,24 +421,70 @@ export function RequestsList() {
             }}
           >
             <UserCheck className="h-4 w-4 mr-1" />
-            Delegar
+            {item.status === 'delegado' ? 'Redelegar' : 'Delegar'}
           </Button>
-          <Button 
-            size="sm" 
-            variant="destructive"
-            onClick={() => handlePresentationStatusChange(item.id, 'rejeitado', item.email)}
+          {item.status === 'pendente' && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => handlePresentationStatusChange(item.id, 'rejeitado', item.email)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </>
+      )}
+      {item.status === 'agendado' && (
+        <>
+          <Button
+            size="sm"
+            className="text-white hover:opacity-90"
+            style={{ backgroundColor: 'var(--tone-success)' }}
+            onClick={() => handleMeetingOutcome(item.id, 'presentation', 'realizado')}
           >
-            <X className="h-4 w-4" />
+            <Check className="h-4 w-4 mr-1" />
+            Aconteceu
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+            onClick={() => handleMeetingOutcome(item.id, 'presentation', 'nao_compareceu')}
+          >
+            <X className="h-4 w-4 mr-1" />
+            Não Aconteceu
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedRequest(item);
+              setSelectedType('presentation');
+              setScheduleDialogOpen(true);
+            }}
+          >
+            <CalendarIcon className="h-4 w-4 mr-1" />
+            Adiar
           </Button>
         </>
       )}
       {item.status === 'delegado' && (
-        <Badge variant="outline" className="text-purple-600">
-          Delegado para {item.delegatedToName}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" style={{ color: 'var(--status-delegado-foreground)', borderColor: 'var(--status-delegado-foreground)' }}>
+            Delegado para {item.delegatedToName}
+          </Badge>
+          {item.delegado_assinatura_url && (
+            <img
+              src={item.delegado_assinatura_url}
+              alt={`Assinatura de ${item.delegado_por_nome || ''}`}
+              title={`Assinado digitalmente por ${item.delegado_por_nome || ''}`}
+              className="h-6 object-contain"
+            />
+          )}
+        </div>
       )}
       {item.status === 'aceite_admin' && (
-        <Badge variant="outline" className="text-blue-600">
+        <Badge variant="outline" style={{ color: 'var(--status-aceite-foreground)', borderColor: 'var(--status-aceite-foreground)' }}>
           Aguardando Secretaria
         </Badge>
       )}
@@ -454,7 +544,7 @@ export function RequestsList() {
               />
             )}
             {item.status === 'agendado' && (
-              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+              <div className="p-4 rounded-lg border" style={{ backgroundColor: 'var(--tone-success-soft)', borderColor: 'var(--tone-success)' }}>
                 <h4>Detalhes do Agendamento</h4>
                 <div className="grid gap-2 md:grid-cols-2 mt-2 text-sm">
                   <div>
@@ -500,20 +590,22 @@ export function RequestsList() {
         </DialogContent>
       </Dialog>
       
-      {item.status === 'pendente' && (
+      {(item.status === 'pendente' || item.status === 'delegado') && (
         <>
-          <Button 
-            size="sm"
-            onClick={() => {
-              setSelectedRequest(item);
-              setSelectedType('audience');
-              setAcceptDialogOpen(true);
-            }}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            Aceitar
-          </Button>
-          <Button 
+          {item.status === 'pendente' && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setSelectedRequest(item);
+                setSelectedType('audience');
+                setAcceptDialogOpen(true);
+              }}
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Aceitar
+            </Button>
+          )}
+          <Button
             size="sm"
             variant="outline"
             onClick={() => {
@@ -525,7 +617,7 @@ export function RequestsList() {
             <CalendarIcon className="h-4 w-4 mr-1" />
             Agendar
           </Button>
-          <Button 
+          <Button
             size="sm"
             variant="outline"
             onClick={() => {
@@ -535,24 +627,70 @@ export function RequestsList() {
             }}
           >
             <UserCheck className="h-4 w-4 mr-1" />
-            Delegar
+            {item.status === 'delegado' ? 'Redelegar' : 'Delegar'}
           </Button>
-          <Button 
-            size="sm" 
-            variant="destructive"
-            onClick={() => handleAudienceReject(item.id, item.email)}
+          {item.status === 'pendente' && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => handleAudienceReject(item.id, item.email)}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </>
+      )}
+      {item.status === 'agendado' && (
+        <>
+          <Button
+            size="sm"
+            className="text-white hover:opacity-90"
+            style={{ backgroundColor: 'var(--tone-success)' }}
+            onClick={() => handleMeetingOutcome(item.id, 'audience', 'realizado')}
           >
-            <X className="h-4 w-4" />
+            <Check className="h-4 w-4 mr-1" />
+            Aconteceu
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+            onClick={() => handleMeetingOutcome(item.id, 'audience', 'nao_compareceu')}
+          >
+            <X className="h-4 w-4 mr-1" />
+            Não Aconteceu
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setSelectedRequest(item);
+              setSelectedType('audience');
+              setScheduleDialogOpen(true);
+            }}
+          >
+            <CalendarIcon className="h-4 w-4 mr-1" />
+            Adiar
           </Button>
         </>
       )}
       {item.status === 'delegado' && (
-        <Badge variant="outline" className="text-purple-600">
-          Delegado para {item.delegatedToName}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" style={{ color: 'var(--status-delegado-foreground)', borderColor: 'var(--status-delegado-foreground)' }}>
+            Delegado para {item.delegatedToName}
+          </Badge>
+          {item.delegado_assinatura_url && (
+            <img
+              src={item.delegado_assinatura_url}
+              alt={`Assinatura de ${item.delegado_por_nome || ''}`}
+              title={`Assinado digitalmente por ${item.delegado_por_nome || ''}`}
+              className="h-6 object-contain"
+            />
+          )}
+        </div>
       )}
       {item.status === 'aceite_admin' && (
-        <Badge variant="outline" className="text-blue-600">
+        <Badge variant="outline" style={{ color: 'var(--status-aceite-foreground)', borderColor: 'var(--status-aceite-foreground)' }}>
           Aguardando Secretaria
         </Badge>
       )}
@@ -592,64 +730,44 @@ export function RequestsList() {
   };
 
   const filteredPresentations = presentations.filter(item => {
-    const matchesSearch = item.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          item.contact?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     const matchesDate = matchesDateFilter(item.createdAt);
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesStatus && matchesDate;
   });
 
   const filteredAudiences = audiences.filter(item => {
-    const matchesSearch = item.company?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          item.contact?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
     const matchesDate = matchesDateFilter(item.createdAt);
-    return matchesSearch && matchesStatus && matchesDate;
+    return matchesStatus && matchesDate;
   });
 
   return (
     <div className="space-y-6">
       <div>
-        <h1>Gerenciar Solicitações</h1>
-        <p className="text-muted-foreground">Acompanhe e gerencie cartas de apresentação e pedidos de audiência</p>
+        <div className="flex items-center gap-2 mb-1.5" style={{ color: 'var(--ring)', fontSize: '13px', fontWeight: 600 }}>
+          Solicitações
+        </div>
+        <h1 className="font-serif" style={{ fontSize: '26px', fontWeight: 600, color: 'var(--foreground)' }}>Gerenciar Solicitações</h1>
+        <p style={{ fontSize: '13.5px', color: 'var(--muted-foreground)' }}>Acompanhe e gerencie cartas de apresentação e pedidos de audiência</p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Filtros</CardTitle>
-          <CardDescription>Pesquise e filtre as solicitações</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Pesquisar por empresa ou contato..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-            <div className="w-[200px]">
-              <Select value={dateFilter} onValueChange={setDateFilter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Filtrar por data" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas as datas</SelectItem>
-                  <SelectItem value="today">Hoje</SelectItem>
-                  <SelectItem value="yesterday">Ontem</SelectItem>
-                  <SelectItem value="last7days">Últimos 7 dias</SelectItem>
-                  <SelectItem value="last30days">Últimos 30 dias</SelectItem>
-                  <SelectItem value="thisMonth">Este mês</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="flex gap-3 justify-end">
+        <div className="w-[200px]">
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="h-11" style={{ backgroundColor: 'var(--card)', borderColor: 'var(--border)', borderRadius: '11px' }}>
+              <SelectValue placeholder="Filtrar por data" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as datas</SelectItem>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="yesterday">Ontem</SelectItem>
+              <SelectItem value="last7days">Últimos 7 dias</SelectItem>
+              <SelectItem value="last30days">Últimos 30 dias</SelectItem>
+              <SelectItem value="thisMonth">Este mês</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
 
       <Tabs defaultValue="presentations">
         <TabsList className="grid grid-cols-2 max-w-[70%] mx-auto">

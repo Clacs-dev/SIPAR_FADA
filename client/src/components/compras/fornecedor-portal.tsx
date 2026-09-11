@@ -71,27 +71,27 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
     return (
       <div className="p-8">
         <div className="max-w-4xl mx-auto">
-          <Card className="border-orange-200 bg-orange-50">
+          <Card className="border-tone-warn/30 bg-tone-warn-soft">
             <CardHeader>
               <div className="flex items-center gap-3">
-                <AlertCircle className="h-6 w-6 text-orange-600" />
+                <AlertCircle className="h-6 w-6 text-tone-warn" />
                 <div>
-                  <CardTitle className="text-orange-900">Bem-vindo, {fornecedorNome}</CardTitle>
-                  <p className="text-sm text-orange-700 mt-1">
+                  <CardTitle className="text-tone-warn">Bem-vindo, {fornecedorNome}</CardTitle>
+                  <p className="text-sm text-tone-warn mt-1">
                     Não foi possível carregar os pedidos no momento.
                   </p>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-orange-600 mb-4">{loadError}</p>
-              <Button 
+              <p className="text-sm text-tone-warn mb-4">{loadError}</p>
+              <Button
                 onClick={() => {
                   setLoadError(null);
                   fetchPedidos();
                 }}
                 variant="outline"
-                className="border-orange-300 text-orange-700 hover:bg-orange-100"
+                className="border-tone-warn/40 text-tone-warn hover:bg-tone-warn-soft"
               >
                 Tentar Novamente
               </Button>
@@ -149,14 +149,14 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
 
   const getPrioridadeBadge = (prioridade: string) => {
     const badges: Record<string, { label: string; color: string }> = {
-      urgente: { label: "Urgente", color: "bg-red-600" },
-      alta: { label: "Alta", color: "bg-orange-500" },
-      normal: { label: "Normal", color: "bg-blue-500" },
-      baixa: { label: "Baixa", color: "bg-gray-500" },
+      urgente: { label: "Urgente", color: "var(--tone-danger)" },
+      alta: { label: "Alta", color: "var(--tone-warn)" },
+      normal: { label: "Normal", color: "var(--tone-info)" },
+      baixa: { label: "Baixa", color: "var(--tone-neutral)" },
     };
     const badge = badges[prioridade] || badges.normal;
     return (
-      <Badge variant="outline" className={`${badge.color} text-white border-0`}>
+      <Badge variant="outline" className="text-white border-0" style={{ backgroundColor: badge.color }}>
         {badge.label}
       </Badge>
     );
@@ -201,25 +201,25 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
         <div className="grid gap-4 md:grid-cols-4">
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-blue-600">{minhasStats.disponiveis}</div>
+              <div className="text-2xl font-bold text-tone-info">{minhasStats.disponiveis}</div>
               <p className="text-xs text-muted-foreground">Pedidos Disponíveis</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-purple-600">{minhasStats.cotacoes_submetidas}</div>
+              <div className="text-2xl font-bold text-tone-accent">{minhasStats.cotacoes_submetidas}</div>
               <p className="text-xs text-muted-foreground">Cotações Submetidas</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-yellow-600">{minhasStats.aguardando_resultado}</div>
+              <div className="text-2xl font-bold text-tone-gold">{minhasStats.aguardando_resultado}</div>
               <p className="text-xs text-muted-foreground">Aguardando Resultado</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold text-green-600">{minhasStats.vencidas}</div>
+              <div className="text-2xl font-bold text-tone-success">{minhasStats.vencidas}</div>
               <p className="text-xs text-muted-foreground">Cotações Vencidas</p>
             </CardContent>
           </Card>
@@ -270,7 +270,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                         <h3 className="font-semibold">{pedido.numero}</h3>
                         {getPrioridadeBadge(pedido.prioridade)}
                         {jaCotou && (
-                          <Badge className="bg-green-500 text-white">
+                          <Badge className="bg-tone-success text-white">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             Cotação Submetida
                           </Badge>
@@ -316,7 +316,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       </div>
 
                       {/* Local de Entrega */}
-                      <div className="mt-3 p-3 bg-blue-50 rounded-lg text-sm">
+                      <div className="mt-3 p-3 bg-tone-info-soft rounded-lg text-sm">
                         <span className="text-muted-foreground">Local de Entrega:</span>
                         <p className="font-medium">{pedido.local_entrega}</p>
                       </div>
@@ -349,7 +349,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                         <Button 
                           size="sm" 
                           variant="outline"
-                          className="text-green-600 border-green-200"
+                          className="text-tone-success border-tone-success/30"
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           Ver Minha Cotação
@@ -387,19 +387,19 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-semibold">{pedido.numero}</h3>
                         {pedido.status === "em_analise" && (
-                          <Badge className="bg-purple-500 text-white">
+                          <Badge className="bg-tone-accent text-white">
                             <TrendingUp className="h-3 w-3 mr-1" />
                             Em Análise
                           </Badge>
                         )}
                         {pedido.status === "aprovado" && pedido.fornecedor_vencedor_id === fornecedorId && (
-                          <Badge className="bg-green-500 text-white">
+                          <Badge className="bg-tone-success text-white">
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             Cotação Aprovada!
                           </Badge>
                         )}
                         {pedido.status === "aprovado" && pedido.fornecedor_vencedor_id !== fornecedorId && (
-                          <Badge variant="outline" className="text-gray-500">
+                          <Badge variant="outline" className="text-tone-neutral">
                             Outro fornecedor venceu
                           </Badge>
                         )}
@@ -410,7 +410,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       <div className="grid grid-cols-3 gap-3 text-sm">
                         <div>
                           <span className="text-muted-foreground">Valor Total:</span>
-                          <p className="font-semibold text-green-600">
+                          <p className="font-semibold text-tone-success">
                             {minhaCotacao.valor_total.toLocaleString('pt-AO')} AOA
                           </p>
                         </div>
@@ -429,12 +429,12 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       </div>
 
                       {minhaCotacao.score_total !== undefined && minhaCotacao.score_total > 0 && (
-                        <div className="mt-3 p-3 bg-purple-50 rounded-lg">
+                        <div className="mt-3 p-3 bg-tone-accent-soft rounded-lg">
                           <div className="text-sm text-muted-foreground mb-1">Score de Competitividade:</div>
                           <div className="flex items-center gap-2">
                             <div className="flex-1 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-purple-600 h-2 rounded-full"
+                              <div
+                                className="bg-tone-accent h-2 rounded-full"
                                 style={{ width: `${minhaCotacao.score_total}%` }}
                               />
                             </div>
@@ -468,18 +468,18 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
           )}
 
           {!loading && pedidosVencidos.map((pedido) => (
-            <Card key={pedido.id} className="border-green-200 bg-green-50">
+            <Card key={pedido.id} className="border-tone-success/30 bg-tone-success-soft">
               <CardContent className="pt-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       <h3 className="font-semibold">{pedido.numero}</h3>
-                      <Badge className="bg-green-600 text-white">
+                      <Badge className="bg-tone-success text-white">
                         <CheckCircle2 className="h-3 w-3 mr-1" />
                         Vencedor
                       </Badge>
                       {pedido.ordem_compra_numero && (
-                        <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700">
+                        <Badge variant="outline" className="bg-tone-info-soft border-tone-info/30 text-tone-info">
                           OC: {pedido.ordem_compra_numero}
                         </Badge>
                       )}
@@ -490,7 +490,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-muted-foreground">Valor Aprovado:</span>
-                        <p className="font-semibold text-green-700 text-lg">
+                        <p className="font-semibold text-tone-success text-lg">
                           {pedido.valor_aprovado?.toLocaleString('pt-AO')} AOA
                         </p>
                       </div>

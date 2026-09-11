@@ -2,20 +2,18 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { ScheduleMeetingDialog } from "./schedule-meeting-dialog";
 import { DocumentViewer } from "../forms/document-viewer";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
-import { Search, Eye, Calendar as CalendarIconLucide, FileText, Clock } from "lucide-react";
+import { Eye, Calendar as CalendarIconLucide, FileText, Clock } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { format } from "date-fns@4.1.0";
 import { ptBR } from "date-fns@4.1.0/locale";
 
 export function SecretarySchedule() {
-  const [searchTerm, setSearchTerm] = useState("");
   const [presentations, setPresentations] = useState<any[]>([]);
   const [audiences, setAudiences] = useState<any[]>([]);
   const [allPresentations, setAllPresentations] = useState<any[]>([]);
@@ -92,22 +90,10 @@ export function SecretarySchedule() {
     setScheduleDialogOpen(true);
   };
 
-  const filterRequests = (requests: any[]) => {
-    if (!searchTerm) return requests;
-    
-    const term = searchTerm.toLowerCase();
-    return requests.filter(req =>
-      req.company?.toLowerCase().includes(term) ||
-      req.contact?.toLowerCase().includes(term) ||
-      req.contactPerson?.toLowerCase().includes(term) ||
-      req.email?.toLowerCase().includes(term)
-    );
-  };
-
-  const filteredPresentations = filterRequests(presentations);
-  const filteredAudiences = filterRequests(audiences);
-  const filteredAllPresentations = filterRequests(allPresentations);
-  const filteredAllAudiences = filterRequests(allAudiences);
+  const filteredPresentations = presentations;
+  const filteredAudiences = audiences;
+  const filteredAllPresentations = allPresentations;
+  const filteredAllAudiences = allAudiences;
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { label: string; className: string }> = {
@@ -510,17 +496,6 @@ export function SecretarySchedule() {
               <CardDescription>
                 Total: {presentations.length + audiences.length} solicitações
               </CardDescription>
-            </div>
-            <div className="w-[300px]">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Pesquisar..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
             </div>
           </div>
         </CardHeader>

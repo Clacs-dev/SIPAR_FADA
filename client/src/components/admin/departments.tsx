@@ -1,7 +1,12 @@
 /**
- * ESTRUTURA DE DEPARTAMENTOS DO SISTEMA
- * 
- * Organização hierárquica dos departamentos da instituição
+ * CATEGORIAS DE DEPARTAMENTOS DO SISTEMA
+ *
+ * A lista concreta de departamentos vive na base de dados (tabela
+ * Department, gerida em admin/departments-admin.tsx e exposta pelo hook
+ * useDepartments()) — nunca aqui. Este ficheiro guarda apenas a taxonomia
+ * fixa de categorias (que não muda por instalação) e um mapeamento
+ * decorativo id -> ícone, usados pelos ecrãs que listam/filtram
+ * departamentos reais.
  */
 
 import {
@@ -31,16 +36,7 @@ import {
 } from "lucide-react";
 import { LucideIcon } from "lucide-react";
 
-export interface Department {
-  id: string;
-  name: string;
-  category: DepartmentCategory;
-  description?: string;
-  icon?: LucideIcon;
-  color?: string;
-}
-
-export type DepartmentCategory = 
+export type DepartmentCategory =
   | 'gabinetes_executivos'      // Gabinetes de Direção Executiva
   | 'gabinetes_governamentais'  // Gabinetes Governamentais
   | 'operacionais'              // Departamentos Operacionais
@@ -80,299 +76,82 @@ export const DEPARTMENT_CATEGORIES: Record<DepartmentCategory, {
 };
 
 /**
- * LISTA COMPLETA DE DEPARTAMENTOS
+ * Icones decorativos por slug de departamento. Cobre os slugs originais do
+ * sistema; um departamento criado depois pelo admin (slug desconhecido aqui)
+ * cai no icone por omissão — isto é só estética, nunca bloqueia nem esconde
+ * dados reais.
  */
-export const DEPARTMENTS: Department[] = [
-  // =====================================================
-  // GABINETES EXECUTIVOS
-  // =====================================================
-  {
-    id: 'gabinete_pca',
-    name: 'Gabinete do PCA',
-    category: 'gabinetes_executivos',
-    description: 'Gabinete do Presidente do Conselho de Administração',
-    icon: Briefcase,
-    color: 'bg-purple-500'
-  },
-  {
-    id: 'gabinete_pce',
-    name: 'Gabinete do PCE',
-    category: 'gabinetes_executivos',
-    description: 'Gabinete do Presidente do Conselho Executivo',
-    icon: Target,
-    color: 'bg-purple-600'
-  },
-  {
-    id: 'gabinete_administrador',
-    name: 'Gabinete do Administrador',
-    category: 'gabinetes_executivos',
-    description: 'Gabinete do Administrador Executivo',
-    icon: Building2,
-    color: 'bg-purple-700'
-  },
-  {
-    id: 'gabinete_director',
-    name: 'Gabinete do Director',
-    category: 'gabinetes_executivos',
-    description: 'Gabinete da Direcção Geral',
-    icon: Building,
-    color: 'bg-purple-800'
-  },
+const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
+  gabinete_pca: Briefcase,
+  gabinete_pce: Target,
+  gabinete_administrador: Building2,
+  gabinete_director: Building,
+  gabinete_ministro: Landmark,
+  gabinete_secretario_estado_1: FileText,
+  gabinete_secretario_estado_2: FileText,
+  gabinete_vice_governador_1: Landmark,
+  gabinete_vice_governador_2: Landmark,
+  financeiro: DollarSign,
+  recursos_humanos: Users,
+  juridico: Scale,
+  compras: ShoppingCart,
+  tecnologia_informacao: Laptop,
+  administracao: FolderOpen,
+  administrativo: FileCheck,
+  comunicacao_imagem: Megaphone,
+  seguranca: Shield,
+  planeamento: BarChart3,
+  organizacao_qualidade: CheckCircle,
+  compliance: ClipboardCheck,
+  risco: AlertTriangle,
+  secretaria: UserCircle,
+  externo: Globe,
+  gestao: Cog,
+  operacoes: Cog,
+  operacional_frota: Truck,
+};
 
-  // =====================================================
-  // GABINETES GOVERNAMENTAIS
-  // =====================================================
-  {
-    id: 'gabinete_ministro',
-    name: 'Gabinete do Ministro',
-    category: 'gabinetes_governamentais',
-    description: 'Gabinete Ministerial',
-    icon: Landmark,
-    color: 'bg-blue-600'
-  },
-  {
-    id: 'gabinete_secretario_estado_1',
-    name: 'Gabinete do Secretário de Estado 1',
-    category: 'gabinetes_governamentais',
-    description: 'Primeiro Gabinete da Secretaria de Estado',
-    icon: FileText,
-    color: 'bg-blue-500'
-  },
-  {
-    id: 'gabinete_secretario_estado_2',
-    name: 'Gabinete do Secretário de Estado 2',
-    category: 'gabinetes_governamentais',
-    description: 'Segundo Gabinete da Secretaria de Estado',
-    icon: FileText,
-    color: 'bg-blue-500'
-  },
-  {
-    id: 'gabinete_vice_governador_1',
-    name: 'Gabinete do Vice-Governador 1',
-    category: 'gabinetes_governamentais',
-    description: 'Primeiro Gabinete do Vice-Governador',
-    icon: Landmark,
-    color: 'bg-blue-400'
-  },
-  {
-    id: 'gabinete_vice_governador_2',
-    name: 'Gabinete do Vice-Governador 2',
-    category: 'gabinetes_governamentais',
-    description: 'Segundo Gabinete do Vice-Governador',
-    icon: Landmark,
-    color: 'bg-blue-400'
-  },
+const DEFAULT_DEPARTMENT_ICON: LucideIcon = Building2;
 
-  // =====================================================
-  // DEPARTAMENTOS OPERACIONAIS
-  // =====================================================
-  {
-    id: 'financeiro',
-    name: 'Financeiro',
-    category: 'operacionais',
-    description: 'Departamento Financeiro e Contabilístico',
-    icon: DollarSign,
-    color: 'bg-green-600'
-  },
-  {
-    id: 'recursos_humanos',
-    name: 'Recursos Humanos',
-    category: 'operacionais',
-    description: 'Departamento de Gestão de Recursos Humanos',
-    icon: Users,
-    color: 'bg-green-500'
-  },
-  {
-    id: 'juridico',
-    name: 'Jurídico',
-    category: 'operacionais',
-    description: 'Departamento Jurídico e Contencioso',
-    icon: Scale,
-    color: 'bg-green-700'
-  },
-  {
-    id: 'compras',
-    name: 'Compras',
-    category: 'operacionais',
-    description: 'Departamento de Compras e Procurement',
-    icon: ShoppingCart,
-    color: 'bg-green-600'
-  },
-  {
-    id: 'tecnologia_informacao',
-    name: 'Tecnologia e Informação',
-    category: 'operacionais',
-    description: 'Departamento de TI e Sistemas de Informação',
-    icon: Laptop,
-    color: 'bg-green-500'
-  },
-
-  // =====================================================
-  // DEPARTAMENTOS DE APOIO
-  // =====================================================
-  {
-    id: 'administracao',
-    name: 'Administração',
-    category: 'apoio',
-    description: 'Departamento de Administração Geral',
-    icon: FolderOpen,
-    color: 'bg-orange-500'
-  },
-  {
-    id: 'administrativo',
-    name: 'Administrativo',
-    category: 'apoio',
-    description: 'Serviços Administrativos',
-    icon: FileCheck,
-    color: 'bg-orange-500'
-  },
-  {
-    id: 'comunicacao_imagem',
-    name: 'Comunicação e Imagem',
-    category: 'apoio',
-    description: 'Departamento de Comunicação e Relações Públicas',
-    icon: Megaphone,
-    color: 'bg-orange-600'
-  },
-  {
-    id: 'seguranca',
-    name: 'Segurança',
-    category: 'apoio',
-    description: 'Departamento de Segurança e Vigilância',
-    icon: Shield,
-    color: 'bg-orange-700'
-  },
-
-  // =====================================================
-  // DEPARTAMENTOS ESTRATÉGICOS
-  // =====================================================
-  {
-    id: 'planeamento',
-    name: 'Planeamento',
-    category: 'estrategicos',
-    description: 'Departamento de Planeamento Estratégico',
-    icon: BarChart3,
-    color: 'bg-indigo-600'
-  },
-  {
-    id: 'organizacao_qualidade',
-    name: 'Organização e Qualidade',
-    category: 'estrategicos',
-    description: 'Departamento de Organização e Gestão da Qualidade',
-    icon: CheckCircle,
-    color: 'bg-indigo-500'
-  },
-  {
-    id: 'compliance',
-    name: 'Compliance',
-    category: 'estrategicos',
-    description: 'Departamento de Compliance e Conformidade',
-    icon: ClipboardCheck,
-    color: 'bg-indigo-600'
-  },
-  {
-    id: 'risco',
-    name: 'Risco',
-    category: 'estrategicos',
-    description: 'Departamento de Gestão de Riscos',
-    icon: AlertTriangle,
-    color: 'bg-indigo-700'
-  },
-
-  // =====================================================
-  // NOVOS DEPARTAMENTOS (5 adicionados)
-  // =====================================================
-  {
-    id: 'secretaria',
-    name: 'Secretaria',
-    category: 'apoio',
-    description: 'Secretaria e Atendimento',
-    icon: UserCircle,
-    color: 'bg-orange-600'
-  },
-  {
-    id: 'externo',
-    name: 'Externo',
-    category: 'apoio',
-    description: 'Utilizadores Externos',
-    icon: Globe,
-    color: 'bg-orange-400'
-  },
-  {
-    id: 'gestao',
-    name: 'Gestão',
-    category: 'gabinetes_executivos',
-    description: 'Departamento de Gestão Geral',
-    icon: Cog,
-    color: 'bg-purple-500'
-  },
-  {
-    id: 'operacoes',
-    name: 'Operações',
-    category: 'operacionais',
-    description: 'Departamento de Operações Gerais',
-    icon: Cog,
-    color: 'bg-green-600'
-  },
-  {
-    id: 'operacional_frota',
-    name: 'Operacional e Frota',
-    category: 'operacionais',
-    description: 'Departamento Operacional e Gestão de Frota',
-    icon: Truck,
-    color: 'bg-green-500'
-  },
-];
-
-/**
- * Obter departamento por ID
- */
-export function getDepartmentById(id: string): Department | undefined {
-  return DEPARTMENTS.find(dept => dept.id === id);
+export function getDepartmentIcon(slug: string): LucideIcon {
+  return DEPARTMENT_ICONS[slug] || DEFAULT_DEPARTMENT_ICON;
 }
 
-/**
- * Obter departamentos por categoria
- */
-export function getDepartmentsByCategory(category: DepartmentCategory): Department[] {
-  return DEPARTMENTS.filter(dept => dept.category === category);
-}
-
-/**
- * Obter todos os departamentos organizados por categoria
- */
-export function getDepartmentsGroupedByCategory(): Record<DepartmentCategory, Department[]> {
-  const grouped: Record<string, Department[]> = {};
-  
-  DEPARTMENTS.forEach(dept => {
-    if (!grouped[dept.category]) {
-      grouped[dept.category] = [];
-    }
-    grouped[dept.category].push(dept);
-  });
-  
-  return grouped as Record<DepartmentCategory, Department[]>;
-}
-
-/**
- * Obter informações da categoria
- */
 export function getCategoryInfo(category: DepartmentCategory) {
   return DEPARTMENT_CATEGORIES[category];
 }
 
 /**
- * Obter nome do departamento por ID
+ * Forma minima que os helpers abaixo esperam de um departamento real (ver
+ * useDepartments()). Nota: `slug` (ex.: "financeiro", "gabinete_pca") é o
+ * identificador semantico usado em toda a app para cruzar com `user.role` e
+ * com `department_slug` das estatisticas — `id` é só a chave primaria da BD
+ * (UUID), usada apenas nas operações CRUD do próprio ecrã de administração.
  */
-export function getDepartmentName(id: string): string {
-  const dept = getDepartmentById(id);
-  return dept?.name || 'Sem Departamento';
+export interface DepartmentLike {
+  id: string;
+  slug: string;
+  nome: string;
+  categoria?: string | null;
+}
+
+export function getDepartmentsByCategory<T extends DepartmentLike>(departments: T[], category: DepartmentCategory): T[] {
+  return departments.filter((dept) => dept.categoria === category);
+}
+
+export function getDepartmentName<T extends DepartmentLike>(departments: T[], slugOrName: string): string {
+  const found = departments.find((dept) => dept.slug === slugOrName || dept.nome === slugOrName || dept.id === slugOrName);
+  return found?.nome || 'Sem Departamento';
 }
 
 /**
- * Obter opções agrupadas para Select
+ * Agrupa departamentos reais por categoria, prontos a alimentar um
+ * <SelectGroup> — mesmo formato usado antes pela lista estática, mas agora
+ * a partir de dados vivos (ex.: useDepartments() do hook). O `value` de cada
+ * opção é o `slug`, não o `id` da BD, para continuar compatível com `role` e
+ * com os filtros existentes baseados em `department_slug`.
  */
-export function getGroupedDepartmentOptions() {
+export function getGroupedDepartmentOptions<T extends DepartmentLike>(departments: T[]) {
   const categories: DepartmentCategory[] = [
     'gabinetes_executivos',
     'gabinetes_governamentais',
@@ -381,15 +160,17 @@ export function getGroupedDepartmentOptions() {
     'estrategicos'
   ];
 
-  return categories.map(category => ({
-    label: DEPARTMENT_CATEGORIES[category].label,
-    options: getDepartmentsByCategory(category).map(dept => {
-      const Icon = dept.icon;
-      return {
-        value: dept.id,
-        label: dept.name,
-        icon: Icon ? <Icon className="h-4 w-4 inline mr-2" /> : null
-      };
-    })
-  }));
+  return categories
+    .map((category) => ({
+      label: DEPARTMENT_CATEGORIES[category].label,
+      options: getDepartmentsByCategory(departments, category).map((dept) => {
+        const Icon = getDepartmentIcon(dept.slug);
+        return {
+          value: dept.slug,
+          label: dept.nome,
+          icon: <Icon className="h-4 w-4 inline mr-2" />
+        };
+      })
+    }))
+    .filter((group) => group.options.length > 0);
 }

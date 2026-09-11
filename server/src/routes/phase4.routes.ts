@@ -1,10 +1,13 @@
 import { Router, Response, NextFunction } from 'express';
+import { requireLicenseModule } from '../middlewares/license';
 import prisma from '../config/database';
 import { AuthenticatedRequest, requireAuth } from '../middlewares/auth';
 import { SequenceService } from '../services/sequence.service';
 import { HistoryService } from '../services/history.service';
+import logger from '../config/logger';
 
 const router = Router();
+router.use(requireLicenseModule('finance'));
 
 function parse(value: any, fallback: any = {}) {
   if (!value) return fallback;
@@ -102,7 +105,7 @@ router.post('/procurements/:id/quotations', requireAuth as any, async (req: Auth
     await prisma.procurement.update({
       where: { id: req.params.id },
       data: { status: 'cotacao' },
-    }).catch(() => null);
+    }).catch((error) => logger.warn(`Falha ao sincronizar status do procurement ${req.params.id} para "cotacao":`, error));
 
     await HistoryService.record({
       module: 'procurement',
@@ -144,7 +147,7 @@ router.post('/quotations/:id/select', requireAuth as any, async (req: Authentica
           fornecedor: quotation.fornecedor,
           valor: quotation.valor,
         }
-      }).catch(() => null);
+      }).catch((error) => logger.warn(`Falha ao sincronizar procurement ${quotation.procurementId} apos selecionar cotacao ${quotation.id}:`, error));
 
       await HistoryService.record({
         module: 'procurement',
@@ -230,7 +233,8 @@ router.post('/purchase-orders/:id/receive', requireAuth as any, async (req: Auth
     });
 
     if (existing.procurementId) {
-      await prisma.procurement.update({ where: { id: existing.procurementId }, data: { status: 'recebida' } }).catch(() => null);
+      await prisma.procurement.update({ where: { id: existing.procurementId }, data: { status: 'recebida' } })
+        .catch((error) => logger.warn(`Falha ao sincronizar procurement ${existing.procurementId} para "recebida":`, error));
     }
 
     res.status(200).json({ success: true, purchaseOrder: toRecord(updated) });
