@@ -15,12 +15,17 @@ import {
 import { Alert, AlertDescription } from "../ui/alert";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, somarFiscal, type TipoOperacaoFiscal } from '../../utils/fiscal';
+import { toast } from "sonner@2.0.3";
+import { formatarIban, formatarNib, validarIban, validarNib } from "../../utils/bank-format";
+import { MoneyInput } from "../ui/money-input";
 
 interface FacturaItem {
   id: string;
   descricao: string;
   quantidade: number;
   preco_unitario: number;
+  tipo_operacao: TipoOperacaoFiscal;
   iva: number;
 }
 
@@ -50,8 +55,11 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
     tipo_documento: 'factura',
   });
 
-  // Dados bancários - carregados do perfil (reutilizáveis) e editáveis aqui
+  // Dados bancários - carregados do perfil (a coordenada "activa") e
+  // editáveis aqui. Um fornecedor pode ter várias coordenadas guardadas
+  // (user.bankAccounts) e escolher qual usar nesta factura.
   const [dadosBancarios, setDadosBancarios] = useState({
+    label: '',
     bankName: user?.bankName || '',
     bankAccountHolder: user?.bankAccountHolder || user?.name || '',
     bankIban: user?.bankIban || '',
@@ -62,26 +70,76 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
   });
   const [savingBankDetails, setSavingBankDetails] = useState(false);
   const [bankDetailsSaved, setBankDetailsSaved] = useState(false);
+  const contasGuardadas = user?.bankAccounts || [];
+  // Erros de validação do IBAN/NIB (comprimento exacto: 25 e 21 caracteres,
+  // respectivamente) - mostrados por baixo do campo, sem bloquear a escrita.
+  const erroIban = validarIban(dadosBancarios.bankIban);
+  const erroNib = validarNib(dadosBancarios.bankNib);
 
+  const aplicarContaGuardada = (contaId: string) => {
+    const conta = contasGuardadas.find((c) => c.id === contaId);
+    if (!conta) return;
+    setDadosBancarios({
+      label: conta.label || '',
+      bankName: conta.bankName || '',
+      bankAccountHolder: conta.bankAccountHolder || '',
+      bankIban: conta.bankIban || '',
+      bankNib: conta.bankNib || '',
+      bankSwift: conta.bankSwift || '',
+      bankCity: conta.bankCity || '',
+      bankCountry: conta.bankCountry || 'Angola',
+    });
+  };
+
+  // Guarda estes dados como uma NOVA coordenada na lista (não substitui as
+  // outras já guardadas) e torna-a a activa nesta submissão.
   const handleSaveBankDetails = async () => {
+    if (erroIban || erroNib) {
+      toast.error(erroIban || erroNib || 'Coordenadas bancárias inválidas');
+      return;
+    }
+    if (!dadosBancarios.bankIban && !dadosBancarios.bankNib) {
+      toast.error('Indique o IBAN ou o NIB desta conta.');
+      return;
+    }
     setSavingBankDetails(true);
     setBankDetailsSaved(false);
     try {
-      await fetch(`${API_BASE_URL}/auth/me/bank-details`, {
-        method: 'PUT',
+      const response = await fetch(`${API_BASE_URL}/auth/me/bank-accounts`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify(dadosBancarios),
+        body: JSON.stringify({ ...dadosBancarios, tornarActiva: true }),
       });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Erro ao guardar coordenada bancária');
+      }
       await refreshUser();
       setBankDetailsSaved(true);
       setTimeout(() => setBankDetailsSaved(false), 3000);
     } catch (err) {
  console.error('Erro ao guardar dados bancários:', err);
+      toast.error(err instanceof Error ? err.message : 'Erro ao guardar dados bancários');
     } finally {
       setSavingBankDetails(false);
+    }
+  };
+
+  const handleRemoverContaGuardada = async (contaId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/me/bank-accounts/${contaId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) throw new Error('Erro ao remover coordenada bancária');
+      await refreshUser();
+      toast.success('Coordenada bancária removida.');
+    } catch (err) {
+ console.error('Erro ao remover coordenada bancária:', err);
+      toast.error('Erro ao remover coordenada bancária');
     }
   };
 
@@ -92,6 +150,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
       descricao: '',
       quantidade: 1,
       preco_unitario: 0,
+      tipo_operacao: 'produto',
       iva: 14,
     },
   ]);
@@ -99,22 +158,22 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
   // Anexos
   const [anexos, setAnexos] = useState<File[]>([]);
 
-  // Cálculos automáticos
+  // Cálculos automáticos (Angola: IVA 14/7/5/2% para produtos, ou retenção na
+  // fonte de 6,5% para serviços - ver client/src/utils/fiscal.ts)
   const calcularTotais = () => {
-    let subtotal = 0;
-    let ivaTotal = 0;
-
-    itens.forEach((item) => {
-      const itemSubtotal = item.quantidade * item.preco_unitario;
-      const itemIva = itemSubtotal * (item.iva / 100);
-      subtotal += itemSubtotal;
-      ivaTotal += itemIva;
-    });
+    const linhas = itens.map((item) =>
+      calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva)
+    );
+    const somatorio = somarFiscal(linhas);
 
     return {
-      subtotal,
-      ivaTotal,
-      total: subtotal + ivaTotal,
+      subtotal: somatorio.valor_bruto,
+      ivaTotal: somatorio.valor_iva,
+      retencaoTotal: somatorio.valor_retencao,
+      total: somatorio.valor_bruto + somatorio.valor_iva,
+      // Já calculado por item em calcularFiscal/somarFiscal (bruto menos IVA
+      // cativo e/ou retenção) - não recalcular aqui para não desalinhar.
+      valorFinal: somatorio.valor_final,
     };
   };
 
@@ -136,6 +195,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         descricao: '',
         quantidade: 1,
         preco_unitario: 0,
+        tipo_operacao: 'produto',
         iva: 14,
       },
     ]);
@@ -149,9 +209,16 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
 
   const handleItemChange = (id: string, field: keyof FacturaItem, value: any) => {
     setItens(
-      itens.map((item) =>
-        item.id === id ? { ...item, [field]: value } : item
-      )
+      itens.map((item) => {
+        if (item.id !== id) return item;
+        const updated = { ...item, [field]: value };
+        // Ao mudar para "serviço" força a retenção (sem IVA); ao mudar para
+        // "produto" volta à taxa de IVA geral por omissão.
+        if (field === 'tipo_operacao') {
+          updated.iva = value === 'servico' ? 0 : 14;
+        }
+        return updated;
+      })
     );
   };
 
@@ -228,6 +295,9 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
       if (!dadosBancarios.bankIban && !dadosBancarios.bankNib) {
         throw new Error('Por favor, indique o IBAN ou o NIB para recebimento do pagamento');
       }
+      if (erroIban || erroNib) {
+        throw new Error(erroIban || erroNib || 'Coordenadas bancárias inválidas');
+      }
 
       // Gerar número da factura automaticamente
       const dataAtual = new Date();
@@ -243,13 +313,19 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         fornecedor_id: user?.id, // O utilizador externo é o fornecedor
         fornecedor_nome: user?.name,
         fornecedor_email: user?.email,
-        itens: itens.map((item, index) => ({
-          ...item,
-          total: item.quantidade * item.preco_unitario * (1 + item.iva / 100),
-        })),
+        itens: itens.map((item) => {
+          const fiscal = calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva);
+          return { ...item, iva: fiscal.taxa_iva, valor_retencao: fiscal.valor_retencao, total: fiscal.valor_final };
+        }),
+        // "fornecedor"/"valor" sao os campos que o servidor exige (ver
+        // server/src/services/validation.service.ts).
+        fornecedor: user?.name,
+        valor: totais.total,
         subtotal: totais.subtotal,
         iva_total: totais.ivaTotal,
+        retencao_total: totais.retencaoTotal,
         total: totais.total,
+        valor_final: totais.valorFinal,
         banco_nome: dadosBancarios.bankName,
         banco_titular: dadosBancarios.bankAccountHolder,
         banco_iban: dadosBancarios.bankIban,
@@ -422,10 +498,42 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Estes dados ficam guardados no seu perfil e são reutilizados automaticamente nas próximas facturas. Pode alterá-los aqui sempre que necessário.
+              Pode guardar várias coordenadas bancárias e escolher qual usar em cada factura. "Guardar como meus dados" adiciona a que está preenchida abaixo à lista, sem substituir as outras.
             </p>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
+          <CardContent className="space-y-4">
+            {contasGuardadas.length > 0 && (
+              <div className="space-y-2 pb-2 border-b">
+                <Label>Coordenadas guardadas</Label>
+                <div className="space-y-2">
+                  {contasGuardadas.map((conta) => (
+                    <div key={conta.id} className="flex items-center justify-between gap-2 bg-muted rounded-lg p-2 text-sm">
+                      <button
+                        type="button"
+                        className="flex-1 text-left hover:underline"
+                        onClick={() => aplicarContaGuardada(conta.id)}
+                      >
+                        <span className="font-medium">{conta.label || conta.bankName}</span>
+                        {conta.bankIban && <span className="text-muted-foreground"> — {conta.bankIban}</span>}
+                      </button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => handleRemoverContaGuardada(conta.id)}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="bankLabel">Nome desta coordenada (ex: "Conta principal", "Conta serviços")</Label>
+              <Input
+                id="bankLabel"
+                placeholder="Nome para identificar esta conta na lista"
+                value={dadosBancarios.label}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, label: e.target.value })}
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="bankAccountHolder">Titular da Conta</Label>
               <Input
@@ -445,22 +553,28 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="bankIban">IBAN</Label>
+              <Label htmlFor="bankIban">IBAN (25 caracteres: AO + 2 dígitos + 21 dígitos)</Label>
               <Input
                 id="bankIban"
-                placeholder="AO06 0000 0000 0000 0000 0000 0"
+                placeholder="AO06 0055 0000 2159 9539 1019 3"
                 value={dadosBancarios.bankIban}
-                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankIban: e.target.value })}
+                maxLength={31}
+                aria-invalid={!!erroIban}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankIban: formatarIban(e.target.value) })}
               />
+              {erroIban && <p className="text-xs text-destructive">{erroIban}</p>}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="bankNib">NIB</Label>
+              <Label htmlFor="bankNib">NIB (21 dígitos)</Label>
               <Input
                 id="bankNib"
-                placeholder="0000 0000 0000 0000 0000 0"
+                placeholder="0055 0000 2159 9539 1019 3"
                 value={dadosBancarios.bankNib}
-                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankNib: e.target.value })}
+                maxLength={26}
+                aria-invalid={!!erroNib}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankNib: formatarNib(e.target.value) })}
               />
+              {erroNib && <p className="text-xs text-destructive">{erroNib}</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="bankSwift">Código SWIFT/BIC</Label>
@@ -488,6 +602,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                 value={dadosBancarios.bankCountry}
                 onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankCountry: e.target.value })}
               />
+            </div>
             </div>
           </CardContent>
         </Card>
@@ -662,33 +777,51 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                   </div>
                   <div className="space-y-2">
                     <Label>Preço Unit. *</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <MoneyInput
                       value={item.preco_unitario}
-                      onChange={(e) =>
-                        handleItemChange(item.id, 'preco_unitario', parseFloat(e.target.value) || 0)
-                      }
+                      onValueChange={(valor) => handleItemChange(item.id, 'preco_unitario', valor)}
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>IVA (%)</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={item.iva}
-                      onChange={(e) =>
-                        handleItemChange(item.id, 'iva', parseFloat(e.target.value) || 0)
-                      }
-                    />
+                    <Label>Produto ou Serviço *</Label>
+                    <select
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+                      value={item.tipo_operacao}
+                      onChange={(e) => handleItemChange(item.id, 'tipo_operacao', e.target.value)}
+                    >
+                      <option value="produto">Produto (IVA)</option>
+                      <option value="servico">Serviço (Retenção)</option>
+                    </select>
                   </div>
-                  <div className="col-span-3 flex items-end">
+                  <div className="space-y-2">
+                    {item.tipo_operacao === 'servico' ? (
+                      <>
+                        <Label>Retenção na Fonte</Label>
+                        <div className="w-full px-3 py-2 border border-input rounded-md bg-accent text-sm">
+                          {TAXA_RETENCAO_SERVICOS}%
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Label>IVA (%)</Label>
+                        <select
+                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+                          value={item.iva}
+                          onChange={(e) =>
+                            handleItemChange(item.id, 'iva', parseFloat(e.target.value) || 0)
+                          }
+                        >
+                          {TAXAS_IVA_PRODUTOS.map((taxa) => (
+                            <option key={taxa} value={taxa}>{taxa}%</option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                  </div>
+                  <div className="col-span-2 flex items-end">
                     <p className="text-sm text-muted-foreground">
-                      Total: {formatCurrency(item.quantidade * item.preco_unitario * (1 + item.iva / 100))}
+                      A Pagar: {formatCurrency(calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva).valor_final)}
                     </p>
                   </div>
                 </div>
@@ -698,16 +831,20 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
             {/* Totais */}
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
-                <span>Subtotal:</span>
+                <span>Valor Bruto:</span>
                 <span>{formatCurrency(totais.subtotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span>IVA Total:</span>
+                <span>Valor IVA (Cativo):</span>
                 <span>{formatCurrency(totais.ivaTotal)}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}% serviços):</span>
+                <span className="text-amber-600">-{formatCurrency(totais.retencaoTotal)}</span>
+              </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                <span>Total:</span>
-                <span>{formatCurrency(totais.total)}</span>
+                <span>Valor Final a Pagar:</span>
+                <span>{formatCurrency(totais.valorFinal)}</span>
               </div>
             </div>
           </CardContent>

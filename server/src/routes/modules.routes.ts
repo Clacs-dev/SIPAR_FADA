@@ -2,7 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { ModuleRoutesHelper, ModuleConfig, STATUS, resolveFornecedorBankInfo, recordToResource } from '../utils/module-routes-helper';
+import { ModuleRoutesHelper, ModuleConfig, STATUS, resolveFornecedorBankInfo, recordToResource, normalizeAnexos } from '../utils/module-routes-helper';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
 import { requireLicenseModule } from '../middlewares/license';
 import { MeetingLinkService } from '../services/meeting-link.service';
@@ -10,6 +10,8 @@ import { emailService } from '../services/email.service';
 import { fornecedorCredentialsEmailHtml, cotacaoConviteEmailHtml, actaAprovadaEmailHtml } from '../services/email-templates';
 import { notifications } from '../services/notification.service';
 import { SequenceService } from '../services/sequence.service';
+import { HistoryService } from '../services/history.service';
+import { montarFacturaDaOrdem, montarDocumentoOrdemCompra, garantirOrdemCompraDaFactura } from '../services/procurement-factura.service';
 import logger from '../config/logger';
 import prisma from '../config/database';
 
@@ -207,7 +209,7 @@ function cotacaoToResource(record: any) {
     fornecedor_email: record.email,
     valor_total: record.valor,
     submitted_at: record.createdAt?.toISOString?.() || record.createdAt,
-    anexos: safeParse(record.anexos, []),
+    anexos: normalizeAnexos(safeParse(record.anexos, [])),
   };
 }
 
@@ -225,7 +227,7 @@ function facturaToResource(record: any) {
     dataEmissao: record.dataEmissao,
     dataVencimento: record.dataVencimento,
     descricao: record.descricao,
-    anexos: safeParse(record.anexos, []),
+    anexos: normalizeAnexos(safeParse(record.anexos, [])),
     numero_ordem: record.numeroOrdem,
     numero_ordem_pagamento: record.numeroOrdemPagamento,
     created_by_id: record.createdById,
@@ -678,12 +680,19 @@ function registerCrud(config: ModuleConfig) {
 
     router.post(`${config.path}/pedidos/:pedidoId/cotacoes`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        // O formulario do fornecedor so envia fornecedor_id: sem ir buscar o
+        // registo, a cotacao (e depois a ordem e a factura) ficava com o nome
+        // generico "Fornecedor" e sem email.
+        const fornecedorId = req.body.fornecedor_id || req.body.fornecedorId || null;
+        const fornecedorRegisto = fornecedorId
+          ? await prisma.fornecedor.findUnique({ where: { id: fornecedorId } }).catch(() => null)
+          : null;
         const cotacao = await prisma.purchaseQuotation.create({
           data: {
             procurementId: req.params.pedidoId,
-            fornecedorId: req.body.fornecedor_id || req.body.fornecedorId || null,
-            fornecedor: req.body.fornecedor_nome || req.body.fornecedor || 'Fornecedor',
-            email: req.body.fornecedor_email || req.body.email || null,
+            fornecedorId,
+            fornecedor: req.body.fornecedor_nome || req.body.fornecedor || fornecedorRegisto?.nome || 'Fornecedor',
+            email: req.body.fornecedor_email || req.body.email || fornecedorRegisto?.email || null,
             valor: numberValue(req.body.valor_total || req.body.valor),
             moeda: req.body.moeda || 'AOA',
             anexos: stringify(req.body.anexos, []),
@@ -751,6 +760,15 @@ function registerCrud(config: ModuleConfig) {
 
         const ordemSequencia = await SequenceService.next('purchaseOrder');
 
+        // Cotacoes antigas gravaram o nome generico "Fornecedor"; o nome real
+        // vem do registo do fornecedor para nao se propagar a ordem/factura.
+        const fornecedorRegisto = cotacao.fornecedorId
+          ? await prisma.fornecedor.findUnique({ where: { id: cotacao.fornecedorId } }).catch(() => null)
+          : null;
+        const nomeFornecedor = cotacao.fornecedor && cotacao.fornecedor !== 'Fornecedor'
+          ? cotacao.fornecedor
+          : fornecedorRegisto?.nome || cotacao.fornecedor || null;
+
         // Aprovar o pedido e emitir a ordem de compra tem de ser atomico: uma
         // falha a meio nao pode deixar o pedido "concluido" sem nenhuma ordem
         // de compra correspondente (ou vice-versa).
@@ -760,7 +778,7 @@ function registerCrud(config: ModuleConfig) {
             data: {
               status: 'concluido',
               fornecedorId: cotacao.fornecedorId || null,
-              fornecedor: cotacao.fornecedor || null,
+              fornecedor: nomeFornecedor,
               valor: cotacao.valor || undefined,
             }
           });
@@ -840,55 +858,42 @@ function registerCrud(config: ModuleConfig) {
         if (!ordemAtual) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de compra nao encontrada' });
 
         const facturaExistente = await prisma.factura.findFirst({ where: { purchaseOrderId: ordemAtual.id } });
-        const itens = safeParse(ordemAtual.itens, []);
+        const user = (req as any).user;
+        const dadosRececao = { status: nextStatus, recebidoEm: new Date(), recebidoPorId: user?.id, recebidoPorNome: user?.name };
 
         if (!facturaExistente) {
-          // A descricao da factura tem de reflectir o que foi de facto pedido/cotado
-          // (registado pelas Compras no pedido de compra), nao um texto generico com o
-          // numero da ordem - cada factura e especifica ao servico/bem adquirido.
-          const pedidoOrigem = ordemAtual.procurementId
-            ? await prisma.procurement.findUnique({ where: { id: ordemAtual.procurementId } })
-            : null;
-          const descricaoItens = Array.isArray(itens) && itens.length > 0
-            ? itens.map((item: any) => item.descricao || item.nome).filter(Boolean).join(', ')
-            : null;
-          const descricaoFactura = pedidoOrigem?.descricao || descricaoItens
-            || `Factura referente a Ordem de Compra ${ordemAtual.numero || ordemAtual.id}`;
-
-          // As coordenadas bancarias da factura vem sempre do fornecedor real (conta de
-          // utilizador ligada ou registo de Fornecedor), nunca de um valor estatico.
-          const bancoInfo = await resolveFornecedorBankInfo(
-            { purchaseOrderId: ordemAtual.id, fornecedor: ordemAtual.fornecedor },
-            { fornecedor_id: ordemAtual.fornecedorId }
-          ).catch(() => null);
-
+          // Fornecedor, NIF/contactos, itens com preco e IVA da cotacao aprovada,
+          // totais, validacao, historico, dados bancarios e todos os anexos do
+          // processo (cotacao + pedido + ordem) - ver montarFacturaDaOrdem.
+          const { columns, data, comentarioValidacao, historicoCriacao } = await montarFacturaDaOrdem(ordemAtual, user);
           const facturaSequencia = await SequenceService.next('factura');
 
           const [ordem, factura] = await prisma.$transaction(async (tx) => {
-            const updatedOrdem = await tx.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: nextStatus } });
+            const updatedOrdem = await tx.purchaseOrder.update({ where: { id: req.params.ordemId }, data: dadosRececao });
             const novaFactura = await tx.factura.create({
               data: {
                 id: crypto.randomUUID(),
                 status: 'validado',
                 numero: facturaSequencia?.value || `FT-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
-                fornecedor: updatedOrdem.fornecedor,
-                valor: updatedOrdem.valor,
-                moeda: updatedOrdem.moeda || 'AOA',
-                descricao: descricaoFactura,
-                purchaseOrderId: updatedOrdem.id,
-                numeroOrdem: updatedOrdem.numero,
-                createdById: updatedOrdem.createdById || (req as any).user?.id,
-                createdByName: updatedOrdem.createdByName || (req as any).user?.name,
-                data: stringify({ itens, fornecedor_id: updatedOrdem.fornecedorId, origem: 'procurement', ...(bancoInfo || {}) }),
+                ...columns,
+                createdById: updatedOrdem.createdById || user?.id,
+                createdByName: updatedOrdem.createdByName || user?.name,
+                data: stringify(data),
               }
             });
             return [updatedOrdem, novaFactura];
           });
 
-          return res.status(200).json({ ordem: ordemToResource(ordem), factura });
+          // Mesmo historico (DocumentHistory) que as restantes transicoes da
+          // factura, para aparecer em qualquer separador de Gestao de Pagamento.
+          await HistoryService.record({ module: 'factura', resourceId: factura.id, action: 'created', statusTo: 'pendente', user, comment: historicoCriacao })
+            .then(() => HistoryService.record({ module: 'factura', resourceId: factura.id, action: 'status_changed', statusFrom: 'pendente', statusTo: 'validado', user, comment: comentarioValidacao }))
+            .catch((error) => logger.warn(`Falha ao registar historico da factura ${factura.id}:`, error));
+
+          return res.status(200).json({ ordem: ordemToResource(ordem), factura: facturaToResource(factura) });
         }
 
-        const ordem = await prisma.purchaseOrder.update({ where: { id: req.params.ordemId }, data: { status: nextStatus } });
+        const ordem = await prisma.purchaseOrder.update({ where: { id: req.params.ordemId }, data: dadosRececao });
         return res.status(200).json({ ordem: ordemToResource(ordem), factura: null });
       } catch (error) {
         next(error);
@@ -899,6 +904,18 @@ function registerCrud(config: ModuleConfig) {
       try {
         const ordens = await prisma.purchaseOrder.findMany({ orderBy: { createdAt: 'desc' } });
         return res.status(200).json({ ordens: ordens.map((ordem) => ordemToResource(ordem)) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Dados completos da Ordem de Compra para visualizar/descarregar o documento
+    // (disponivel assim que o pedido e concluido e a ordem emitida).
+    router.get(`${config.path}/ordens/:ordemId/documento`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const ordem = await prisma.purchaseOrder.findUnique({ where: { id: req.params.ordemId } });
+        if (!ordem) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de compra nao encontrada' });
+        return res.status(200).json({ ordem: await montarDocumentoOrdemCompra(ordem) });
       } catch (error) {
         next(error);
       }
@@ -981,6 +998,22 @@ function registerCrud(config: ModuleConfig) {
         const record = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
         if (!record) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    // Dados bancarios do fornecedor: da conta de utilizador ligada (fornecedor
+    // externo com login) ou, na sua falta, dos guardados no proprio registo de
+    // Fornecedor - usado em Gestao de Pagamento/Compras ao criar uma factura
+    // internamente em nome deste fornecedor, para mostrar/usar a conta certa
+    // sem o utilizador interno ter de a digitar de novo.
+    router.get(`${config.path}/fornecedores/:fornecedorId/dados-bancarios`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const record = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
+        if (!record) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+        const bancoInfo = await resolveFornecedorBankInfo({}, { fornecedor_id: record.id }).catch(() => null);
+        return res.status(200).json({ dados_bancarios: bancoInfo });
       } catch (error) {
         next(error);
       }
@@ -1097,6 +1130,24 @@ function registerCrud(config: ModuleConfig) {
   }
 
   if (config.name === 'factura') {
+    // Ordem de Compra da factura: a do Procurement de origem ou, para uma
+    // factura normal ja validada, a emitida a partir dela (criada aqui se ainda
+    // nao existir - cobre facturas validadas antes desta funcionalidade).
+    router.post(`${config.path}/:id/ordem-compra`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const ordem = await garantirOrdemCompraDaFactura(req.params.id, (req as any).user);
+        if (!ordem) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: 'A Ordem de Compra fica disponivel depois de a factura ser validada.',
+          });
+        }
+        return res.status(200).json({ ordem: await montarDocumentoOrdemCompra(ordem) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
     // Gera (ou actualiza) os dados da Ordem de Pagamento associada a uma factura aprovada.
     router.post(`${config.path}/:id/ordem-pagamento`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {

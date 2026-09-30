@@ -34,6 +34,12 @@ model User {
   bankSwift         String?
   bankCity          String?
   bankCountry       String?
+  // Varias coordenadas bancarias guardadas (fornecedor externo escolhe qual
+  // usar em cada factura) - JSON: Array<{ id, label, bankName,
+  // bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry }>.
+  // Os campos bank* simples acima continuam a representar "a activa", lida
+  // por todo o resto do sistema (ex: Ordem de Pagamento).
+  bankAccounts      String    @default("[]")
 
   // Assinatura digitalizada (Presidente/Administrador) para Ordens de Pagamento
   signatureImage    String?
@@ -50,6 +56,7 @@ model User {
   actas          Acta[]
   oficios        Oficio[]
   facturas       Factura[]
+  internalPaymentOrders InternalPaymentOrder[]
   viaturas       Viatura[]
   contratos      Contrato[]
   reclamacoes    Reclamacao[]
@@ -382,6 +389,37 @@ model Factura {
   @@index([createdById])
 
   @@index([purchaseOrderId])
+}
+
+// Ordem de Pagamento Interna: mesma finalidade e o mesmo PDF final da Ordem
+// de Pagamento a Fornecedor (ver numeroOrdemPagamento em Factura), mas
+// preenchida manualmente pelo utilizador em vez de gerada automaticamente a
+// partir de uma factura aprovada - por isso e uma entidade propria, nao um
+// campo dentro de Factura.
+model InternalPaymentOrder {
+  id             String    @id @default(uuid())
+  numero         String    @unique
+  status         String    @default("rascunho") // rascunho -> assinado (ambas as assinaturas) -> pago
+  descricao      String
+  valor          Float
+  moeda          String    @default("AOA")
+  destinatario   String    // "A favor de" - pode ser pessoa, departamento ou entidade interna
+  numeroDespacho String?
+  contaDebito    String?
+  bancoNome      String?
+  bancoIban      String?
+  bancoCidade    String?
+  bancoPais      String?
+  paidAt         DateTime?
+  data           String    @default("{}") // assinaturas (mesmo formato da Ordem de Pagamento a Fornecedor)
+  createdById    String?
+  createdByName  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([createdById])
 }
 
 model Viatura {

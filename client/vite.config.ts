@@ -59,6 +59,7 @@
     },
     server: {
       port: 3000,
+      host: true, // aceitar ligacoes de outros dispositivos na rede local, nao so localhost
       open: true,
     },
   });

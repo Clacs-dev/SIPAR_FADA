@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { previewDocument } from "../ui/document-preview";
 import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Upload, X, FileText, Download, Loader2 } from "lucide-react";
@@ -158,8 +159,7 @@ export function DocumentUpload({
 
       const data = await response.json();
       
-      // Abrir link em nova aba
-      window.open(data.url, '_blank');
+ previewDocument({ url: data.url, nome: uploadedFile.name || uploadedFile.path.split('/').pop() });
       
     } catch (error) {
  console.error('Download error:', error);

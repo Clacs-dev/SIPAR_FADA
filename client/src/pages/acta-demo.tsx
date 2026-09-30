@@ -9,7 +9,7 @@ import { DigitalSignature } from "../components/actas/digital-signature";
 import { SecretarySelect } from "../components/actas/secretary-select";
 import { exportActaToPDF, downloadActaAsText } from "../utils/acta-pdf-export";
 import { transformarActaParaJSON } from "../utils/transform-acta-to-json";
-import { Download, FileText, Users, MessageSquare, PenTool, ArrowLeft } from "lucide-react";
+import { Download, FileText, Users, MessageSquare, PenTool, ArrowLeft, Check, X, Pin } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 
 // Dados mockados para demonstração
@@ -341,7 +341,7 @@ export default function ActaDemoPage() {
             </Badge>
             {acta.totalmente_assinada && (
               <Badge variant="default" className="bg-green-600 text-sm">
-                ✓ Assinada
+                <Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Assinada
               </Badge>
             )}
           </div>
@@ -492,7 +492,7 @@ export default function ActaDemoPage() {
                         <p className="text-xs text-muted-foreground">{participante.departamento}</p>
                       </div>
                       <Badge variant={participante.presente ? "default" : "outline"}>
-                        {participante.presente ? "✓ Presente" : "✗ Ausente"}
+                        {participante.presente ? <><Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Presente</> : <><X className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Ausente</>}
                       </Badge>
                     </div>
                   ))}
@@ -506,7 +506,7 @@ export default function ActaDemoPage() {
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="py-4">
             <p className="text-sm text-amber-800">
-              <strong>📌 Modo Demonstração:</strong> Esta é uma página de demonstração com dados mockados.
+              <strong><Pin className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Modo Demonstração:</strong> Esta é uma página de demonstração com dados mockados.
               Todas as funcionalidades estão implementadas e prontas para uso em produção. 
               O PDF pode ser baixado e o documento está formatado segundo normas jurídicas portuguesas/angolanas.
             </p>

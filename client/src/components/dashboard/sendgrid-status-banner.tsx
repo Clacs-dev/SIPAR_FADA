@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, X, Settings } from 'lucide-react';
+import { AlertCircle, X, Settings, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '../ui/alert';
 import { Button } from '../ui/button';
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
@@ -63,7 +63,7 @@ export function SendGridStatusBanner({ onConfigure }: SendGridStatusBannerProps)
       <AlertCircle className="h-4 w-4" />
       <AlertDescription className="flex items-center justify-between">
         <div className="flex-1">
-          <p className="font-medium">⚠️ Gmail SMTP não configurado</p>
+          <p className="font-medium"><AlertTriangle className="inline h-4 w-4 mr-1 align-text-bottom" />Gmail SMTP não configurado</p>
           <p className="text-sm mt-1">{statusMessage}</p>
           <p className="text-xs mt-2">
             Os emails automáticos de ofícios despachados não serão enviados até configurar o Gmail.

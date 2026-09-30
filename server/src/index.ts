@@ -38,8 +38,10 @@ import areasRoutes from './routes/areas.routes';
 import trashRoutes from './routes/trash.routes';
 import systemRoutes from './routes/system.routes';
 import meetingRoomsRoutes from './routes/meeting-rooms.routes';
+import internalPaymentOrdersRoutes from './routes/internal-payment-orders.routes';
 import licenseRoutes from './routes/license.routes';
 import meetingIntegrationsRoutes from './routes/meeting-integrations.routes';
+import nifRoutes from './routes/nif.routes';
 import { licenseService } from './services/license.service';
 import { SettingsService } from './services/settings.service';
 
@@ -152,7 +154,9 @@ const registerRoutes = (prefix: string) => {
   app.use(`${prefix}/trash`, trashRoutes);
   app.use(`${prefix}/system`, systemRoutes);
   app.use(`${prefix}/meeting-rooms`, meetingRoomsRoutes);
+  app.use(`${prefix}/internal-payment-orders`, internalPaymentOrdersRoutes);
   app.use(`${prefix}/meeting-integrations`, meetingIntegrationsRoutes);
+  app.use(`${prefix}/nif`, nifRoutes);
   app.use(`${prefix}/phase4`, phase4Routes);
   app.use(`${prefix}/compras-avancadas`, phase4Routes);
   app.use(`${prefix}/orcamentos`, phase4Routes);

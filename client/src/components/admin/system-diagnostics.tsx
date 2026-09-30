@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { previewDocument } from "../ui/document-preview";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -87,12 +88,7 @@ export function SystemDiagnostics() {
     }
     const report = { generatedAt: new Date().toISOString(), health, diagnostics };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `relatorio-diagnostico-fada-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    previewDocument({ blob, nome: `relatorio-diagnostico-fada-${new Date().toISOString().slice(0, 10)}.json`, tipo: 'application/json' });
   };
 
   const handleToggleMaintenance = async (enabled: boolean) => {

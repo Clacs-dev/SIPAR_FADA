@@ -9,7 +9,8 @@ import {
   DollarSign,
   FileText,
   Filter,
-  FileSignature
+  FileSignature,
+  Paperclip
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
@@ -18,13 +19,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { FacturasDashboard } from "./facturas-dashboard";
 import { FacturaForm } from "./factura-form";
 import { FacturaDetails } from "./factura-details";
+import { OrdensPagamentoInterna } from "./ordens-pagamento-interna";
+import { MapaImpostos } from "../shared/mapa-impostos";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { DepartmentFilter } from "../common/department-filter";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { toast } from "sonner@2.0.3";
+import { useFornecedores } from "../../hooks/use-fornecedores";
 
-export function FacturasMain() {
+interface FacturasMainProps {
+  /** Id de uma factura a abrir directamente nos detalhes (ex: vindo do Mapa de Impostos). */
+  initialFacturaId?: string | null;
+  /** Chamado assim que o deep-link acima foi consumido, para o limpar no componente pai. */
+  onInitialFacturaHandled?: () => void;
+}
+
+export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: FacturasMainProps = {}) {
   const { user, accessToken } = useAuth();
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null);
@@ -76,34 +87,35 @@ export function FacturasMain() {
     fetchFacturas();
   }, [accessToken]);
 
-  // Dados de exemplo - Fornecedores
-  const fornecedores: Fornecedor[] = [
-    {
-      id: '1',
-      nome: 'SONANGOL - Sociedade Nacional de Combustíveis',
-      nif: '5000000000',
-      email: 'faturacao@sonangol.co.ao',
-      telefone: '+244 222 000 000',
-      morada: 'Rua Rainha Ginga, Luanda',
-      iban: 'AO06 0000 0000 0000 0000 0000 0',
-    },
-    {
-      id: '2',
-      nome: 'Empresa de Distribuição de Energia',
-      nif: '5000000001',
-      email: 'comercial@ede.ao',
-      telefone: '+244 222 111 111',
-      morada: 'Avenida 4 de Fevereiro, Luanda',
-    },
-    {
-      id: '3',
-      nome: 'Papelaria Central Lda',
-      nif: '5000000002',
-      email: 'vendas@papelariacentral.ao',
-      telefone: '+244 222 222 222',
-      morada: 'Rua do Comércio, Luanda',
-    },
-  ];
+  // Deep-link vindo do Mapa de Impostos (clique numa linha): assim que a
+  // factura pedida estiver disponível na lista carregada, abre os seus
+  // detalhes directamente (com o estado real: pendente, validado, aprovado,
+  // rejeitado, etc.), em vez de ficar na lista.
+  useEffect(() => {
+    if (!initialFacturaId) return;
+    const alvo = facturas.find((f) => f.id === initialFacturaId);
+    if (alvo) {
+      setSelectedFactura(alvo);
+      setView('details');
+      onInitialFacturaHandled?.();
+    }
+  }, [initialFacturaId, facturas, onInitialFacturaHandled]);
+
+  // Fornecedores reais, cadastrados na plataforma via Procurement/Compras
+  // (antes era uma lista fixa de exemplo - Sonangol, etc. - que nunca batia
+  // com os fornecedores realmente cadastrados).
+  const { fornecedores: fornecedoresProcurement, fetchFornecedores } = useFornecedores();
+  useEffect(() => { fetchFornecedores(); }, [fetchFornecedores]);
+  const fornecedores: Fornecedor[] = fornecedoresProcurement
+    .filter((f) => f.situacao !== 'bloqueado')
+    .map((f) => ({
+      id: f.id,
+      nome: f.nome,
+      nif: f.nif || '',
+      email: f.email || '',
+      telefone: f.telefone || '',
+      morada: f.endereco || [f.cidade, f.provincia].filter(Boolean).join(', ') || '',
+    }));
 
   // Dados de exemplo - Estatísticas
   const stats: FacturaStats = {
@@ -130,6 +142,19 @@ export function FacturasMain() {
  console.log(' Dashboard de Facturas - Stats:', stats);
 
   // Helper functions
+  // Indicador de anexos igual em todos os separadores (o detalhe, aberto a
+  // partir de qualquer um, mostra os anexos e o historico completos).
+  const renderAnexosBadge = (factura: Factura) => {
+    const total = Array.isArray(factura.anexos) ? factura.anexos.length : 0;
+    if (total === 0) return null;
+    return (
+      <Badge variant="outline" className="gap-1">
+        <Paperclip className="h-3 w-3" />
+        {total} anexo{total === 1 ? '' : 's'}
+      </Badge>
+    );
+  };
+
   const getFornecedorNome = (factura: Factura) => {
     if (typeof factura.fornecedor === 'string' && factura.fornecedor) {
       return factura.fornecedor;
@@ -148,7 +173,7 @@ export function FacturasMain() {
     const badges = {
       rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
       pendente: { label: 'Pendente', color: 'var(--tone-info)' },
-      validado: { label: 'Validado', color: 'var(--tone-info)' },
+      validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
       aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
       rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
@@ -489,7 +514,7 @@ export function FacturasMain() {
       const data = await response.json();
  console.log('Pagamento registado com sucesso:', data);
 
-      toast.success('✅ Pagamento registado com sucesso!');
+      toast.success('Pagamento registado com sucesso!');
 
       // Recarregar facturas
       const facturasResponse = await fetch(
@@ -792,13 +817,17 @@ export function FacturasMain() {
                   <List className="mr-2 h-4 w-4" />
                   Todas ({facturas.length})
                 </TabsTrigger>
+                <TabsTrigger value="mapa_impostos">
+                  <Receipt className="mr-2 h-4 w-4" />
+                  Mapa de Impostos
+                </TabsTrigger>
                 <TabsTrigger value="pendentes">
                   <Clock className="mr-2 h-4 w-4" />
                   Pendentes ({facturas.filter(f => f.status === 'pendente').length})
                 </TabsTrigger>
                 <TabsTrigger value="validados">
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Validados ({facturas.filter(f => f.status === 'validado').length})
+                  Aprovados-DSG ({facturas.filter(f => f.status === 'validado').length})
                 </TabsTrigger>
                 <TabsTrigger value="aprovadas">
                   <CheckCircle className="mr-2 h-4 w-4" />
@@ -806,7 +835,11 @@ export function FacturasMain() {
                 </TabsTrigger>
                 <TabsTrigger value="ordens_pagamento">
                   <FileSignature className="mr-2 h-4 w-4" />
-                  Ordens de Pagamento ({facturas.filter(f => !!f.numero_ordem_pagamento).length})
+                  Ordens de Pagamento Fornecedor ({facturas.filter(f => !!f.numero_ordem_pagamento).length})
+                </TabsTrigger>
+                <TabsTrigger value="ordens_pagamento_interna">
+                  <FileSignature className="mr-2 h-4 w-4" />
+                  Ordens de Pagamento Interna
                 </TabsTrigger>
                 <TabsTrigger value="submetido_banco">
                   <FileText className="mr-2 h-4 w-4" />
@@ -823,6 +856,20 @@ export function FacturasMain() {
               <FacturasDashboard stats={stats} />
             </TabsContent>
 
+            {/* Mapa de Impostos: IVA (produtos) e Retenção na Fonte (serviços) */}
+            <TabsContent value="mapa_impostos">
+              <MapaImpostos
+                contexto="financeiro"
+                onOpenFactura={(facturaId) => {
+                  const alvo = facturas.find((f) => f.id === facturaId);
+                  if (alvo) {
+                    setSelectedFactura(alvo);
+                    setView('details');
+                  }
+                }}
+              />
+            </TabsContent>
+
             {/* Todas */}
             <TabsContent value="todas" className="space-y-4">
               {/* Filtros */}
@@ -837,7 +884,7 @@ export function FacturasMain() {
                       <option value="">Todos os estados</option>
                       <option value="rascunho">Rascunho</option>
                       <option value="pendente">Pendente</option>
-                      <option value="validado">Validado</option>
+                      <option value="validado">Aprovado-DSG</option>
                       <option value="aprovado">Aprovado</option>
                       <option value="submetido_ao_banco">Submetido ao Banco</option>
                       <option value="rejeitado">Rejeitado</option>
@@ -885,6 +932,7 @@ export function FacturasMain() {
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline">{factura.numero}</Badge>
                               {getStatusBadge(factura.status)}
+                              {renderAnexosBadge(factura)}
                               <Badge variant="outline">{factura.moeda}</Badge>
                             </div>
                             <p className="text-sm mb-2">
@@ -948,6 +996,7 @@ export function FacturasMain() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge variant="outline">{factura.numero}</Badge>
                             {getStatusBadge(factura.status)}
+                            {renderAnexosBadge(factura)}
                           </div>
                           <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                           <p className="text-sm text-muted-foreground mt-2">
@@ -993,11 +1042,12 @@ export function FacturasMain() {
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline">{factura.numero}</Badge>
                               {getStatusBadge(factura.status)}
+                              {renderAnexosBadge(factura)}
                             </div>
                             <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                             <p className="text-sm text-muted-foreground mt-2">
                               {getFornecedorNome(factura)} •{' '}
-                              Validado por {factura.validado_por_nome || 'N/A'}
+                              Aprovado-DSG por {factura.validado_por_nome || 'N/A'}
                             </p>
                           </div>
                           <div className="text-right">
@@ -1039,6 +1089,7 @@ export function FacturasMain() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge variant="outline">{factura.numero}</Badge>
                             {getStatusBadge(factura.status)}
+                            {renderAnexosBadge(factura)}
                           </div>
                           <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                           <p className="text-sm text-muted-foreground mt-2">
@@ -1084,6 +1135,7 @@ export function FacturasMain() {
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline">{factura.numero}</Badge>
                               {getStatusBadge(factura.status)}
+                              {renderAnexosBadge(factura)}
                             </div>
                             <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                             <p className="text-sm text-muted-foreground mt-2">
@@ -1130,6 +1182,7 @@ export function FacturasMain() {
                           <div className="flex items-center gap-2 mb-2">
                             <Badge variant="outline">{factura.numero}</Badge>
                             {getStatusBadge(factura.status)}
+                            {renderAnexosBadge(factura)}
                           </div>
                           <CardTitle className="text-lg">{factura.descricao}</CardTitle>
                           <p className="text-sm text-muted-foreground mt-2">
@@ -1150,7 +1203,7 @@ export function FacturasMain() {
               </div>
             </TabsContent>
 
-            {/* Ordens de Pagamento */}
+            {/* Ordens de Pagamento Fornecedor */}
             <TabsContent value="ordens_pagamento" className="space-y-4">
               <div className="grid gap-4">
                 {facturas.filter(f => !!f.numero_ordem_pagamento).length === 0 ? (
@@ -1158,7 +1211,7 @@ export function FacturasMain() {
                     <CardContent className="py-12 text-center">
                       <FileSignature className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                       <p className="text-muted-foreground">
-                        Nenhuma Ordem de Pagamento gerada ainda. É criada automaticamente quando uma factura é aprovada.
+                        Nenhuma Ordem de Pagamento Fornecedor gerada ainda. É criada automaticamente quando uma factura é aprovada.
                       </p>
                     </CardContent>
                   </Card>
@@ -1181,6 +1234,7 @@ export function FacturasMain() {
                               <div className="flex items-center gap-2 mb-2">
                                 <Badge className="text-white" style={{ backgroundColor: 'var(--tone-info)' }}>{factura.numero_ordem_pagamento}</Badge>
                                 {getStatusBadge(factura.status)}
+                                {renderAnexosBadge(factura)}
                                 <Badge variant={totalmenteAssinada ? 'default' : 'outline'}>
                                   {assinaturas.length}/2 assinaturas
                                 </Badge>
@@ -1203,6 +1257,11 @@ export function FacturasMain() {
                   })
                 )}
               </div>
+            </TabsContent>
+
+            {/* Ordens de Pagamento Interna */}
+            <TabsContent value="ordens_pagamento_interna" className="space-y-4">
+              <OrdensPagamentoInterna userRole={userRole || ''} />
             </TabsContent>
           </Tabs>
           ) : (
@@ -1234,6 +1293,7 @@ export function FacturasMain() {
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline">{factura.numero}</Badge>
                               {getStatusBadge(factura.status)}
+                              {renderAnexosBadge(factura)}
                               <Badge variant="outline">{factura.moeda}</Badge>
                             </div>
                             <CardTitle className="text-lg">{factura.descricao}</CardTitle>

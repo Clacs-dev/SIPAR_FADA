@@ -15,11 +15,11 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { Card, CardContent } from "../ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { 
-  MessageSquare, 
-  Plus, 
-  Download, 
-  ArrowUpCircle, 
+import {
+  MessageSquare,
+  Plus,
+  Download,
+  ArrowUpCircle,
   Archive,
   Reply,
   FileText,
@@ -27,7 +27,8 @@ import {
   Edit,
   Trash2,
   Loader2,
-  Search
+  Search,
+  Circle
 } from "lucide-react";
 import {
   AlertDialog,
@@ -261,16 +262,13 @@ export function ComunicacoesMain() {
   };
 
   const getPrioridadeIcon = (prioridade: string) => {
-    switch (prioridade) {
-      case 'urgente':
-        return '🔴';
-      case 'alta':
-        return '🟠';
-      case 'normal':
-        return '🔵';
-      default:
-        return '⚪';
-    }
+    const cores: Record<string, string> = {
+      urgente: 'var(--tone-danger)',
+      alta: 'var(--tone-warn)',
+      normal: 'var(--tone-info)',
+    };
+    const cor = cores[prioridade] || 'var(--tone-neutral)';
+    return <Circle className="h-6 w-6" style={{ color: cor, fill: cor }} aria-label={`Prioridade ${prioridade}`} />;
   };
 
   const handleSaveComunicacao = async (comunicacaoData: Partial<Comunicacao>) => {

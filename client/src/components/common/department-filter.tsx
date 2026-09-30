@@ -7,7 +7,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { X } from "lucide-react";
+import { X, BarChart3 } from "lucide-react";
 import {
   getGroupedDepartmentOptions,
   DEPARTMENT_CATEGORIES,
@@ -46,7 +46,7 @@ export function DepartmentFilter({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">
-              <span className="font-medium">📊 Todos os Departamentos</span>
+              <span className="font-medium"><BarChart3 className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Todos os Departamentos</span>
             </SelectItem>
             {getGroupedDepartmentOptions(departments).map((group) => (
               <SelectGroup key={group.label}>

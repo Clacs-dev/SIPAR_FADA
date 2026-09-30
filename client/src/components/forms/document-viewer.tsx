@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { previewDocument } from "../ui/document-preview";
 import { Button } from "../ui/button";
 import { FileText, Download, Loader2, ExternalLink } from "lucide-react";
 import { toast } from "sonner@2.0.3";
@@ -54,9 +55,7 @@ export function DocumentViewer({
 
       const data = await response.json();
       
-      // Abrir link em nova aba
-      window.open(data.url, '_blank');
-      toast.success("Documento aberto em nova aba");
+      previewDocument({ url: data.url, nome: fileName || filePath.split('/').pop() });
       
     } catch (error) {
  console.error('Download error:', error);

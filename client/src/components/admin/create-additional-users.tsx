@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
-import { AlertCircle, CheckCircle, UserPlus, Users, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, UserPlus, Users, Loader2, Check, X } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
@@ -239,7 +239,7 @@ export function CreateAdditionalUsers() {
               {result.created && result.created.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium mb-2 text-green-900">
-                    ✓ Utilizadores criados ({result.created.length}):
+                    <Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Utilizadores criados ({result.created.length}):
                   </h4>
                   <ul className="text-sm space-y-1 text-green-800">
                     {result.created.map((user: any, index: number) => (
@@ -253,7 +253,7 @@ export function CreateAdditionalUsers() {
               {result.errors && result.errors.length > 0 && (
                 <div>
                   <h4 className="text-sm font-medium mb-2 text-red-900">
-                    ✗ Erros encontrados ({result.errors.length}):
+                    <X className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Erros encontrados ({result.errors.length}):
                   </h4>
                   <ul className="text-sm space-y-1 text-red-800">
                     {result.errors.map((error: any, index: number) => (

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { previewDocument } from "../ui/document-preview";
 import {
   ArrowLeft,
   MessageSquare,
@@ -10,7 +11,8 @@ import {
   Archive,
   Share2,
   Send,
-  Shield
+  Shield,
+  Eye
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
@@ -232,10 +234,9 @@ export function ComunicacaoDetails({
                           </p>
                         </div>
                       </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={anexo.url} download={anexo.nome}>
-                          Baixar
-                        </a>
+                      <Button variant="outline" size="sm" onClick={() => previewDocument({ url: anexo.url, nome: anexo.nome, tipo: anexo.tipo })}>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver
                       </Button>
                     </div>
                   ))}

@@ -7,6 +7,7 @@ const PREFIX_BY_MODULE: Record<string, { prefix: string; monthly: boolean; field
   acta: { prefix: 'ACTA', monthly: false, field: 'numero' },
   oficio: { prefix: 'OF', monthly: true, field: 'numero' },
   factura: { prefix: 'FAC', monthly: true, field: 'numero' },
+  internalPaymentOrder: { prefix: 'OPI', monthly: true, field: 'numero' },
   contrato: { prefix: 'CONT', monthly: false, field: 'numero' },
   reclamacao: { prefix: 'REC', monthly: true, field: 'codigo' },
   procurement: { prefix: 'PROC', monthly: true, field: 'numero' },

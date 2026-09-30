@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { FileText, Plus, Clock, CheckCircle, XCircle, Eye } from "lucide-react";
+import { FileText, Plus, Clock, CheckCircle, XCircle, Eye, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
@@ -520,7 +520,7 @@ export function MinhasFacturas() {
                             {formatCurrency(factura.total, factura.moeda)}
                           </p>
                           <Badge className="mt-2" style={{ backgroundColor: 'var(--tone-success-soft)', color: 'var(--tone-success)' }}>
-                            ✓ Pagamento Concluído
+                            <CheckCircle2 className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Pagamento Concluído
                           </Badge>
                         </div>
                       </div>

@@ -25,6 +25,7 @@ import {
   Package,
   XCircle,
   AlertTriangle,
+  CheckCircle2
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -302,7 +303,7 @@ export function OrdemCompraDetailsDialog({
                   <div className="flex items-start gap-3 p-4 bg-tone-success-soft border border-tone-success/30 rounded-lg">
                     <CheckCircle className="h-5 w-5 text-tone-success mt-0.5" />
                     <div className="flex-1">
-                      <p className="font-medium text-tone-success">✅ Ordem Finalizada</p>
+                      <p className="font-medium text-tone-success"><CheckCircle2 className="inline h-4 w-4 mr-1 align-text-bottom" />Ordem Finalizada</p>
                       <p className="text-sm text-tone-success mt-1">
                         Produtos recebidos com sucesso
                       </p>

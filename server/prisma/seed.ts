@@ -751,7 +751,11 @@ async function main() {
       id: 'procurement_seed_0', createdById: compras.id, createdByName: compras.name,
       tipo: 'pedido_compra', numero: 'PED-2026-000000', descricao: 'Aquisição de material de escritório diverso',
       valor: 120000, status: 'criado',
-      data: JSON.stringify({ categoria: 'Mobiliário', departamento_solicitante: 'Administração', itens: [{ descricao: 'Resmas de papel A4', quantidade: 50 }] }),
+      data: JSON.stringify({
+        categoria: 'Mobiliário', departamento_solicitante: 'Administração',
+        orcamento_estimado: 130000, prazo_entrega_desejado: '2026-02-15', local_entrega: 'Sede FADA - Luanda',
+        itens: [{ id: 'item_seed_0_1', descricao: 'Resmas de papel A4', tipo: 'consumivel', quantidade: 50, unidade: 'resma' }],
+      }),
     }
   });
 
@@ -763,7 +767,11 @@ async function main() {
       id: 'procurement_seed_1', createdById: compras.id, createdByName: compras.name,
       tipo: 'pedido_compra', numero: 'PED-2026-000001', descricao: 'Aquisição de material informático',
       valor: 850000, status: 'em_cotacao',
-      data: JSON.stringify({ categoria: 'Equipamentos de Informática', departamento_solicitante: 'Tecnologia da Informação', itens: [{ descricao: 'Computadores portáteis', quantidade: 5 }] }),
+      data: JSON.stringify({
+        categoria: 'Equipamentos de Informática', departamento_solicitante: 'Tecnologia da Informação',
+        orcamento_estimado: 900000, prazo_entrega_desejado: '2026-02-28', local_entrega: 'Sede FADA - Luanda',
+        itens: [{ id: 'item_seed_1_1', descricao: 'Computadores portáteis', tipo: 'equipamento', quantidade: 5, unidade: 'unidade' }],
+      }),
     }
   });
 
@@ -773,7 +781,11 @@ async function main() {
       id: 'procurement_seed_3', createdById: compras.id, createdByName: compras.name,
       tipo: 'pedido_compra', numero: 'PED-2026-000003', descricao: 'Aquisição de viaturas de serviço',
       valor: 9500000, status: 'em_analise',
-      data: JSON.stringify({ categoria: 'Transporte e Logística', departamento_solicitante: 'Operações', itens: [{ descricao: 'Viatura ligeira de passageiros', quantidade: 1 }] }),
+      data: JSON.stringify({
+        categoria: 'Transporte e Logística', departamento_solicitante: 'Operações',
+        orcamento_estimado: 9800000, prazo_entrega_desejado: '2026-03-31', local_entrega: 'Sede FADA - Luanda',
+        itens: [{ id: 'item_seed_3_1', descricao: 'Viatura ligeira de passageiros', tipo: 'equipamento', quantidade: 1, unidade: 'unidade' }],
+      }),
     }
   });
 
@@ -784,7 +796,11 @@ async function main() {
       id: 'procurement_seed_2', createdById: compras.id, createdByName: compras.name,
       tipo: 'pedido_compra', numero: 'PED-2026-000002', descricao: 'Aquisição de mobiliário de escritório',
       valor: 620000, status: 'concluido', fornecedorId: fornecedor2.id, fornecedor: fornecedor2.nome,
-      data: JSON.stringify({ categoria: 'Mobiliário', departamento_solicitante: 'Administração', itens: [{ descricao: 'Cadeiras ergonómicas', quantidade: 10 }] }),
+      data: JSON.stringify({
+        categoria: 'Mobiliário', departamento_solicitante: 'Administração',
+        orcamento_estimado: 650000, prazo_entrega_desejado: '2026-01-31', local_entrega: 'Sede FADA - Luanda',
+        itens: [{ id: 'item_seed_2_1', descricao: 'Cadeiras ergonómicas', tipo: 'material', quantidade: 10, unidade: 'unidade' }],
+      }),
     }
   });
 

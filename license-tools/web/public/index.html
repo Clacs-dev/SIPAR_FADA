@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="pt">
+
+<head>
+  <meta charset="utf-8">
+  <title>Gerador de Licencas - SIPAR-FADA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --border: #e2e5ea;
+      --text: #1c2027;
+      --muted: #6b7280;
+      --primary: #1f4fd6;
+      --primary-hover: #1a3fb0;
+      --danger: #d33;
+      --danger-bg: #fdeceb;
+      --success: #1a8f4c;
+      --success-bg: #e9f8ef;
+      --warn: #a86a00;
+      --warn-bg: #fff6e0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px 16px 60px;
+    }
+
+    h1 {
+      font-size: 20px;
+      margin: 0 0 4px;
+    }
+
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 24px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(280px, 380px) 1fr;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+    }
+
+    .card h2 {
+      font-size: 15px;
+      margin: 0 0 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 12.5px;
+      font-weight: 600;
+      margin: 12px 0 4px;
+    }
+
+    label.inline {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      margin: 6px 0;
+    }
+
+    input[type=text],
+    input[type=number],
+    input[type=date],
+    select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13.5px;
+    }
+
+    .row2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    fieldset {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 12px;
+      padding: 10px 12px;
+    }
+
+    legend {
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 0 4px;
+    }
+
+    .modules-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 10px;
+    }
+
+    .modules-grid label.inline {
+      font-size: 12.5px;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+      width: 100%;
+      margin-top: 16px;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-primary:disabled {
+      background: #a9b6d8;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: #eef0f4;
+      color: var(--text);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--primary);
+      padding: 4px 6px;
+      font-size: 12.5px;
+    }
+
+    .btn-danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    small.hint {
+      display: block;
+      color: var(--muted);
+      font-size: 11.5px;
+      margin-top: 2px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 11.5px;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 600;
+    }
+
+    .badge-warn {
+      background: var(--warn-bg);
+      color: var(--warn);
+    }
+
+    .badge-ok {
+      background: var(--success-bg);
+      color: var(--success);
+    }
+
+    .badge-danger {
+      background: var(--danger-bg);
+      color: var(--danger);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .mono {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11.5px;
+      word-break: break-all;
+    }
+
+    .fp-form {
+      display: flex;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    .fp-form input {
+      font-size: 11.5px;
+      padding: 4px 6px;
+    }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 30px 0;
+      font-size: 13px;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 18px;
+      right: 18px;
+      background: #1c2027;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: .2s;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .banner {
+      background: var(--warn-bg);
+      color: var(--warn);
+      border: 1px solid #f0d999;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12.5px;
+      max-width: 1200px;
+      margin: 0 auto 16px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="banner">
+    <h1>Gerador de Licencas - SIPAR-FADA</h1>
+    <div class="sub">Emitir licencas, gerar certificados de ativacao e ver todos os clientes numa lista (SQLite local).
+    </div>
+  </div>
+
+
+
+  <div class="layout">
+    <div class="card">
+      <h2 id="form-title">Nova licenca</h2>
+      <form id="license-form">
+        <input type="hidden" id="renewId" value="">
+        <label>Cliente</label>
+        <input type="text" id="customer" required placeholder="Nome do cliente">
+
+        <div class="row2">
+          <div>
+            <label>Tipo</label>
+            <select id="type">
+              <option value="trial">trial</option>
+              <option value="monthly">monthly</option>
+              <option value="annual" selected>annual</option>
+              <option value="lifetime">lifetime</option>
+              <option value="custom">custom</option>
+            </select>
+          </div>
+          <div>
+            <label>Tolerancia offline (dias)</label>
+            <input type="number" id="grace" value="7" min="0">
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Inicio</label>
+            <input type="date" id="starts" required>
+          </div>
+          <div>
+            <label>Expira <small class="hint" style="display:inline">(vazio = vitalicia)</small></label>
+            <input type="date" id="expires">
+          </div>
+        </div>
+
+        <div class="row2">
+          <div>
+            <label>Max. utilizadores</label>
+            <input type="number" id="maxUsers" min="1" placeholder="ilimitado">
+          </div>
+          <div>
+            <label>Max. administradores</label>
+            <input type="number" id="maxAdmins" min="1" placeholder="ilimitado">
+          </div>
+        </div>
+
+        <fieldset>
+          <legend>Modulos</legend>
+          <label class="inline"><input type="checkbox" id="fullLicense" checked> Licenca completa (todos os
+            modulos)</label>
+          <div class="modules-grid" id="modules-grid"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Funcionalidades</legend>
+          <label class="inline"><input type="checkbox" id="feat_export_pdf" checked> Exportar PDF</label>
+          <label class="inline"><input type="checkbox" id="feat_export_excel" checked> Exportar Excel</label>
+          <label class="inline"><input type="checkbox" id="feat_advanced_reports"> Relatorios avancados</label>
+        </fieldset>
+
+        <button type="submit" class="btn-primary" id="submit-btn">Gerar licenca</button>
+        <button type="button" class="btn-secondary" id="cancel-renew"
+          style="display:none; width:100%; margin-top:8px;">Cancelar renovacao</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Clientes (<span id="count">0</span>)</h2>
+      <div id="clients-wrap">
+        <p class="empty">A carregar...</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+    const MODULES_GRID = document.getElementById('modules-grid');
+    let MODULES = [];
+    let clients = [];
+    let renewing = null;
+
+    function toast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 2600);
+    }
+
+    async function api(path, options) {
+      const res = await fetch(path, options);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || ('Erro ' + res.status));
+      }
+      return res.json();
+    }
+
+    function fmtDate(iso) {
+      if (!iso) return '-';
+      return new Date(iso).toLocaleDateString('pt-PT');
+    }
+
+    function statusOf(c) {
+      if (c.revoked) return { label: 'Revogada', cls: 'badge-danger' };
+      if (!c.hasCert) return { label: 'Aguarda ativacao', cls: 'badge-warn' };
+      if (c.expiresAt && new Date(c.expiresAt) < new Date()) return { label: 'Expirada', cls: 'badge-danger' };
+      return { label: 'Ativa', cls: 'badge-ok' };
+    }
+
+    async function loadModules() {
+      const data = await api('/api/modules');
+      MODULES = data.modules;
+      MODULES_GRID.innerHTML = MODULES.map((m) =>
+        `<label class="inline"><input type="checkbox" class="module-cb" value="${m.key}"> ${m.label}</label>`
+      ).join('');
+      document.getElementById('fullLicense').addEventListener('change', (e) => {
+        document.querySelectorAll('.module-cb').forEach((cb) => cb.disabled = e.target.checked);
+      });
+      document.querySelectorAll('.module-cb').forEach((cb) => cb.disabled = true);
+    }
+
+    async function loadClients() {
+      const data = await api('/api/clients');
+      clients = data.clients;
+      document.getElementById('count').textContent = clients.length;
+      renderClients();
+    }
+
+    function renderClients() {
+      const wrap = document.getElementById('clients-wrap');
+      if (clients.length === 0) {
+        wrap.innerHTML = '<p class="empty">Nenhum cliente ainda. Gere a primeira licenca ao lado.</p>';
+        return;
+      }
+      wrap.innerHTML = `
+    <div style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>Cliente</th><th>Tipo</th><th>Validade</th><th>Modulos</th><th>Estado</th><th>Acoes</th>
+      </tr></thead>
+      <tbody>
+        ${clients.map(rowHtml).join('')}
+      </tbody>
+    </table>
+    </div>
+  `;
+      clients.forEach((c) => {
+        const form = document.getElementById('fp-form-' + c.licenseId);
+        if (form) form.addEventListener('submit', (e) => onActivate(e, c.licenseId));
+      });
+    }
+
+    function rowHtml(c) {
+      const st = statusOf(c);
+      const modulesLabel = c.modules.length === 0 ? 'todos' : c.modules.length + ' modulo(s)';
+      return `
+    <tr>
+      <td>
+        <div><strong>${escapeHtml(c.customerName)}</strong></div>
+        <div class="mono" title="licenseId">${c.licenseId}</div>
+      </td>
+      <td>${escapeHtml(c.licenseType)}</td>
+      <td>${fmtDate(c.startsAt)} &rarr; ${c.expiresAt ? fmtDate(c.expiresAt) : 'vitalicia'}</td>
+      <td>${modulesLabel}</td>
+      <td><span class="badge ${st.cls}">${st.label}</span></td>
+      <td>
+        <div class="actions">
+          <a class="btn-ghost" href="/api/clients/${encodeURIComponent(c.licenseId)}/lic" download>Descarregar .lic</a>
+          <button class="btn-ghost" type="button" onclick="startRenew('${c.licenseId}')">Renovar</button>
+          <button class="btn-ghost" type="button" onclick="toggleRevoke('${c.licenseId}', ${c.revoked ? 'false' : 'true'})">${c.revoked ? 'Reativar' : 'Revogar'}</button>
+          <button class="btn-danger" type="button" onclick="removeClient('${c.licenseId}')">Apagar</button>
+        </div>
+        ${c.hasCert
+          ? `<div style="margin-top:6px"><a class="btn-ghost" href="/api/clients/${encodeURIComponent(c.licenseId)}/cert" download>Descarregar .cert</a> <span class="mono">fp: ${c.fingerprint.slice(0, 16)}...</span></div>`
+          : `<form id="fp-form-${c.licenseId}" class="fp-form">
+               <input type="text" placeholder="Colar fingerprint recebido do cliente" required>
+               <button class="btn-secondary" type="submit">Gerar .cert</button>
+             </form>`
+        }
+      </td>
+    </tr>
+  `;
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function onActivate(e, licenseId) {
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      const fingerprint = input.value.trim();
+      if (!fingerprint) return;
+      try {
+        await api(`/api/clients/${encodeURIComponent(licenseId)}/activate`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fingerprint }),
+        });
+        toast('Certificado de ativacao gerado');
+        await loadClients();
+      } catch (err) {
+        toast(err.message);
+      }
+    }
+
+    window.toggleRevoke = async (licenseId, revoke) => {
+      const action = revoke === 'true' ? 'revoke' : 'unrevoke';
+      if (revoke === 'true' && !confirm('Revogar esta licenca? O cliente ficara bloqueado assim que consultar a CRL.')) return;
+      try {
+        await api(`/api/clients/${encodeURIComponent(licenseId)}/${action}`, { method: 'POST' });
+        toast(action === 'revoke' ? 'Licenca revogada (crl.json atualizado)' : 'Licenca reativada (crl.json atualizado)');
+        await loadClients();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+
+    window.removeClient = async (licenseId) => {
+      if (!confirm('Remover este registo da lista? Isto NAO revoga a licenca ja emitida, apenas apaga o historico local.')) return;
+      try {
+        await api(`/api/clients/${encodeURIComponent(licenseId)}`, { method: 'DELETE' });
+        toast('Registo removido');
+        await loadClients();
+      } catch (err) {
+        toast(err.message);
+      }
+    };
+
+    window.startRenew = (licenseId) => {
+      const c = clients.find((x) => x.licenseId === licenseId);
+      if (!c) return;
+      renewing = licenseId;
+      document.getElementById('renewId').value = licenseId;
+      document.getElementById('customer').value = c.customerName;
+      document.getElementById('type').value = c.licenseType;
+      document.getElementById('starts').value = c.startsAt.slice(0, 10);
+      document.getElementById('expires').value = c.expiresAt ? c.expiresAt.slice(0, 10) : '';
+      document.getElementById('maxUsers').value = c.maxUsers || '';
+      document.getElementById('maxAdmins').value = c.maxAdmins || '';
+      document.getElementById('grace').value = c.offlineGraceDays;
+      const full = c.modules.length === 0;
+      document.getElementById('fullLicense').checked = full;
+      document.querySelectorAll('.module-cb').forEach((cb) => {
+        cb.checked = c.modules.includes(cb.value);
+        cb.disabled = full;
+      });
+      document.getElementById('feat_export_pdf').checked = c.features.export_pdf !== false;
+      document.getElementById('feat_export_excel').checked = c.features.export_excel !== false;
+      document.getElementById('feat_advanced_reports').checked = !!c.features.advanced_reports;
+
+      document.getElementById('form-title').textContent = 'Renovar licenca: ' + c.customerName;
+      document.getElementById('submit-btn').textContent = 'Guardar renovacao';
+      document.getElementById('cancel-renew').style.display = 'block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    document.getElementById('cancel-renew').addEventListener('click', () => resetForm());
+
+    function resetForm() {
+      renewing = null;
+      document.getElementById('license-form').reset();
+      document.getElementById('renewId').value = '';
+      document.getElementById('fullLicense').checked = true;
+      document.querySelectorAll('.module-cb').forEach((cb) => { cb.checked = false; cb.disabled = true; });
+      document.getElementById('feat_export_pdf').checked = true;
+      document.getElementById('feat_export_excel').checked = true;
+      document.getElementById('grace').value = 7;
+      document.getElementById('form-title').textContent = 'Nova licenca';
+      document.getElementById('submit-btn').textContent = 'Gerar licenca';
+      document.getElementById('cancel-renew').style.display = 'none';
+    }
+
+    document.getElementById('license-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const full = document.getElementById('fullLicense').checked;
+      const modules = full ? [] : Array.from(document.querySelectorAll('.module-cb:checked')).map((cb) => cb.value);
+      const body = {
+        customer: document.getElementById('customer').value.trim(),
+        type: document.getElementById('type').value,
+        starts: document.getElementById('starts').value,
+        expires: document.getElementById('expires').value || null,
+        maxUsers: document.getElementById('maxUsers').value || null,
+        maxAdmins: document.getElementById('maxAdmins').value || null,
+        grace: document.getElementById('grace').value || 7,
+        modules,
+        features: {
+          export_pdf: document.getElementById('feat_export_pdf').checked,
+          export_excel: document.getElementById('feat_export_excel').checked,
+          advanced_reports: document.getElementById('feat_advanced_reports').checked,
+        },
+      };
+
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      try {
+        if (renewing) {
+          await api(`/api/clients/${encodeURIComponent(renewing)}/renew`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+          toast('Renovacao guardada - descarregue o novo .lic e envie ao cliente');
+        } else {
+          await api('/api/clients', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+          });
+          toast('Licenca gerada - descarregue o .lic na lista e envie ao cliente');
+        }
+        resetForm();
+        await loadClients();
+      } catch (err) {
+        toast(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    (async function init() {
+      await loadModules();
+      await loadClients();
+    })();
+  </script>
+</body>
+
+</html>

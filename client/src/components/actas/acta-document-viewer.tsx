@@ -18,6 +18,7 @@
  */
 
 import { Card, CardContent } from "../ui/card";
+import { SquareCheck, Square } from "lucide-react";
 
 interface ActaDocumentViewerProps {
   acta: any;
@@ -321,7 +322,7 @@ export function ActaDocumentViewer({ acta }: ActaDocumentViewerProps) {
                     {typeof p === 'object' && p !== null && (
                       <div className="flex items-center gap-4">
                         <span className="text-sm">
-                          {p.presente ? '☑ Presente' : '☐ Ausente'}
+                          {p.presente ? <><SquareCheck className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Presente</> : <><Square className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Ausente</>}
                         </span>
                         <div className="w-40 border-b-2 border-gray-400">
                           {/* Linha de assinatura */}

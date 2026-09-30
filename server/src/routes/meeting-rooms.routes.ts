@@ -42,6 +42,18 @@ function hasOverlap(startA: string, endA: string, startB: string, endB: string) 
   return toMinutes(startA) < toMinutes(endB) && toMinutes(startB) < toMinutes(endA);
 }
 
+// Duracao escolhida no agendamento de cartas/audiencias (ver
+// schedule-meeting-dialog.tsx) - ao contrario da Reuniao Interna, esse fluxo
+// nao tem hora de fim explicita, so um rotulo de duracao.
+const EXTERNAL_DURATION_MINUTES: Record<string, number> = { '30min': 30, '1h': 60, '1h30': 90, '2h': 120 };
+
+function addMinutes(time: string, minutes: number): string {
+  const total = toMinutes(time) + minutes;
+  const hh = Math.floor((total % (24 * 60)) / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
 // LISTAR SALAS (todos os utilizadores autenticados)
 router.get('/', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -75,12 +87,53 @@ router.get('/disponibilidade', requireAuth as any, async (req: AuthenticatedRequ
       select: { id: true, title: true, startTime: true, endTime: true },
     });
 
-    const conflitos = meetings.filter((m) => hasOverlap(horaInicio, horaFim, m.startTime, m.endTime));
+    const conflitosInternos = meetings
+      .filter((m) => hasOverlap(horaInicio, horaFim, m.startTime, m.endTime))
+      .map((c) => ({ id: c.id, titulo: c.title, hora_inicio: c.startTime, hora_fim: c.endTime, tipo: 'reuniao_interna' as const }));
+
+    // Uma sala tambem pode ja estar ocupada por uma Carta de Apresentacao ou
+    // um Pedido de Audiencia agendados como presenciais nesta sala (ver
+    // schedule-meeting-dialog.tsx) - sem isto, a disponibilidade so refletia
+    // reunioes internas e a mesma sala podia ficar com dupla marcacao.
+    const [presentations, audiences] = await Promise.all([
+      prisma.presentation.findMany({ where: { status: 'agendado', deletedAt: null }, select: { id: true, company: true, data: true } }),
+      prisma.audience.findMany({ where: { status: 'agendado', deletedAt: null }, select: { id: true, organization: true, data: true } }),
+    ]);
+
+    function externosConflitantes(records: { id: string; label: string | null; data: string }[], tipo: 'carta_apresentacao' | 'audiencia') {
+      return records
+        .map((record) => {
+          const parsed = safeJsonParse(record.data, {});
+          return { id: record.id, label: record.label, parsed };
+        })
+        .filter(({ parsed }) =>
+          parsed.roomId === roomId &&
+          parsed.preferredDate === data &&
+          typeof parsed.time === 'string'
+        )
+        .filter(({ id }) => !excludeMeetingId || id !== excludeMeetingId)
+        .map(({ id, label, parsed }) => {
+          const fim = addMinutes(parsed.time, EXTERNAL_DURATION_MINUTES[parsed.duration] ?? 240);
+          return { id, titulo: label || (tipo === 'audiencia' ? 'Pedido de audiência' : 'Carta de apresentação'), hora_inicio: parsed.time, hora_fim: fim, tipo };
+        })
+        .filter((c) => hasOverlap(horaInicio, horaFim, c.hora_inicio, c.hora_fim));
+    }
+
+    const conflitosApresentacoes = externosConflitantes(
+      presentations.map((p) => ({ id: p.id, label: p.company, data: p.data })),
+      'carta_apresentacao'
+    );
+    const conflitosAudiencias = externosConflitantes(
+      audiences.map((a) => ({ id: a.id, label: a.organization, data: a.data })),
+      'audiencia'
+    );
+
+    const conflitos = [...conflitosInternos, ...conflitosApresentacoes, ...conflitosAudiencias];
 
     return res.status(200).json({
       success: true,
       disponivel: conflitos.length === 0,
-      conflitos: conflitos.map((c) => ({ id: c.id, titulo: c.title, hora_inicio: c.startTime, hora_fim: c.endTime })),
+      conflitos,
     });
   } catch (error) {
     next(error);

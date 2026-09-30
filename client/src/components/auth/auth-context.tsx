@@ -42,6 +42,9 @@ export interface User {
   department?: string;
   position?: string;
   // Coordenadas bancarias reutilizaveis (utilizadores externos / fornecedores)
+  // - estes campos simples representam sempre a coordenada "activa" (a
+  // usada por omissao); "bankAccounts" guarda a lista completa das
+  // coordenadas guardadas, para o fornecedor escolher qual usar por factura.
   bankName?: string;
   bankAccountHolder?: string;
   bankIban?: string;
@@ -49,7 +52,20 @@ export interface User {
   bankSwift?: string;
   bankCity?: string;
   bankCountry?: string;
+  bankAccounts?: BankAccount[];
   signatureImage?: string;
+}
+
+export interface BankAccount {
+  id: string;
+  label: string;
+  bankName?: string | null;
+  bankAccountHolder?: string | null;
+  bankIban?: string | null;
+  bankNib?: string | null;
+  bankSwift?: string | null;
+  bankCity?: string | null;
+  bankCountry?: string | null;
 }
 
 export interface RegisterUserData {

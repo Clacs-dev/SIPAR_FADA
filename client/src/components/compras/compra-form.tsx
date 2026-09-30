@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { ShoppingBag, FileText, Plus, Trash2 } from "lucide-react";
+import { ShoppingBag, FileText, Plus, Trash2, Pencil, Mail, Phone, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
@@ -340,7 +340,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
                       <SelectValue placeholder="Escolha um fornecedor cadastrado ou digite manualmente" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="manual">✏️ Digitar Manualmente</SelectItem>
+                      <SelectItem value="manual"><Pencil className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Digitar Manualmente</SelectItem>
                       {fornecedores.length === 0 && (
                         <SelectItem value="none" disabled>
                           Nenhum fornecedor cadastrado
@@ -357,7 +357,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
                   </Select>
                   {fornecedorSelecionado && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      📧 {fornecedorSelecionado.email} | 📞 {fornecedorSelecionado.telefone || "N/A"}
+                      <Mail className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />{fornecedorSelecionado.email} | <Phone className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />{fornecedorSelecionado.telefone || "N/A"}
                     </p>
                   )}
                 </div>
@@ -373,7 +373,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
                   />
                   {fornecedorSelecionado && (
                     <p className="text-xs text-green-600 mt-1">
-                      ✓ Auto-preenchido do cadastro
+                      <Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Auto-preenchido do cadastro
                     </p>
                   )}
                 </div>

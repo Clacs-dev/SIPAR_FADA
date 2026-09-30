@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { previewDocument } from "../ui/document-preview";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
@@ -89,10 +90,7 @@ export function DepartmentReports() {
 
     const csvContent = [headers.join(','), ...csvRows.map((row) => row.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `relatorio_departamental_${Date.now()}.csv`;
-    link.click();
+    previewDocument({ blob, nome: `relatorio_departamental_${Date.now()}.csv`, tipo: 'text/csv' });
   };
 
   const filteredReports = selectedDepartment === 'all'

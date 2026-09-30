@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { previewDocument } from "../ui/document-preview";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Badge } from "../ui/badge";
@@ -104,10 +105,7 @@ export function DepartmentDashboard() {
     ]);
     const csv = [headers.join(','), ...csvRows.map((row) => row.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `dashboard_departamental_${Date.now()}.csv`;
-    link.click();
+    previewDocument({ blob, nome: `dashboard_departamental_${Date.now()}.csv`, tipo: 'text/csv' });
   };
 
   const filteredRows = rows.filter((r) => {

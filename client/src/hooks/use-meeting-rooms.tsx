@@ -18,7 +18,14 @@ export interface RoomConflict {
   titulo: string;
   hora_inicio: string;
   hora_fim: string;
+  tipo?: 'reuniao_interna' | 'carta_apresentacao' | 'audiencia';
 }
+
+export const ROOM_CONFLICT_TYPE_LABEL: Record<string, string> = {
+  reuniao_interna: 'Reunião interna',
+  carta_apresentacao: 'Carta de apresentação',
+  audiencia: 'Pedido de audiência',
+};
 
 export function useMeetingRooms(includeInactive = false) {
   const [rooms, setRooms] = useState<MeetingRoom[]>([]);

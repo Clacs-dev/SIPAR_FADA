@@ -35,6 +35,11 @@ router.get('/me', requireAuth as any, AuthController.me as any);
 router.put('/me', requireAuth as any, authLimiter, AuthController.updateProfile as any);
 router.post('/me', requireAuth as any, authLimiter, AuthController.updateProfile as any);
 router.put('/me/bank-details', requireAuth as any, AuthController.updateBankDetails as any);
+// Varias coordenadas bancarias guardadas (fornecedor externo escolhe qual usar por factura).
+router.get('/me/bank-accounts', requireAuth as any, AuthController.listBankAccounts as any);
+router.post('/me/bank-accounts', requireAuth as any, AuthController.addBankAccount as any);
+router.put('/me/bank-accounts/:id/select', requireAuth as any, AuthController.selectBankAccount as any);
+router.delete('/me/bank-accounts/:id', requireAuth as any, AuthController.removeBankAccount as any);
 // Upload + gravacao da assinatura num unico pedido multipart, em vez de um
 // upload seguido de um PUT JSON separado: essa sequencia de dois fetch()
 // era interrompida a meio por interferencia do browser (extensoes que

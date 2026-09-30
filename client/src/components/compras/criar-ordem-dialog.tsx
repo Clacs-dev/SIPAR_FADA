@@ -26,7 +26,7 @@ import { Calendar } from "../ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarIcon, Package, Building2 } from "lucide-react";
+import { CalendarIcon, Package, Building2, Mail, MapPin } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import type { Requisicao, Fornecedor } from "./types";
 
@@ -172,7 +172,7 @@ export function CriarOrdemDialog({
             </Select>
             {fornecedorSelecionado && (
               <p className="text-xs text-muted-foreground">
-                📧 {fornecedorSelecionado.email} • 📍 {fornecedorSelecionado.endereco}
+                <Mail className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />{fornecedorSelecionado.email} • <MapPin className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />{fornecedorSelecionado.endereco}
               </p>
             )}
           </div>

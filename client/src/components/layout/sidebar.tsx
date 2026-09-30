@@ -16,6 +16,7 @@ import {
   FileCheck,
   FileSignature,
   Receipt,
+  FileBarChart,
   TrendingUp,
   Car,
   Send,
@@ -35,7 +36,8 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../auth/auth-context";
-import { getMenuItems, getProfileBadge } from "../auth/permissions";
+import { getMenuItems, getProfileBadge, filterMenuItemsByLicense } from "../auth/permissions";
+import { useLicense } from "../../hooks/use-license";
 import { toast } from "sonner@2.0.3";
 import { MeuPerfilDialog } from "./meu-perfil-dialog";
 import siparMark from "@/assets/sipar-mark.png";
@@ -51,14 +53,19 @@ export function Sidebar({
   onTabChange
 }: SidebarProps) {
   const { user, logout } = useAuth();
+  const { data: licenseData } = useLicense();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [perfilOpen, setPerfilOpen] = useState(false);
-  
-  // Get menu items based on user role
-  const menuItems = getMenuItems(
-    user?.role || 'externo',
-    user?.department,
-    user?.position
+
+  // Get menu items based on user role, depois esconder os que a licenca
+  // activa desta instalacao nao inclui (ver filterMenuItemsByLicense).
+  const menuItems = filterMenuItemsByLicense(
+    getMenuItems(
+      user?.role || 'externo',
+      user?.department,
+      user?.position
+    ),
+    licenseData?.license?.modules
   );
   
   // Get badge info for the user profile
@@ -112,6 +119,7 @@ export function Sidebar({
     FileCheck,
     FileSignature,
     Receipt,
+    FileBarChart,
     TrendingUp,
     Car,
     Send,

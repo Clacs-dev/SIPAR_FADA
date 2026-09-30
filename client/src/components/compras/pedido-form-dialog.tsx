@@ -172,7 +172,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="!w-[95vw] !max-w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo Procurement</DialogTitle>
           <DialogDescription>

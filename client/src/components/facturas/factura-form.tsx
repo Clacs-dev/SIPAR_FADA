@@ -1,13 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Receipt, Upload, X, Save, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { MoneyInput } from "../ui/money-input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Factura, ItemFactura, Fornecedor, FacturaTipo } from "./types";
 import { FileUpload } from "../ui/file-upload";
 import { useFileUpload } from "../../hooks/use-file-upload";
+import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, somarFiscal } from "../../utils/fiscal";
+import { toast } from "sonner@2.0.3";
+import { useAuth } from "../auth/auth-context";
+import { API_BASE_URL } from "@/services/api";
+import { NifLookupField } from "../shared/nif-lookup-field";
+
+interface DadosBancariosFornecedor {
+  banco_nome?: string | null;
+  banco_iban?: string | null;
+  banco_nib?: string | null;
+  banco_swift?: string | null;
+  banco_titular?: string | null;
+  banco_cidade?: string | null;
+  banco_pais?: string | null;
+}
 
 interface FacturaFormProps {
   factura?: Factura;
@@ -17,6 +33,16 @@ interface FacturaFormProps {
 }
 
 export function FacturaForm({ factura, fornecedores, onSave, onCancel }: FacturaFormProps) {
+  const { accessToken } = useAuth();
+  const [dadosBancariosFornecedor, setDadosBancariosFornecedor] = useState<DadosBancariosFornecedor | null>(null);
+  const [loadingDadosBancarios, setLoadingDadosBancarios] = useState(false);
+  // Fornecedor ainda não cadastrado na plataforma: em vez de escolher da
+  // lista, digita-se o NIF (consulta a AGT para preencher o nome) e o nome
+  // fica livre para editar - a factura grava-se na mesma, sem exigir um
+  // registo de Fornecedor.
+  const [fornecedorNaoListado, setFornecedorNaoListado] = useState(false);
+  const [nifAdHoc, setNifAdHoc] = useState('');
+  const [nomeAdHoc, setNomeAdHoc] = useState('');
   const [formData, setFormData] = useState({
     fornecedor_id: factura?.fornecedor_id || '',
     numero_fornecedor: factura?.numero_fornecedor || '',
@@ -37,11 +63,33 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         descricao: '',
         quantidade: 1,
         preco_unitario: 0,
+        tipo_operacao: 'produto',
         iva: 14,
+        valor_retencao: 0,
         total: 0,
       }
     ]
   );
+
+  // Ao seleccionar o fornecedor, mostra os dados bancários já guardados dele
+  // (da conta de utilizador ligada, se tiver login no portal, ou dos
+  // guardados directamente no registo de Fornecedor) - para quem regista a
+  // factura internamente (Compras/Financeiro) ver/confirmar para onde vai o
+  // pagamento, sem ter de digitar nada.
+  useEffect(() => {
+    let cancelado = false;
+    setDadosBancariosFornecedor(null);
+    if (!formData.fornecedor_id || !accessToken) return;
+    setLoadingDadosBancarios(true);
+    fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}/dados-bancarios`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelado) setDadosBancariosFornecedor(data?.dados_bancarios || null); })
+      .catch(() => { if (!cancelado) setDadosBancariosFornecedor(null); })
+      .finally(() => { if (!cancelado) setLoadingDadosBancarios(false); });
+    return () => { cancelado = true; };
+  }, [formData.fornecedor_id, accessToken]);
 
   const {
     files,
@@ -62,12 +110,21 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       [field]: value,
     };
 
-    // Recalcular total do item
-    if (field === 'quantidade' || field === 'preco_unitario' || field === 'iva') {
+    // Ao mudar para "serviço" força a retenção (sem IVA); ao mudar para
+    // "produto" volta à taxa de IVA geral por omissão.
+    if (field === 'tipo_operacao') {
+      newItens[index].iva = value === 'servico' ? 0 : 14;
+    }
+
+    // Recalcular total do item (Angola: IVA 14/7/5/2% para produtos, ou
+    // retenção na fonte de 6,5% para serviços - nunca os dois - ver utils/fiscal.ts)
+    if (field === 'quantidade' || field === 'preco_unitario' || field === 'iva' || field === 'tipo_operacao') {
       const item = newItens[index];
       const subtotal = item.quantidade * item.preco_unitario;
-      const valorIva = subtotal * (item.iva / 100);
-      item.total = subtotal + valorIva;
+      const fiscal = calcularFiscal(subtotal, item.tipo_operacao === 'servico' ? 'servico' : 'produto', item.iva);
+      item.iva = fiscal.taxa_iva;
+      item.valor_retencao = fiscal.valor_retencao;
+      item.total = fiscal.valor_final;
     }
 
     setItens(newItens);
@@ -81,7 +138,9 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         descricao: '',
         quantidade: 1,
         preco_unitario: 0,
+        tipo_operacao: 'produto',
         iva: 14,
+        valor_retencao: 0,
         total: 0,
       }
     ]);
@@ -94,23 +153,46 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   };
 
   const calculateTotals = () => {
-    const subtotal = itens.reduce((sum, item) => {
-      return sum + (item.quantidade * item.preco_unitario);
-    }, 0);
+    const linhas = itens.map((item) => {
+      const subtotal = item.quantidade * item.preco_unitario;
+      return calcularFiscal(subtotal, item.tipo_operacao === 'servico' ? 'servico' : 'produto', item.iva);
+    });
+    const somatorio = somarFiscal(linhas);
 
-    const iva_total = itens.reduce((sum, item) => {
-      const itemSubtotal = item.quantidade * item.preco_unitario;
-      return sum + (itemSubtotal * (item.iva / 100));
-    }, 0);
-
-    const total = subtotal + iva_total;
-
-    return { subtotal, iva_total, total };
+    return {
+      subtotal: somatorio.valor_bruto,
+      iva_total: somatorio.valor_iva,
+      retencao_total: somatorio.valor_retencao,
+      // "total" mantém o significado já existente (valor da factura: bruto + IVA,
+      // o que consta do documento). "valor_final" é o que se paga efectivamente
+      // (bruto menos IVA cativo e/ou retenção - já calculado por item em
+      // calcularFiscal/somarFiscal, não recalculado aqui para não desalinhar).
+      total: somatorio.valor_bruto + somatorio.valor_iva,
+      valor_final: somatorio.valor_final,
+    };
   };
 
   const handleSave = () => {
+    // Fornecedor da lista já cadastrada, ou um "ad-hoc" (nome + NIF digitados
+    // à mão, ainda sem registo de Fornecedor na plataforma).
+    const fornecedorSelecionado = fornecedorNaoListado
+      ? (nomeAdHoc.trim() ? { nome: nomeAdHoc.trim(), nif: nifAdHoc.trim() } : null)
+      : fornecedores.find((f) => f.id === formData.fornecedor_id);
+    if (!fornecedorSelecionado) {
+      toast.error(fornecedorNaoListado ? 'Indique o nome do fornecedor.' : 'Selecione um fornecedor antes de gravar a factura.');
+      return;
+    }
+    if (itens.some((item) => !item.descricao || item.quantidade <= 0 || item.preco_unitario <= 0)) {
+      toast.error('Preencha correctamente todos os itens da factura.');
+      return;
+    }
+    if (!formData.tipo) {
+      toast.error('Seleccione o tipo da factura (Mercadoria, Serviço ou Ambos).');
+      return;
+    }
+
     const totals = calculateTotals();
-    
+
  console.log('=== DEBUG FACTURA SAVE ===');
  console.log(' Estado atual dos ficheiros:', files);
  console.log(' Número de ficheiros:', files.length);
@@ -120,12 +202,13 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     const anexos = files.length > 0 
       ? files.map(f => {
  console.log(' Processando ficheiro:', { id: f.id, nome: f.name, url: f.url, tamanho: f.size });
-          return { 
+          return {
             id: f.id,
-            nome: f.name, 
-            url: f.url, 
+            nome: f.name,
+            url: f.url,
             tamanho: f.size,
-            tipo: f.tipo 
+            tipo: f.tipo,
+            uploaded_at: new Date().toISOString(),
           };
         })
       : [];
@@ -135,10 +218,26 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     
     onSave({
       ...formData,
+      // Reafirma o tipo (ja validado como nao-vazio acima) - o spread de
+      // "formData" sozinho manteria o tipo largo "" | FacturaTipo do estado.
+      tipo: formData.tipo as FacturaTipo,
+      // "fornecedor"/"valor" sao os campos que o servidor exige para criar a
+      // factura (ver server/src/services/validation.service.ts) - sem eles a
+      // gravacao falhava sempre com "Campo obrigatorio ausente".
+      fornecedor: fornecedorSelecionado.nome,
+      fornecedor_nome: fornecedorSelecionado.nome,
+      // Fornecedor ad-hoc (não cadastrado): fica sem fornecedor_id (não há
+      // registo de Fornecedor), mas o NIF digitado/confirmado na AGT fica
+      // guardado na factura.
+      fornecedor_id: fornecedorNaoListado ? undefined : formData.fornecedor_id,
+      nif: fornecedorSelecionado.nif || undefined,
+      valor: totals.total,
       itens,
       subtotal: totals.subtotal,
       iva_total: totals.iva_total,
+      retencao_total: totals.retencao_total,
       total: totals.total,
+      valor_final: totals.valor_final,
       anexos: anexos,
       status: 'pendente', // Status correto do sistema
     });
@@ -194,23 +293,62 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
           <CardTitle>Informações do Fornecedor</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() => {
+              setFornecedorNaoListado((v) => !v);
+              handleChange('fornecedor_id', '');
+              setNifAdHoc('');
+              setNomeAdHoc('');
+            }}
+          >
+            {fornecedorNaoListado ? '← Escolher da lista de fornecedores cadastrados' : 'O fornecedor não está na lista? Registar pelo NIF →'}
+          </button>
+
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="fornecedor_id">Fornecedor *</Label>
-              <select
-                id="fornecedor_id"
-                className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                value={formData.fornecedor_id}
-                onChange={(e) => handleChange('fornecedor_id', e.target.value)}
-              >
-                <option value="">Selecione o fornecedor...</option>
-                {fornecedores.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.nome} - NIF: {f.nif}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {fornecedorNaoListado ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="nif_adhoc">NIF do Fornecedor *</Label>
+                  <NifLookupField
+                    id="nif_adhoc"
+                    value={nifAdHoc}
+                    onChange={setNifAdHoc}
+                    onEncontrado={(dados) => {
+                      setNifAdHoc(dados.nif);
+                      setNomeAdHoc(dados.nome);
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="nome_adhoc">Nome do Fornecedor *</Label>
+                  <Input
+                    id="nome_adhoc"
+                    placeholder="Preenchido automaticamente, ou digite manualmente"
+                    value={nomeAdHoc}
+                    onChange={(e) => setNomeAdHoc(e.target.value)}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="fornecedor_id">Fornecedor *</Label>
+                <select
+                  id="fornecedor_id"
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                  value={formData.fornecedor_id}
+                  onChange={(e) => handleChange('fornecedor_id', e.target.value)}
+                >
+                  <option value="">Selecione o fornecedor...</option>
+                  {fornecedores.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.nome} - NIF: {f.nif}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="numero_fornecedor">Nº Factura Fornecedor *</Label>
@@ -223,8 +361,14 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
             </div>
           </div>
 
-          {formData.fornecedor_id && (
-            <div className="p-3 bg-accent rounded-lg">
+          {fornecedorNaoListado && (
+            <p className="text-xs text-muted-foreground">
+              Este fornecedor será registado apenas nesta factura (nome + NIF). Para o cadastrar na plataforma e reutilizar em futuras compras, faça-o em Compras → Fornecedores.
+            </p>
+          )}
+
+          {!fornecedorNaoListado && formData.fornecedor_id && (
+            <div className="p-3 bg-accent rounded-lg space-y-3">
               {(() => {
                 const fornecedor = fornecedores.find(f => f.id === formData.fornecedor_id);
                 if (!fornecedor) return null;
@@ -236,6 +380,23 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                   </div>
                 );
               })()}
+
+              <div className="pt-2 border-t border-border/60">
+                <p className="text-sm font-medium mb-1">Dados Bancários do Fornecedor</p>
+                {loadingDadosBancarios ? (
+                  <p className="text-sm text-muted-foreground">A carregar...</p>
+                ) : dadosBancariosFornecedor ? (
+                  <div className="grid gap-1 text-sm">
+                    {dadosBancariosFornecedor.banco_nome && <p><strong>Banco:</strong> {dadosBancariosFornecedor.banco_nome}</p>}
+                    {dadosBancariosFornecedor.banco_titular && <p><strong>Titular:</strong> {dadosBancariosFornecedor.banco_titular}</p>}
+                    {dadosBancariosFornecedor.banco_iban && <p><strong>IBAN:</strong> {dadosBancariosFornecedor.banco_iban}</p>}
+                    {dadosBancariosFornecedor.banco_nib && <p><strong>NIB:</strong> {dadosBancariosFornecedor.banco_nib}</p>}
+                    {dadosBancariosFornecedor.banco_swift && <p><strong>SWIFT:</strong> {dadosBancariosFornecedor.banco_swift}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Este fornecedor ainda não tem dados bancários guardados.</p>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
@@ -361,7 +522,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                 )}
               </div>
 
-              <div className="grid gap-4 md:grid-cols-5">
+              <div className="grid gap-4 md:grid-cols-6">
                 <div className="md:col-span-2 space-y-2">
                   <Label>Descrição *</Label>
                   <Input
@@ -383,32 +544,66 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
 
                 <div className="space-y-2">
                   <Label>Preço Unit. *</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
+                  <MoneyInput
                     value={item.preco_unitario}
-                    onChange={(e) => handleItemChange(index, 'preco_unitario', parseFloat(e.target.value) || 0)}
+                    onValueChange={(valor) => handleItemChange(index, 'preco_unitario', valor)}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>IVA (%)</Label>
+                  <Label>Produto ou Serviço *</Label>
                   <select
                     className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                    value={item.iva}
-                    onChange={(e) => handleItemChange(index, 'iva', parseFloat(e.target.value))}
+                    value={item.tipo_operacao || 'produto'}
+                    onChange={(e) => handleItemChange(index, 'tipo_operacao', e.target.value)}
                   >
-                    <option value="0">0%</option>
-                    <option value="7">7%</option>
-                    <option value="14">14%</option>
+                    <option value="produto">Produto (IVA)</option>
+                    <option value="servico">Serviço (Retenção)</option>
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  {item.tipo_operacao === 'servico' ? (
+                    <>
+                      <Label>Retenção na Fonte</Label>
+                      <div className="w-full px-3 py-2 border border-input rounded-md bg-accent text-sm">
+                        {TAXA_RETENCAO_SERVICOS}%
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Label>IVA (%)</Label>
+                      <select
+                        className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                        value={item.iva}
+                        onChange={(e) => handleItemChange(index, 'iva', parseFloat(e.target.value))}
+                      >
+                        {TAXAS_IVA_PRODUTOS.map((taxa) => (
+                          <option key={taxa} value={taxa}>{taxa}%</option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-4">
+                {item.tipo_operacao === 'servico' && (item.valor_retencao || 0) > 0 && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Retenção: </span>
+                    <span className="font-medium text-amber-600">-{formatCurrency(item.valor_retencao || 0)}</span>
+                  </div>
+                )}
+                {item.tipo_operacao !== 'servico' && item.iva > 0 && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">IVA Cativo: </span>
+                    <span className="font-medium text-amber-600">
+                      -{formatCurrency(item.quantidade * item.preco_unitario * (item.iva / 100))}
+                    </span>
+                  </div>
+                )}
                 <div className="text-sm">
-                  <span className="text-muted-foreground">Total: </span>
+                  <span className="text-muted-foreground">A Pagar: </span>
                   <span className="font-bold">{formatCurrency(item.total)}</span>
                 </div>
               </div>
@@ -418,16 +613,20 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
           {/* Totais */}
           <div className="border-t border-border pt-4 space-y-2">
             <div className="flex justify-between text-sm">
-              <span>Subtotal:</span>
+              <span>Valor Bruto:</span>
               <span className="font-medium">{formatCurrency(totals.subtotal)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span>IVA Total:</span>
+              <span>Valor IVA (Cativo):</span>
               <span className="font-medium">{formatCurrency(totals.iva_total)}</span>
             </div>
+            <div className="flex justify-between text-sm">
+              <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}% serviços):</span>
+              <span className="font-medium text-amber-600">-{formatCurrency(totals.retencao_total)}</span>
+            </div>
             <div className="flex justify-between text-lg font-bold border-t border-border pt-2">
-              <span>Total:</span>
-              <span className="text-primary">{formatCurrency(totals.total)}</span>
+              <span>Valor Final a Pagar:</span>
+              <span className="text-primary">{formatCurrency(totals.valor_final)}</span>
             </div>
           </div>
         </CardContent>

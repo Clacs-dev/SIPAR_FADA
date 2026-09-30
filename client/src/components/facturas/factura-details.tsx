@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Receipt,
   Calendar,
@@ -16,17 +16,23 @@ import {
   Upload,
   Building,
   FileSignature,
-  PenTool
+  PenTool,
+  Eye,
+  Check,
+  Package,
+  Wrench,
+  ShoppingCart
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
-import { Factura } from "./types";
+import { Factura, HistoricoFactura } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL } from '@/services/api';
-import { gerarPDFOrdemPagamento, urlParaDataUrl } from "../../utils/pdf-generator";
+import { gerarPDFOrdemPagamento, gerarPDFFactura, urlParaDataUrl, visualizarOrdemCompra } from "../../utils/pdf-generator";
+import { previewDocument, previewPdf } from "../ui/document-preview";
 import { toast } from "sonner@2.0.3";
 
 interface FacturaDetailsProps {
@@ -142,11 +148,12 @@ export function FacturaDetails({
 
       const doc = gerarPDFOrdemPagamento({
         numero: factura.numero_ordem_pagamento || 'OP/N.º —',
+        tipo: 'fornecedor',
         contaDebito: factura.ordem_pagamento?.conta_debito,
         numeroDespacho: factura.ordem_pagamento?.numero_despacho,
         numeroFacturas: factura.numero,
         descricao: factura.descricao,
-        valor: factura.total || factura.valor || 0,
+        valor: valorFinalExibicao || factura.total || factura.valor || 0,
         moeda: factura.moeda,
         fornecedor: fornecedorNomeExibicao || factura.banco_titular || 'Fornecedor',
         bancoNome: factura.banco_nome,
@@ -156,7 +163,7 @@ export function FacturaDetails({
         data: factura.ordem_pagamento?.gerada_em,
         assinaturas: assinaturasComImagem,
       });
-      doc.save(`Ordem_Pagamento_${(factura.numero_ordem_pagamento || factura.numero).replace(/[\/\s]/g, '-')}.pdf`);
+      previewPdf(doc, `Ordem_Pagamento_${(factura.numero_ordem_pagamento || factura.numero).replace(/[\/\s]/g, '-')}.pdf`);
     } catch (err) {
  console.error('Erro ao gerar PDF da Ordem de Pagamento:', err);
       toast.error('Erro ao gerar o PDF da Ordem de Pagamento');
@@ -170,8 +177,8 @@ export function FacturaDetails({
       registada: { label: 'Registada', color: 'var(--tone-info)' },
       rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
       pendente: { label: 'Pendente', color: 'var(--tone-info)' },
-      validado: { label: 'Validado', color: 'var(--tone-info)' },
-      em_validacao: { label: 'Em Validação', color: 'var(--tone-info)' },
+      validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
+      em_validacao: { label: 'Em Aprovação-DSG', color: 'var(--tone-info)' },
       aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
       aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
       rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)' },
@@ -186,6 +193,79 @@ export function FacturaDetails({
 
   const itensFactura = Array.isArray(factura.itens) ? factura.itens : [];
 
+  // Historico de accoes: vem do registo do servidor (DocumentHistory, o mesmo
+  // para qualquer separador de Gestao de Pagamento). Para facturas antigas sem
+  // registo, reconstroi-se a linha temporal a partir das datas da propria factura.
+  const [historicoServidor, setHistoricoServidor] = useState<HistoricoFactura[] | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    setHistoricoServidor(null);
+    if (!accessToken) return;
+    fetch(`${API_BASE_URL}/facturas/${factura.id}/historico`, { headers: { Authorization: `Bearer ${accessToken}` } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelado || !data) return;
+        const rotulos: Record<string, string> = {
+          pendente: 'Registada', validado: 'Aprovado-DSG', aprovado: 'Aprovada', rejeitado: 'Rejeitada',
+          submetido_ao_banco: 'Submetida ao banco', pago: 'Paga', cancelado: 'Cancelada',
+        };
+        setHistoricoServidor((data.history || []).map((h: any) => ({
+          id: h.id,
+          factura_id: factura.id,
+          acao: h.action === 'created'
+            ? 'Factura registada'
+            : h.action === 'updated'
+              ? 'Dados actualizados'
+              : rotulos[h.statusTo] || `Estado alterado para ${h.statusTo}`,
+          status_anterior: h.statusFrom || undefined,
+          status_novo: h.statusTo || undefined,
+          autor_id: h.userId,
+          autor_nome: h.userName,
+          comentario: h.comment || undefined,
+          created_at: h.createdAt,
+        })));
+      })
+      .catch(() => { /* mantem-se a linha temporal reconstruida */ });
+    return () => { cancelado = true; };
+  }, [factura.id, factura.status, accessToken]);
+
+  const historicoReconstruido = (): HistoricoFactura[] => {
+    const eventos: Array<[string | undefined, string, string | undefined, string | undefined]> = [
+      [factura.created_at, 'Factura registada', factura.created_by_name, undefined],
+      [factura.validado_at, 'Aprovado-DSG', factura.validado_por_nome, factura.validacao_comentario],
+      [factura.aprovado_at, 'Aprovada', factura.aprovado_por_nome, factura.aprovacao_comentario],
+      [factura.rejeitado_at, 'Rejeitada', factura.rejeitado_por_nome, factura.rejeicao_motivo],
+      [factura.ordem_pagamento?.gerada_em, 'Ordem de Pagamento gerada', factura.ordem_pagamento?.gerada_por_nome, factura.numero_ordem_pagamento],
+      ...(factura.ordem_pagamento?.assinaturas || []).map((a) => [a.assinado_em, 'Ordem de Pagamento assinada', a.nome, a.papel] as [string, string, string, string]),
+      [factura.submetido_banco_at, 'Submetida ao banco', factura.submetido_banco_por_nome, factura.referencia_submissao],
+      [factura.pago_at, 'Paga', undefined, factura.referencia_pagamento],
+    ];
+    return eventos
+      .filter(([data]) => !!data)
+      .map(([data, acao, autor, comentario], index) => ({
+        id: `reconstruido-${index}`,
+        factura_id: factura.id,
+        acao,
+        autor_id: '',
+        autor_nome: autor || 'Sistema',
+        comentario,
+        created_at: data!,
+      }));
+  };
+
+  // Registos do servidor + eventos que so existem nos dados da factura (ex:
+  // assinaturas da Ordem de Pagamento), sem repetir accoes ja registadas.
+  const historicoExibido: HistoricoFactura[] = (() => {
+    const servidor = historicoServidor || [];
+    const legado = Array.isArray(factura.historico) ? factura.historico : [];
+    const base = [...servidor, ...legado];
+    const acoesBase = new Set(base.map((h) => h.acao));
+    const complementares = historicoReconstruido().filter((h) => !acoesBase.has(h.acao));
+    return [...base, ...complementares]
+      .filter((h) => h && h.acao)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  })();
+
   const formatCurrency = (value: number = 0) => {
     return new Intl.NumberFormat('pt-AO', {
       style: 'currency',
@@ -199,6 +279,14 @@ export function FacturaDetails({
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? '-' : date.toLocaleDateString('pt-PT');
   };
+
+  // Valor final a pagar: bruto menos IVA cativo (retido na totalidade) e/ou
+  // retenção na fonte de serviços (6,5%) - nunca soma, só subtrai. Facturas
+  // antigas (antes desta feature) não têm retencao_total/valor_final
+  // gravados - o fallback assume retenção zero (comportamento anterior).
+  const retencaoTotalExibicao = factura.retencao_total ?? 0;
+  const valorFinalExibicao = factura.valor_final
+    ?? ((factura.subtotal ?? factura.total ?? factura.valor ?? 0) - (factura.iva_total ?? 0) - retencaoTotalExibicao);
 
   const dataVencimentoValida = factura.data_vencimento ? new Date(factura.data_vencimento) : null;
   const isVencida = !!dataVencimentoValida && !Number.isNaN(dataVencimentoValida.getTime())
@@ -216,6 +304,17 @@ export function FacturaDetails({
   const fornecedorEmailExibicao =
     (typeof factura.fornecedor === 'object' && factura.fornecedor ? (factura.fornecedor as any).email : null)
     || (factura as any).fornecedor_email;
+  const fornecedorTelefoneExibicao =
+    (typeof factura.fornecedor === 'object' && factura.fornecedor ? (factura.fornecedor as any).telefone : null)
+    || (factura as any).fornecedor_telefone;
+  const fornecedorMoradaExibicao =
+    (typeof factura.fornecedor === 'object' && factura.fornecedor ? (factura.fornecedor as any).morada : null)
+    || (factura as any).fornecedor_morada;
+  const origemAnexoLabel: Record<string, string> = {
+    cotacao: 'Cotação',
+    pedido: 'Pedido de compra',
+    ordem_compra: 'Ordem de compra',
+  };
 
   const handleValidate = () => {
     if (comentario.trim() && onValidate) {
@@ -286,17 +385,17 @@ export function FacturaDetails({
             userRole 
           })}
           
-          {/* Botão Validar (Compras) - sempre visível se tiver permissão */}
+          {/* Botão Aprovar-DSG (Compras) - sempre visível se tiver permissão */}
           {canValidate && (
-            <Button 
+            <Button
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-accent)' }}
               onClick={() => setShowValidateForm(true)}
               disabled={factura.status !== 'pendente'}
-              title={factura.status !== 'pendente' ? `Status atual: ${factura.status}. Necessário: pendente` : 'Validar factura'}
+              title={factura.status !== 'pendente' ? `Status atual: ${factura.status}. Necessário: pendente` : 'Aprovar-DSG factura'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
-              Validar
+              Aprovar-DSG
             </Button>
           )}
           
@@ -352,9 +451,22 @@ export function FacturaDetails({
               Editar
             </Button>
           )}
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Baixar PDF
+          {/* Ordem de Compra: a do Procurement de origem, ou - factura normal -
+              "Liberação de Despesa_DSG" emitida quando a factura e validada. */}
+          {(factura.purchase_order_id || ['validado', 'aprovado', 'submetido_ao_banco', 'pago'].includes(factura.status)) && (
+            <Button
+              variant="outline"
+              onClick={() => visualizarOrdemCompra(
+                factura.purchase_order_id ? { ordemId: factura.purchase_order_id } : { facturaId: factura.id }
+              ).catch((err) => toast.error(err?.message || 'Erro ao abrir o documento'))}
+            >
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Liberação de Despesa_DSG'}
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => gerarPDFFactura(factura)}>
+            <Eye className="mr-2 h-4 w-4" />
+            Ver PDF
           </Button>
         </div>
       </div>
@@ -365,12 +477,12 @@ export function FacturaDetails({
         <Badge variant="outline">{factura.moeda}</Badge>
         {isVencida && (
           <Badge className="text-white" style={{ backgroundColor: 'var(--tone-danger)' }}>
-            ⚠️ Vencida
+            <AlertTriangle className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Vencida
           </Badge>
         )}
         {factura.integracao_status === 'confirmado' && (
           <Badge className="text-white" style={{ backgroundColor: 'var(--tone-info)' }}>
-            ✓ Integrado Primavera
+            <Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Integrado Primavera
           </Badge>
         )}
       </div>
@@ -421,9 +533,9 @@ export function FacturaDetails({
                 <div>
                   <p className="text-sm text-muted-foreground">Tipo de Factura</p>
                   <p className="font-medium capitalize">
-                    {factura.tipo === 'mercadoria' && '📦 Mercadoria'}
-                    {factura.tipo === 'servico' && '🔧 Serviço'}
-                    {factura.tipo === 'ambos' && '📦🔧 Ambos'}
+                    {factura.tipo === 'mercadoria' && <><Package className="inline h-4 w-4 mr-1 align-text-bottom" />Mercadoria</>}
+                    {factura.tipo === 'servico' && <><Wrench className="inline h-4 w-4 mr-1 align-text-bottom" />Serviço</>}
+                    {factura.tipo === 'ambos' && <><Package className="inline h-4 w-4 mr-1 align-text-bottom" /><Wrench className="inline h-4 w-4 mr-1 align-text-bottom" />Ambos</>}
                   </p>
                 </div>
               )}
@@ -438,12 +550,54 @@ export function FacturaDetails({
                     {fornecedorEmailExibicao}
                   </p>
                 )}
+                {(fornecedorTelefoneExibicao || fornecedorMoradaExibicao) && (
+                  <p className="text-sm text-muted-foreground">
+                    {fornecedorTelefoneExibicao && `Tel: ${fornecedorTelefoneExibicao}`}
+                    {fornecedorTelefoneExibicao && fornecedorMoradaExibicao && ' • '}
+                    {fornecedorMoradaExibicao}
+                  </p>
+                )}
               </div>
 
-              {factura.numero_ordem && (
-                <div>
-                  <p className="text-sm text-muted-foreground">Ordem de Compra vinculada (Procurement)</p>
-                  <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
+              {(factura.numero_ordem || (factura as any).pedido_numero) && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  {(factura as any).pedido_numero && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Pedido de Compra de origem</p>
+                      <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{(factura as any).pedido_numero}</p>
+                    </div>
+                  )}
+                  {factura.numero_ordem && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">
+                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Liberação de Despesa_DSG'}
+                      </p>
+                      <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {((factura as any).departamento_solicitante || (factura as any).categoria || (factura as any).local_entrega) && (
+                <div className="grid gap-4 md:grid-cols-3">
+                  {(factura as any).departamento_solicitante && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Departamento Solicitante</p>
+                      <p className="font-medium">{(factura as any).departamento_solicitante}</p>
+                    </div>
+                  )}
+                  {(factura as any).categoria && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Categoria</p>
+                      <p className="font-medium">{(factura as any).categoria}</p>
+                    </div>
+                  )}
+                  {(factura as any).local_entrega && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Local de Entrega</p>
+                      <p className="font-medium">{(factura as any).local_entrega}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -498,8 +652,10 @@ export function FacturaDetails({
                       <div className="flex-1">
                         <p className="font-medium">{item.descricao}</p>
                         <p className="text-sm text-muted-foreground">
-                          Qtd: {item.quantidade} × {formatCurrency(item.preco_unitario)} 
-                          {item.iva > 0 && ` (IVA ${item.iva}%)`}
+                          Qtd: {item.quantidade} × {formatCurrency(item.preco_unitario)}
+                          {item.tipo_operacao === 'servico'
+                            ? ` (Retenção ${item.valor_retencao ? formatCurrency(item.valor_retencao) : '6,5%'})`
+                            : (item.iva > 0 && ` (IVA ${item.iva}%)`)}
                         </p>
                       </div>
                       <p className="font-bold">{formatCurrency(item.total)}</p>
@@ -510,16 +666,20 @@ export function FacturaDetails({
                 {/* Totais */}
                 <div className="border-t border-border pt-3 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span>Subtotal:</span>
+                    <span>Valor Bruto:</span>
                     <span className="font-medium">{formatCurrency(factura.subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span>IVA Total:</span>
-                    <span className="font-medium">{formatCurrency(factura.iva_total)}</span>
+                    <span>Valor IVA (Cativo):</span>
+                    <span className="font-medium text-amber-600">-{formatCurrency(factura.iva_total)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Valor Retenção na Fonte:</span>
+                    <span className="font-medium text-amber-600">-{formatCurrency(retencaoTotalExibicao)}</span>
                   </div>
                   <div className="flex justify-between text-xl font-bold border-t border-border pt-2">
-                    <span>Total:</span>
-                    <span className="text-primary">{formatCurrency(factura.total)}</span>
+                    <span>Valor Final a Pagar:</span>
+                    <span className="text-primary">{formatCurrency(valorFinalExibicao)}</span>
                   </div>
                 </div>
               </div>
@@ -570,8 +730,8 @@ export function FacturaDetails({
             </Card>
           )}
 
-          {/* Anexos */}
-          {factura.anexos && factura.anexos.length > 0 && (
+          {/* Anexos - sempre visivel, em qualquer estado da factura */}
+          {(
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -605,9 +765,10 @@ export function FacturaDetails({
                                  anexo?.fileSize ? `${(anexo.fileSize / 1024).toFixed(2)} KB` : 
                                  'Tamanho desconhecido'}
                                 {anexo?.tipo && ` • ${anexo.tipo}`}
+                                {(anexo as any)?.origem && ` • ${origemAnexoLabel[(anexo as any).origem] || (anexo as any).origem}`}
                               </p>
                               {!hasUrl && (
-                                <p className="text-xs mt-1" style={{ color: 'var(--tone-danger)' }}>⚠️ URL não disponível</p>
+                                <p className="text-xs mt-1" style={{ color: 'var(--tone-danger)' }}><AlertTriangle className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Ficheiro não foi carregado no sistema (só o nome foi registado)</p>
                               )}
                             </div>
                           </div>
@@ -616,18 +777,11 @@ export function FacturaDetails({
                             variant="ghost"
                             disabled={!hasUrl}
                             onClick={() => {
- console.log('Anexo completo:', anexo);
- console.log('URL do anexo:', url);
-                              
-                              if (url) {
-                                window.open(url, '_blank');
-                              } else {
-                                alert('URL do documento não disponível. Por favor, verifique o console para mais detalhes.');
-                              }
+                              if (url) previewDocument({ url, nome: anexo?.nome, tipo: anexo?.tipo });
                             }}
-                            title={hasUrl ? 'Visualizar/Baixar documento' : 'URL do documento não disponível'}
+                            title={hasUrl ? 'Pré-visualizar documento' : 'URL do documento não disponível'}
                           >
-                            <Download className="h-4 w-4" />
+                            <Eye className="h-4 w-4" />
                           </Button>
                         </div>
                       );
@@ -643,16 +797,16 @@ export function FacturaDetails({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="h-4 w-4" />
-                Histórico de Ações ({factura.historico?.length || 0})
+                Histórico de Ações ({historicoExibido.length})
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!factura.historico || factura.historico.length === 0 ? (
+              {historicoExibido.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   Nenhuma ação registada
                 </p>
               ) : (
-                factura.historico.filter(h => h && h.acao).map((h) => (
+                historicoExibido.map((h) => (
                   <div key={h.id} className="border-l-2 border-primary pl-4 pb-4">
                     <div className="flex items-center gap-2 mb-1">
                       <User className="h-4 w-4 text-muted-foreground" />
@@ -680,18 +834,18 @@ export function FacturaDetails({
               <CardTitle>Ações</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {/* Validar */}
+              {/* Aprovar-DSG */}
               {canValidate && factura.status === 'pendente' && !showValidateForm && (
                 <Button className="w-full" onClick={() => setShowValidateForm(true)}>
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Validar Factura
+                  Aprovar-DSG Factura
                 </Button>
               )}
 
               {showValidateForm && (
                 <div className="space-y-3 p-3 border border-border rounded-lg">
                   <Textarea
-                    placeholder="Comentário de validação..."
+                    placeholder="Comentário de aprovação (DSG)..."
                     rows={3}
                     value={comentario}
                     onChange={(e) => setComentario(e.target.value)}
@@ -867,14 +1021,14 @@ export function FacturaDetails({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <FileSignature className="h-4 w-4" />
-                  Ordem de Pagamento
+                  Ordem de Pagamento Fornecedor
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {!factura.numero_ordem_pagamento && !showOrdemPagamentoForm && (
                   <Button className="w-full" variant="outline" onClick={() => setShowOrdemPagamentoForm(true)}>
                     <FileSignature className="mr-2 h-4 w-4" />
-                    Gerar Ordem de Pagamento
+                    Gerar Ordem de Pagamento Fornecedor
                   </Button>
                 )}
 
@@ -961,7 +1115,7 @@ export function FacturaDetails({
                             <div>
                               <p className="font-medium">{label}</p>
                               {assinatura ? (
-                                <p className="text-xs" style={{ color: 'var(--tone-success)' }}>✓ Assinado por {assinatura.nome}</p>
+                                <p className="text-xs" style={{ color: 'var(--tone-success)' }}><Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Assinado por {assinatura.nome}</p>
                               ) : (
                                 <p className="text-xs text-muted-foreground">Assinatura pendente</p>
                               )}
@@ -999,8 +1153,8 @@ export function FacturaDetails({
                     </div>
 
                     <Button className="w-full" variant="outline" onClick={handleBaixarOrdemPagamento} disabled={gerandoPdfOp}>
-                      <Download className="mr-2 h-4 w-4" />
-                      {gerandoPdfOp ? 'A gerar...' : 'Baixar Ordem de Pagamento'}
+                      <Eye className="mr-2 h-4 w-4" />
+                      {gerandoPdfOp ? 'A gerar...' : 'Ver Ordem de Pagamento Fornecedor'}
                     </Button>
                   </>
                 )}
@@ -1008,15 +1162,15 @@ export function FacturaDetails({
             </Card>
           )}
 
-          {/* Informações de Validação */}
+          {/* Informações de Aprovação-DSG */}
           {factura.validado_at && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm">Validação</CardTitle>
+                <CardTitle className="text-sm">Aprovação-DSG</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <div>
-                  <p className="text-sm text-muted-foreground">Validado por</p>
+                  <p className="text-sm text-muted-foreground">Aprovado-DSG por</p>
                   <p className="font-medium">{factura.validado_por_nome}</p>
                 </div>
                 <div>
@@ -1149,18 +1303,10 @@ export function FacturaDetails({
                         variant="outline"
                         size="sm"
                         className="mt-1"
-                        onClick={() => {
-                          const link = document.createElement('a');
-                          link.href = factura.comprovativo_url!;
-                          link.download = `comprovativo_${factura.numero}.pdf`;
-                          link.target = '_blank';
-                          document.body.appendChild(link);
-                          link.click();
-                          document.body.removeChild(link);
-                        }}
+                        onClick={() => previewDocument({ url: factura.comprovativo_url!, nome: `comprovativo_${factura.numero}` })}
                       >
-                        <Download className="mr-2 h-4 w-4" />
-                        Baixar Comprovativo
+                        <Eye className="mr-2 h-4 w-4" />
+                        Ver Comprovativo
                       </Button>
                     ) : (
                       <p className="font-medium">{factura.referencia_pagamento}</p>

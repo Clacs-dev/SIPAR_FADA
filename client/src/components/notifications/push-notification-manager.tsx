@@ -157,7 +157,7 @@ export function PushNotificationManager() {
         body: JSON.stringify({
           userId: user.id,
           notification: {
-            title: '🎉 Notificações Ativadas!',
+            title: 'Notificações Ativadas!',
             body: 'Você agora receberá notificações importantes do sistema.',
             icon: '/icon-192x192.png',
             badge: '/badge-72x72.png',
@@ -182,10 +182,10 @@ export function PushNotificationManager() {
     if (!accessToken || user?.role !== 'admin') return;
 
     const titles = {
-      all: '📢 Comunicado Geral',
-      admin: '🔧 Comunicado para Administradores',
-      attendant: '👥 Comunicado para Atendentes',
-      user: '📝 Comunicado para Usuários'
+      all: 'Comunicado Geral',
+      admin: 'Comunicado para Administradores',
+      attendant: 'Comunicado para Atendentes',
+      user: 'Comunicado para Usuários'
     };
 
     const bodies = {

@@ -257,7 +257,7 @@ export interface OrdemCompra {
   data_entrega_prevista?: string;
   
   // Status
-  status: 'emitida' | 'confirmada' | 'em_transito' | 'entregue' | 'cancelada';
+  status: 'emitida' | 'confirmada' | 'em_transito' | 'entregue' | 'recebida' | 'cancelada';
   
   // Confirmação do fornecedor
   confirmada_em?: string;

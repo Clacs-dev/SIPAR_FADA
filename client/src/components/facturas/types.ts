@@ -31,9 +31,17 @@ export interface ItemFactura {
   descricao: string;
   quantidade: number;
   preco_unitario: number;
+  // Classificação fiscal do item (Angola): "produto" aplica IVA (taxa em
+  // "iva": 14/7/5/2%); "servico" aplica retenção na fonte de 6,5% em vez de
+  // IVA (ver client/src/utils/fiscal.ts). Default "produto" quando ausente
+  // (itens antigos, criados antes desta distinção existir).
+  tipo_operacao?: TipoOperacaoFiscalItem;
   iva: number;
+  valor_retencao?: number;
   total: number;
 }
+
+export type TipoOperacaoFiscalItem = 'produto' | 'servico';
 
 export interface Anexo {
   id: string;
@@ -81,6 +89,12 @@ export interface Factura {
   iva_total?: number;
   total?: number;
   valor?: number; // Coluna real do backend; "total" so existe quando submetido via formulario externo
+  // Retenção na fonte (serviços, 6,5%) e valor final efectivamente a pagar
+  // (total - retencao_total). Ver client/src/utils/fiscal.ts. Facturas
+  // antigas (antes desta feature) não têm estes campos - o Mapa de Impostos
+  // e o valor da Ordem de Pagamento devem usar fallback para "total"/"valor".
+  retencao_total?: number;
+  valor_final?: number;
   moeda: string; // AOA, USD, EUR
   
   // Itens da factura
@@ -103,9 +117,14 @@ export interface Factura {
   // Tipo de documento submetido (factura definitiva, proforma, etc.)
   tipo_documento?: 'factura' | 'factura_proforma' | 'outro';
 
-  // Vinculo com Ordem de Compra do Procurement (sincronizacao)
+  // Vinculo com Ordem de Compra do Procurement (sincronizacao). "origem"
+  // distingue se a factura veio do Procurement ('procurement', documento
+  // continua "Ordem de Compra", vai para o fornecedor) ou foi criada
+  // directamente em Gestão de Pagamento (sem valor, documento interno
+  // chamado "Liberação de Despesa_DSG").
   purchase_order_id?: string;
   numero_ordem?: string;
+  origem?: string;
 
   // Ordem de Pagamento gerada a partir desta factura (Gestão de Pagamento)
   numero_ordem_pagamento?: string;
@@ -218,4 +237,34 @@ export interface RelatorioFinanceiro {
     total_facturas: number;
     valor_total: number;
   }[];
+}
+
+// Ordem de Pagamento Interna: mesmo documento final (mesmo PDF) da Ordem de
+// Pagamento a Fornecedor, mas preenchida manualmente em vez de gerada
+// automaticamente a partir de uma factura aprovada.
+export interface OrdemPagamentoInterna {
+  id: string;
+  numero: string;
+  status: 'rascunho' | 'assinado' | 'pago';
+  descricao: string;
+  valor: number;
+  moeda: string;
+  destinatario: string;
+  numero_despacho?: string;
+  conta_debito?: string;
+  banco_nome?: string;
+  banco_iban?: string;
+  banco_cidade?: string;
+  banco_pais?: string;
+  paid_at?: string;
+  assinaturas: {
+    papel: 'presidente' | 'administrador';
+    nome: string;
+    assinatura_url?: string;
+    assinado_em: string;
+  }[];
+  created_by_id?: string;
+  created_by_name?: string;
+  created_at: string;
+  updated_at: string;
 }

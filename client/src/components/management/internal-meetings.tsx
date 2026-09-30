@@ -3,7 +3,7 @@ import { InternalMeetingForm } from "./internal-meeting-form";
 import { InternalMeetingsList } from "./internal-meetings-list";
 import { ActasList } from "./actas-list";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { CalendarPlus, FileText, X } from "lucide-react";
+import { CalendarPlus, FileText, X, Lightbulb } from "lucide-react";
 import { Button } from "../ui/button";
 
 interface InternalMeetingsProps {
@@ -57,7 +57,7 @@ export function InternalMeetings({ onNavigateToActa }: InternalMeetingsProps = {
           <div className="lg:col-span-1 hidden lg:block">
             {/* Espaço para preview ou informações adicionais */}
             <div className="sticky top-6 p-6 border rounded-lg bg-muted/50">
-              <h3 className="font-semibold mb-2">💡 Dicas</h3>
+              <h3 className="font-semibold mb-2 flex items-center gap-2"><Lightbulb className="h-4 w-4" />Dicas</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>• Adicione todos os participantes necessários</li>
                 <li>• Defina pontos de agenda para melhor organização</li>

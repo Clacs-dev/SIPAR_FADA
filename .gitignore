@@ -23,6 +23,12 @@ yarn-error.log*
 
 # Licenciamento - a chave privada do vendor NUNCA deve ser versionada
 license-tools/keys/
+# Licenciamento - ficheiros gerados por cliente e a base de dados local do
+# gerador web (dados de clientes, nunca devem ir para o repositorio)
+license-tools/*.lic
+license-tools/*.cert
+license-tools/crl.json
+license-tools/web/data/
 
 # Editor directories and files
 .idea/

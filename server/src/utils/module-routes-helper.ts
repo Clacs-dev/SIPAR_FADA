@@ -133,6 +133,15 @@ function applyFieldAliases(model: string, body: Record<string, any>) {
   if (model === 'factura') {
     setMissing('purchaseOrderId', ['purchase_order_id', 'ordem_id', 'ordemId', 'ordem_compra_id']);
     setMissing('numeroOrdem', ['numero_ordem', 'ordem_numero']);
+    // "fornecedor" e "valor" sao colunas reais obrigatorias (ver
+    // ValidationService), mas os formularios (interno e do portal externo)
+    // so enviam fornecedor_id/fornecedor_nome e total/subtotal - sem este
+    // preenchimento automatico, a criacao de qualquer factura falhava sempre
+    // com "Campo obrigatorio ausente: fornecedor/valor".
+    setMissing('fornecedor', ['fornecedor_nome']);
+    // "valor" mantem o significado de "total da factura" (bruto + IVA, antes
+    // da retencao) - ver client/src/utils/fiscal.ts.
+    setMissing('valor', ['total', 'subtotal', 'valor_final']);
   }
 
   if (model === 'contrato') {
@@ -255,6 +264,51 @@ function pickNumber(value: any): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+const MIME_POR_EXTENSAO: Record<string, string> = {
+  pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+};
+
+/**
+ * Normaliza a lista de anexos para o formato unico esperado pelo cliente
+ * ({ id, nome, tipo, tamanho, url, uploaded_at }). Historicamente os anexos
+ * foram gravados de varias formas - URLs soltos (portal de facturas), so o
+ * nome do ficheiro (cotacoes antigas) ou objectos com chaves name/size/fileName
+ * - e o ecra mostrava "Documento"/"URL nao disponivel" para tudo o que nao
+ * fosse ja um objecto com "url".
+ */
+export function normalizeAnexos(value: any): any[] {
+  const lista = Array.isArray(value) ? value : safeJsonParse(value, []);
+  if (!Array.isArray(lista)) return [];
+  return lista.filter((anexo) => anexo !== null && anexo !== undefined && anexo !== '').map((anexo: any, index: number) => {
+    if (typeof anexo === 'string') {
+      const pareceUrl = /^(https?:)?\/\//i.test(anexo) || anexo.startsWith('/uploads/');
+      const nomeBruto = anexo.split(/[\\/]/).pop() || anexo;
+      let nome = nomeBruto;
+      try { nome = decodeURIComponent(nomeBruto); } catch { /* manter nome original */ }
+      const extensao = (nome.split('.').pop() || '').toLowerCase();
+      return {
+        id: `anexo-${index}-${nome}`,
+        nome,
+        tipo: MIME_POR_EXTENSAO[extensao] || '',
+        tamanho: 0,
+        url: pareceUrl ? anexo : undefined,
+        uploaded_at: undefined,
+      };
+    }
+    return {
+      ...anexo,
+      id: anexo.id || anexo.fileId || `anexo-${index}`,
+      nome: anexo.nome || anexo.name || anexo.fileName || anexo.originalName || 'Documento',
+      tipo: anexo.tipo || anexo.type || anexo.mimetype || '',
+      tamanho: anexo.tamanho ?? anexo.size ?? anexo.fileSize ?? 0,
+      url: anexo.url || anexo.signedUrl || anexo.path || undefined,
+      uploaded_at: anexo.uploaded_at || anexo.uploadedAt,
+    };
+  });
+}
+
 export function recordToResource(record: any) {
   if (!record) return null;
   const data = safeJsonParse(record.data, {});
@@ -280,6 +334,7 @@ export function recordToResource(record: any) {
       resource[key] = safeJsonParse(resource[key], key === 'destinatarios' ? [] : []);
     }
   }
+  if (resource.anexos !== undefined) resource.anexos = normalizeAnexos(resource.anexos);
 
   resource.data_reuniao = resource.data_reuniao || resource.dataReuniao;
   resource.hora_inicio = resource.hora_inicio || resource.horaInicio;
@@ -801,14 +856,38 @@ export class ModuleRoutesHelper {
       if (config.model === 'factura' && nextStatus === STATUS.PAGO && !(existing as any).paidAt) {
         extraColumns.paidAt = new Date();
       }
+      // Factura: regista quem validou/aprovou/rejeitou - sem isto o card
+      // mostrava sempre "Validado por N/A". (O historico de accoes fica em
+      // DocumentHistory, registado mais abaixo, e e servido por /:id/historico.)
+      const auditoriaFactura: Record<string, any> = {};
+      if (config.model === 'factura') {
+        const agora = new Date().toISOString();
+        const comentario = req.body?.comentario || req.body?.motivo || undefined;
+        if (nextStatus === 'validado') {
+          Object.assign(auditoriaFactura, { validado_por_id: user.id, validado_por_nome: user.name, validado_at: agora, validacao_comentario: comentario });
+        } else if (nextStatus === STATUS.APROVADO) {
+          Object.assign(auditoriaFactura, { aprovado_por_id: user.id, aprovado_por_nome: user.name, aprovado_at: agora, aprovacao_comentario: comentario });
+        } else if (nextStatus === STATUS.REJEITADO) {
+          Object.assign(auditoriaFactura, { rejeitado_por_id: user.id, rejeitado_por_nome: user.name, rejeitado_at: agora, rejeicao_motivo: comentario });
+        }
+      }
       let updated = await delegateFor(config).update({
         where: { id: req.params.id },
         data: {
           status: nextStatus,
           ...extraColumns,
-          data: stringify({ ...data, ...req.body, status: nextStatus }),
+          data: stringify({ ...data, ...req.body, ...auditoriaFactura, status: nextStatus }),
         }
       });
+
+      // Factura normal validada: emite a sua Ordem de Compra (as do Procurement
+      // ja tem a ordem de origem). Import dinamico - o servico importa este modulo.
+      if (config.model === 'factura' && nextStatus === 'validado' && !(updated as any).purchaseOrderId) {
+        const { garantirOrdemCompraDaFactura } = await import('../services/procurement-factura.service');
+        await garantirOrdemCompraDaFactura(req.params.id, user)
+          .then(async () => { updated = await delegateFor(config).findUnique({ where: { id: req.params.id } }); })
+          .catch((error) => logger.error(`Falha ao emitir Ordem de Compra da factura ${req.params.id}:`, error));
+      }
 
       // Sincronizacao Gestao de Pagamento: assim que a factura fica aprovada, gera
       // automaticamente o numero da Ordem de Pagamento (despacho/conta a debitar ficam

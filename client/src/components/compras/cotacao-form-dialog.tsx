@@ -4,10 +4,11 @@
  */
 
 import { useState } from "react";
-import { Send, AlertCircle, CheckCircle2, XCircle, Upload, X, FileText, Plus } from "lucide-react";
+import { Send, AlertCircle, CheckCircle2, XCircle, Upload, X, FileText, Plus, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { MoneyInput } from "../ui/money-input";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
@@ -15,7 +16,9 @@ import { RadioGroup, RadioGroupItem } from "../ui/radio-group";
 import { Checkbox } from "../ui/checkbox";
 import { Badge } from "../ui/badge";
 import { toast } from "sonner@2.0.3";
+import api from "../../services/api";
 import type { PedidoCompra, RespostaItemFornecedor } from "./types";
+import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, classificarTipoOperacao } from "../../utils/fiscal";
 
 interface Prestacao {
   id: string;
@@ -129,11 +132,12 @@ export function CotacaoFormDialog({
   };
 
   const calcularValorTotal = () => {
-    return respostas.reduce((total, resposta) => {
+    return respostas.reduce((total, resposta, index) => {
       if (resposta.disponivel === "sim" && resposta.preco_unitario && resposta.quantidade_disponivel) {
         const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
-        const iv = subtotal * ((resposta.iv_percentagem || 0) / 100);
-        return total + subtotal + iv;
+        const tipoOperacao = classificarTipoOperacao(pedido.itens[index]?.tipo);
+        const fiscal = calcularFiscal(subtotal, tipoOperacao, resposta.iv_percentagem);
+        return total + fiscal.valor_final;
       }
       return total;
     }, 0);
@@ -181,9 +185,39 @@ export function CotacaoFormDialog({
     }
 
     setLoading(true);
-    
+
+    // Os ficheiros tem de ser enviados para o storage antes de submeter a
+    // cotacao - antes so o nome do ficheiro era gravado, sem o ficheiro, e o
+    // anexo nunca podia ser aberto (nem na cotacao, nem na factura gerada).
+    let anexosEnviados: Array<{ id: string; nome: string; tipo: string; tamanho: number; url: string; uploaded_at: string }> = [];
+    try {
+      anexosEnviados = await Promise.all(anexos.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("module", "cotacao");
+        const result = await api.upload<{ file: { id: string; name: string; size: number; url: string; tipo: string } }>("/storage/upload", formData);
+        return {
+          id: result.file.id,
+          nome: result.file.name,
+          tipo: result.file.tipo,
+          tamanho: result.file.size,
+          url: result.file.url,
+          uploaded_at: new Date().toISOString(),
+        };
+      }));
+    } catch (error: any) {
+ console.error(" [CotacaoForm] Erro no upload de anexos:", error);
+      toast.error("Erro ao enviar anexos: " + (error?.message || "tente novamente"));
+      setLoading(false);
+      return;
+    }
+
     const data = {
       fornecedor_id: fornecedorId,
+      // O backend grava isto tal e qual na coluna "valor" (ver POST
+      // /procurement/pedidos/:id/cotacoes) - sem enviar isto explicitamente,
+      // ficava sempre a 0, porque o calculo so existia no ecra para exibicao.
+      valor_total: calcularValorTotal(),
       itens_resposta: respostas.map(r => ({
         item_id: r.item_id,
         item_descricao: r.item_descricao,
@@ -198,7 +232,7 @@ export function CotacaoFormDialog({
       condicoes_gerais: condicoesGerais.trim() || undefined,
       prazo_validade_cotacao: prazoValidade || undefined,
       observacoes_gerais: observacoesGerais.trim() || undefined,
-      anexos: anexos.map(anexo => anexo.name),
+      anexos: anexosEnviados,
     };
     
  console.log(' [CotacaoForm] Dados da cotação:', {
@@ -388,29 +422,36 @@ export function CotacaoFormDialog({
 
                         <div className="space-y-2">
                           <Label>Preço Unitário (AOA) *</Label>
-                          <Input
-                            type="number"
-                            value={resposta.preco_unitario || ""}
-                            onChange={(e) => handleRespostaChange(index, "preco_unitario", parseFloat(e.target.value))}
-                            placeholder="0.00"
-                            min="0"
-                            step="0.01"
+                          <MoneyInput
+                            value={resposta.preco_unitario || 0}
+                            onValueChange={(valor) => handleRespostaChange(index, "preco_unitario", valor)}
                             required
                           />
                         </div>
 
                         <div className="space-y-2">
-                          <Label>IV (%) - Imposto</Label>
-                          <Input
-                            type="number"
-                            value={resposta.iv_percentagem || 0}
-                            onChange={(e) => handleRespostaChange(index, "iv_percentagem", parseFloat(e.target.value) || 0)}
-                            placeholder="0"
-                            min="0"
-                            max="100"
-                            step="0.01"
-                          />
-                          <p className="text-xs text-muted-foreground">Se não tem IV, deixe em 0</p>
+                          {item.tipo === 'servico' ? (
+                            <>
+                              <Label>Retenção na Fonte</Label>
+                              <div className="w-full px-3 py-2 border border-input rounded-md bg-accent text-sm">
+                                {TAXA_RETENCAO_SERVICOS}%
+                              </div>
+                              <p className="text-xs text-muted-foreground">Serviço: retenção automática, sem IVA</p>
+                            </>
+                          ) : (
+                            <>
+                              <Label>IVA (%)</Label>
+                              <select
+                                className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                                value={resposta.iv_percentagem || 14}
+                                onChange={(e) => handleRespostaChange(index, "iv_percentagem", parseFloat(e.target.value))}
+                              >
+                                {TAXAS_IVA_PRODUTOS.map((taxa) => (
+                                  <option key={taxa} value={taxa}>{taxa}%</option>
+                                ))}
+                              </select>
+                            </>
+                          )}
                         </div>
 
                         <div className="space-y-2">
@@ -438,36 +479,44 @@ export function CotacaoFormDialog({
                       </div>
 
                       {/* Subtotal */}
-                      {resposta.preco_unitario && resposta.quantidade_disponivel && (
-                        <div className="bg-tone-success-soft p-3 rounded-lg space-y-2">
-                          <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Subtotal (sem IV):</span>
-                              <p className="font-medium text-tone-success">
-                                {(resposta.preco_unitario * resposta.quantidade_disponivel).toLocaleString('pt-AO')} AOA
-                              </p>
-                            </div>
-                            {resposta.iv_percentagem && resposta.iv_percentagem > 0 && (
+                      {resposta.preco_unitario && resposta.quantidade_disponivel && (() => {
+                        const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
+                        const tipoOperacao = classificarTipoOperacao(item.tipo);
+                        const fiscal = calcularFiscal(subtotal, tipoOperacao, resposta.iv_percentagem);
+                        return (
+                          <div className="bg-tone-success-soft p-3 rounded-lg space-y-2">
+                            <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
-                                <span className="text-muted-foreground">IV ({resposta.iv_percentagem}%):</span>
-                                <p className="font-medium text-tone-warn">
-                                  {((resposta.preco_unitario * resposta.quantidade_disponivel) * (resposta.iv_percentagem / 100)).toLocaleString('pt-AO')} AOA
+                                <span className="text-muted-foreground">Valor Bruto:</span>
+                                <p className="font-medium text-tone-success">
+                                  {subtotal.toLocaleString('pt-AO')} AOA
                                 </p>
                               </div>
-                            )}
+                              {tipoOperacao === 'servico' ? (
+                                <div>
+                                  <span className="text-muted-foreground">Retenção ({fiscal.taxa_retencao}%):</span>
+                                  <p className="font-medium text-tone-warn">
+                                    -{fiscal.valor_retencao.toLocaleString('pt-AO')} AOA
+                                  </p>
+                                </div>
+                              ) : fiscal.valor_iva > 0 && (
+                                <div>
+                                  <span className="text-muted-foreground">IVA Cativo ({fiscal.taxa_iva}%):</span>
+                                  <p className="font-medium text-tone-warn">
+                                    -{fiscal.valor_iva.toLocaleString('pt-AO')} AOA
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            <div className="pt-2 border-t border-tone-success/30">
+                              <span className="text-sm text-muted-foreground">A Pagar:</span>
+                              <p className="font-semibold text-lg text-tone-success">
+                                {fiscal.valor_final.toLocaleString('pt-AO')} AOA
+                              </p>
+                            </div>
                           </div>
-                          <div className="pt-2 border-t border-tone-success/30">
-                            <span className="text-sm text-muted-foreground">Total do Item (com IV):</span>
-                            <p className="font-semibold text-lg text-tone-success">
-                              {(() => {
-                                const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
-                                const iv = subtotal * ((resposta.iv_percentagem || 0) / 100);
-                                return (subtotal + iv).toLocaleString('pt-AO');
-                              })()} AOA
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -573,7 +622,7 @@ export function CotacaoFormDialog({
                     }`}>
                       Total: {totalPrestacoes.toFixed(2)}% 
                       {totalPrestacoes !== 100 && ` (Faltam ${(100 - totalPrestacoes).toFixed(2)}% para completar 100%)`}
-                      {totalPrestacoes === 100 && ' ✓ Completo'}
+                      {totalPrestacoes === 100 && <> <Check className="inline h-3.5 w-3.5 mr-1 align-text-bottom" />Completo</>}
                     </div>
                   </div>
                 )}

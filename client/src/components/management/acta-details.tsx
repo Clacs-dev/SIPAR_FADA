@@ -30,7 +30,8 @@ import {
   Building2,
   Vote,
   Scale,
-  X
+  X,
+  Eye
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -38,7 +39,7 @@ import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { Acta, DecisaoTomada, TarefaAtribuida, PontoAgenda } from "./acta-types";
 import { transformarActaParaJSON } from "../../utils/transform-acta-to-json";
-import { downloadActaPDF } from "../../utils/acta-pdf-export";
+import { gerarPDFActa } from "../../utils/pdf-generator";
 import { hasPermission } from "../auth/permissions";
 
 interface ActaDetailsProps {
@@ -288,7 +289,7 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
       // Gera o PDF directamente a partir dos dados da acta (inclui sempre as
       // assinaturas reais quando existirem) - o endpoint "/actas/:id/pdf" no
       // backend e apenas um stub e nunca devolveu um PDF real.
-      await downloadActaPDF(acta);
+      gerarPDFActa(acta);
     } catch (error) {
  console.error('Erro ao baixar PDF:', error);
     }
@@ -418,8 +419,8 @@ export function ActaDetails({ acta, onBack, onUpdate }: ActaDetailsProps) {
             </Button>
           )}
           <Button variant="outline" onClick={handleDownloadPDF}>
-            <Download className="mr-2 h-4 w-4" />
-            Baixar PDF
+            <Eye className="mr-2 h-4 w-4" />
+            Ver PDF
           </Button>
         </div>
       </div>

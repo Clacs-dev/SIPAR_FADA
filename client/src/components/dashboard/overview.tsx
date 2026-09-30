@@ -23,7 +23,8 @@ import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { toast } from "sonner@2.0.3";
 import { apiClient } from "../../utils/api-client";
-import { getMenuItems, getExtendedProfile } from "../auth/permissions";
+import { getMenuItems, getExtendedProfile, filterMenuItemsByLicense } from "../auth/permissions";
+import { useLicense } from "../../hooks/use-license";
 
 type Tone = 'accent' | 'gold' | 'success' | 'warn' | 'danger' | 'info' | 'neutral';
 
@@ -130,7 +131,10 @@ export function DashboardOverview({ onTabChange }: { onTabChange?: (tab: string)
   // dashboard nunca mostre atalhos para modulos a que o utilizador nao tem
   // acesso (ex: Financeiro/Compras nao trabalham com Apresentacoes/Audiencias,
   // e um utilizador comum nao gere Compras).
-  const menuItems = user ? getMenuItems(user.role, user.department, user.position) : [];
+  const { data: licenseData } = useLicense();
+  const menuItems = user
+    ? filterMenuItemsByLicense(getMenuItems(user.role, user.department, user.position), licenseData?.license?.modules)
+    : [];
   const hasMenuItem = (id: string) => menuItems.some((item) => item.id === id && item.show);
   const profile = user ? getExtendedProfile(user.role, user.department, user.position) : 'user';
   const mostraApresentacoesAudiencias = hasMenuItem('history') || hasMenuItem('presentations') || hasMenuItem('my-requests');

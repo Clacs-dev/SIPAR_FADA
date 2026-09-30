@@ -16,6 +16,23 @@ function sha256Hex(value: string) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
+/**
+ * Remove a password do registo de utilizador antes de o devolver ao cliente,
+ * e converte "bankAccounts" (JSON guardado como texto) num array real -
+ * varias coordenadas bancarias guardadas por um utilizador externo
+ * (fornecedor), para escolher qual usar ao submeter cada factura.
+ */
+function serializeUser(user: Record<string, any>) {
+  const { password: _password, bankAccounts, ...rest } = user;
+  let contas: any[] = [];
+  if (typeof bankAccounts === 'string') {
+    try { contas = JSON.parse(bankAccounts) || []; } catch { contas = []; }
+  } else if (Array.isArray(bankAccounts)) {
+    contas = bankAccounts;
+  }
+  return { ...rest, bankAccounts: contas };
+}
+
 function resetPasswordEmailHtml(nome: string, link: string) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto;">
@@ -256,7 +273,7 @@ export class AuthController {
       );
 
       // Remover senha da resposta
-      const { password: _, ...userWithoutPassword } = user;
+      const userWithoutPassword = serializeUser(user);
 
       return res.status(200).json({
         user: userWithoutPassword,
@@ -367,7 +384,7 @@ export class AuthController {
         return res.status(404).json({ error: 'NOT_FOUND', message: 'Perfil não encontrado' });
       }
 
-      const { password: _, ...userWithoutPassword } = dbUser;
+      const userWithoutPassword = serializeUser(dbUser);
       return res.status(200).json({ user: userWithoutPassword });
 
     } catch (error) {
@@ -455,7 +472,7 @@ export class AuthController {
         }
       );
 
-      const { password: _, ...userWithoutPassword } = updated;
+      const userWithoutPassword = serializeUser(updated);
       return res.status(200).json({ success: true, user: userWithoutPassword });
     } catch (error) {
       next(error);
@@ -494,8 +511,145 @@ export class AuthController {
         data: updateData
       });
 
-      const { password: _, ...userWithoutPassword } = updated;
+      const userWithoutPassword = serializeUser(updated);
       return res.status(200).json({ success: true, user: userWithoutPassword });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Lista as coordenadas bancarias guardadas pelo utilizador autenticado
+   * (fornecedor externo) - pode ter varias, para escolher qual usar em cada factura.
+   * @route GET /api/v1/auth/me/bank-accounts
+   */
+  static async listBankAccounts(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
+      }
+      const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+
+      const { bankAccounts } = serializeUser(dbUser);
+      return res.status(200).json({ success: true, bankAccounts });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Adiciona uma nova coordenada bancaria a lista de guardadas do utilizador
+   * autenticado (nao substitui as existentes). Se for a primeira, ou se
+   * "tornarActiva" vier true, tambem passa a ser a activa (as colunas
+   * bankName/bankIban/... simples, usadas em todo o resto do sistema como
+   * "a coordenada actual" - ex: Ordem de Pagamento).
+   * @route POST /api/v1/auth/me/bank-accounts
+   */
+  static async addBankAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
+      }
+      const { label, bankName, bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry, tornarActiva } = req.body;
+      if (!bankIban?.trim() && !bankNib?.trim()) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: 'Indique o IBAN ou o NIB da conta' });
+      }
+
+      const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+
+      const { bankAccounts: contasExistentes } = serializeUser(dbUser);
+      const novaConta = {
+        id: crypto.randomUUID(),
+        label: label?.trim() || bankName?.trim() || 'Conta bancária',
+        bankName: bankName?.trim() || null,
+        bankAccountHolder: bankAccountHolder?.trim() || null,
+        bankIban: bankIban?.trim() || null,
+        bankNib: bankNib?.trim() || null,
+        bankSwift: bankSwift?.trim() || null,
+        bankCity: bankCity?.trim() || null,
+        bankCountry: bankCountry?.trim() || null,
+      };
+      const contas = [...contasExistentes, novaConta];
+
+      const updateData: Record<string, any> = { bankAccounts: JSON.stringify(contas) };
+      if (tornarActiva || contasExistentes.length === 0) {
+        Object.assign(updateData, {
+          bankName: novaConta.bankName,
+          bankAccountHolder: novaConta.bankAccountHolder,
+          bankIban: novaConta.bankIban,
+          bankNib: novaConta.bankNib,
+          bankSwift: novaConta.bankSwift,
+          bankCity: novaConta.bankCity,
+          bankCountry: novaConta.bankCountry,
+        });
+      }
+
+      const updated = await prisma.user.update({ where: { id: req.user.id }, data: updateData });
+      return res.status(201).json({ success: true, user: serializeUser(updated), conta: novaConta });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Marca uma coordenada ja guardada como a "activa" - copia os seus campos
+   * para as colunas simples (bankName/bankIban/...) usadas em todo o resto
+   * do sistema (ex: ao gerar a Ordem de Pagamento).
+   * @route PUT /api/v1/auth/me/bank-accounts/:id/select
+   */
+  static async selectBankAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
+      }
+      const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+
+      const { bankAccounts: contas } = serializeUser(dbUser);
+      const conta = contas.find((c: any) => c.id === req.params.id);
+      if (!conta) return res.status(404).json({ error: 'NOT_FOUND', message: 'Coordenada bancária não encontrada' });
+
+      const updated = await prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+          bankName: conta.bankName,
+          bankAccountHolder: conta.bankAccountHolder,
+          bankIban: conta.bankIban,
+          bankNib: conta.bankNib,
+          bankSwift: conta.bankSwift,
+          bankCity: conta.bankCity,
+          bankCountry: conta.bankCountry,
+        },
+      });
+      return res.status(200).json({ success: true, user: serializeUser(updated) });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Remove uma coordenada bancaria guardada (nao mexe nas colunas simples
+   * "activas", mesmo que seja essa a removida).
+   * @route DELETE /api/v1/auth/me/bank-accounts/:id
+   */
+  static async removeBankAccount(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
+      }
+      const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!dbUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+
+      const { bankAccounts: contas } = serializeUser(dbUser);
+      const restantes = contas.filter((c: any) => c.id !== req.params.id);
+
+      const updated = await prisma.user.update({
+        where: { id: req.user.id },
+        data: { bankAccounts: JSON.stringify(restantes) },
+      });
+      return res.status(200).json({ success: true, user: serializeUser(updated) });
     } catch (error) {
       next(error);
     }
@@ -523,7 +677,7 @@ export class AuthController {
         data: { signatureImage: signatureUrl },
       });
 
-      const { password: _, ...userWithoutPassword } = updated;
+      const userWithoutPassword = serializeUser(updated);
       return res.status(200).json({ success: true, user: userWithoutPassword, signatureImage: signatureUrl });
     } catch (error) {
       next(error);

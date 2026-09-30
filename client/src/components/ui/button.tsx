@@ -40,13 +40,65 @@ const Button = React.forwardRef<
     VariantProps<typeof buttonVariants> & {
       asChild?: boolean;
     }
->(({ className, variant, size, asChild = false, ...props }, ref) => {
+>(({ className, variant, size, asChild = false, onClick, disabled, ...props }, ref) => {
   const Comp = asChild ? Slot : "button";
+
+  // Protecção contra duplo clique / cliques repetidos: em todos os botões do
+  // sistema, sem precisar de alterar cada ecrã. Ao clicar, o botão bloqueia-se
+  // de imediato (fica desactivado) para nunca disparar a mesma acção duas
+  // vezes (ex: gravar o mesmo registo duas vezes). Se o onClick devolver uma
+  // Promise (ex: um guardar/submeter no servidor), o botão só desbloqueia
+  // quando essa Promise terminar; caso contrário (acção síncrona, ou botões
+  // type="submit" cuja lógica real está no onSubmit do formulário), fica
+  // bloqueado por um curto intervalo, suficiente para travar um duplo clique
+  // sem prejudicar o uso normal do botão a seguir.
+  const [bloqueado, setBloqueado] = React.useState(false);
+  const timeoutRef = React.useRef<ReturnType<typeof setTimeout>>();
+
+  React.useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
+
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (bloqueado) return;
+
+    // Botao type="submit" sem onClick proprio (a logica real esta no
+    // onSubmit do formulario, ex: ecra de login): desactivar o botao
+    // sincronamente dentro do proprio evento de click cancela a accao por
+    // omissao do browser (submeter o formulario) antes de ela chegar a
+    // acontecer - React aplica o novo estado (disabled) ainda dentro do
+    // mesmo evento nativo. Por isso aqui o bloqueio e adiado para o tick
+    // seguinte, depois da submissao nativa ja ter arrancado.
+    if (!onClick) {
+      setTimeout(() => {
+        setBloqueado(true);
+        timeoutRef.current = setTimeout(() => setBloqueado(false), 800);
+      }, 0);
+      return;
+    }
+
+    let resultado: unknown;
+    try {
+      resultado = onClick(event);
+    } finally {
+      if (resultado && typeof (resultado as any).then === "function") {
+        setBloqueado(true);
+        (resultado as Promise<unknown>).catch(() => {}).finally(() => setBloqueado(false));
+      } else {
+        setBloqueado(true);
+        timeoutRef.current = setTimeout(() => setBloqueado(false), 800);
+      }
+    }
+  };
+
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       ref={ref}
+      onClick={handleClick}
+      disabled={disabled || bloqueado}
+      aria-busy={bloqueado || undefined}
       {...props}
     />
   );

@@ -41,6 +41,7 @@ interface UseProcurementReturn {
   aprovarCotacao: (pedidoId: string, cotacaoId: string, justificativa: string) => Promise<boolean>;
   
   // Ordem de Compra
+  fetchOrdens: () => Promise<void>;
   emitirOrdemCompra: (pedidoId: string) => Promise<OrdemCompra | null>;
   updateStatusOrdem: (ordemId: string, status: string) => Promise<boolean>;
   confirmarRecebimento: (pedidoId: string, observacoes?: string) => Promise<boolean>;
@@ -257,6 +258,15 @@ export function useProcurement(): UseProcurementReturn {
     }
   }, []);
 
+  const fetchOrdens = useCallback(async () => {
+    try {
+      const response = await apiClient.get<{ ordens: OrdemCompra[] }>('/procurement/ordens');
+      setOrdensCompra(response.ordens || []);
+    } catch (err: any) {
+ console.error('Erro ao carregar ordens de compra:', err);
+    }
+  }, []);
+
   const updateStatusOrdem = useCallback(async (ordemId: string, status: string): Promise<boolean> => {
     try {
       const response = await apiClient.put<{ ordem: OrdemCompra }>(
@@ -318,6 +328,7 @@ export function useProcurement(): UseProcurementReturn {
     fetchCotacoes,
     analisarCotacoes,
     aprovarCotacao,
+    fetchOrdens,
     emitirOrdemCompra,
     updateStatusOrdem,
     confirmarRecebimento,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -14,6 +14,21 @@ import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { Alert, AlertDescription } from "../ui/alert";
 import { useAvailableMeetingPlatforms } from "../../hooks/use-available-meeting-platforms";
+import { useMeetingRooms, checkRoomAvailability, type RoomConflict, ROOM_CONFLICT_TYPE_LABEL } from "../../hooks/use-meeting-rooms";
+
+// Duracao->minutos usada so para calcular a hora de fim ao verificar
+// disponibilidade da sala (este formulario nao pede hora de fim explicita,
+// so um rotulo de duracao) - tem de bater com EXTERNAL_DURATION_MINUTES em
+// server/src/routes/meeting-rooms.routes.ts.
+const DURATION_MINUTES: Record<string, number> = { '30min': 30, '1h': 60, '1h30': 90, '2h': 120 };
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = (h || 0) * 60 + (m || 0) + minutes;
+  const hh = Math.floor((total % (24 * 60)) / 60);
+  const mm = total % 60;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
 
 interface ScheduleMeetingDialogProps {
   open: boolean;
@@ -35,11 +50,15 @@ export function ScheduleMeetingDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [date, setDate] = useState<Date>();
   const { platforms: availablePlatforms, loading: loadingPlatforms } = useAvailableMeetingPlatforms();
+  const { rooms } = useMeetingRooms();
+  const [roomConflict, setRoomConflict] = useState<RoomConflict[] | null>(null);
+  const [checkingRoom, setCheckingRoom] = useState(false);
   const [meetingData, setMeetingData] = useState({
     meetingType: '',
     platform: '',
     time: '',
     duration: '',
+    roomId: '',
     location: '',
     notes: ''
   });
@@ -47,6 +66,35 @@ export function ScheduleMeetingDialog({
   const handleInputChange = (field: string, value: string) => {
     setMeetingData(prev => ({ ...prev, [field]: value }));
   };
+
+  useEffect(() => {
+    if (!meetingData.roomId || !date || !meetingData.time || !meetingData.duration) {
+      setRoomConflict(null);
+      return;
+    }
+
+    let cancelled = false;
+    setCheckingRoom(true);
+    const horaFim = addMinutesToTime(meetingData.time, DURATION_MINUTES[meetingData.duration] ?? 240);
+    checkRoomAvailability({
+      roomId: meetingData.roomId,
+      data: format(date, 'yyyy-MM-dd'),
+      horaInicio: meetingData.time,
+      horaFim,
+      excludeMeetingId: audience?.id,
+    })
+      .then((result) => {
+        if (!cancelled) setRoomConflict(result.disponivel ? null : result.conflitos);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomConflict(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCheckingRoom(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [meetingData.roomId, meetingData.time, meetingData.duration, date, audience?.id]);
 
   const handleSchedule = async () => {
     if (!date || !meetingData.meetingType || !meetingData.time || !meetingData.duration) {
@@ -59,8 +107,13 @@ export function ScheduleMeetingDialog({
       return;
     }
 
-    if (meetingData.meetingType === 'presencial' && !meetingData.location) {
-      toast.error("Por favor, informe o local da reunião");
+    if (meetingData.meetingType === 'presencial' && !meetingData.roomId && !meetingData.location) {
+      toast.error("Por favor, selecione uma sala ou indique o local externo da reunião");
+      return;
+    }
+
+    if (meetingData.meetingType === 'presencial' && meetingData.roomId && roomConflict && roomConflict.length > 0) {
+      toast.error("A sala escolhida já está reservada nesse horário. Escolha outro horário ou sala.");
       return;
     }
 
@@ -78,7 +131,15 @@ export function ScheduleMeetingDialog({
         userEmail: audience.email,
         meetingType: meetingData.meetingType,
         platform: meetingData.meetingType === 'online' ? meetingData.platform : undefined,
-        location: meetingData.meetingType === 'presencial' ? meetingData.location : undefined,
+        roomId: meetingData.meetingType === 'presencial' ? (meetingData.roomId || null) : undefined,
+        location: meetingData.meetingType === 'presencial'
+          ? (meetingData.roomId
+              ? (() => {
+                  const room = rooms.find((r) => r.id === meetingData.roomId);
+                  return room ? `${room.nome}${room.localizacao ? ` - ${room.localizacao}` : ''}` : meetingData.location;
+                })()
+              : meetingData.location)
+          : undefined,
         preferredDate: format(date, "yyyy-MM-dd"),
         time: meetingData.time,
         duration: meetingData.duration,
@@ -117,9 +178,11 @@ export function ScheduleMeetingDialog({
         platform: '',
         time: '',
         duration: '',
+        roomId: '',
         location: '',
         notes: ''
       });
+      setRoomConflict(null);
       setDate(undefined);
 
     } catch (error) {
@@ -204,17 +267,54 @@ export function ScheduleMeetingDialog({
             )
           )}
 
-          {/* Local (se presencial) */}
+          {/* Sala (se presencial) - selecionar em vez de escrever, para o sistema saber
+              que a sala fica ocupada nesse dia/hora e cruzar com reunioes internas */}
           {meetingData.meetingType === 'presencial' && (
             <div className="space-y-2">
-              <Label htmlFor="location">Local da Reunião *</Label>
-              <Input
-                id="location"
-                value={meetingData.location}
-                onChange={(e) => handleInputChange('location', e.target.value)}
-                placeholder="Ex: Sala de Reuniões 3, Edifício Principal"
-                required
-              />
+              <Label htmlFor="roomId">Sala de Reunião *</Label>
+              <Select
+                value={meetingData.roomId || "nenhuma"}
+                onValueChange={(value) => handleInputChange('roomId', value === "nenhuma" ? "" : value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione uma sala" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nenhuma">Nenhuma / Local externo</SelectItem>
+                  {rooms.map((room) => (
+                    <SelectItem key={room.id} value={room.id}>
+                      {room.nome} {room.capacidade ? `(até ${room.capacidade} pessoas)` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {meetingData.roomId && checkingRoom && (
+                <p className="text-xs text-muted-foreground">A verificar disponibilidade...</p>
+              )}
+              {meetingData.roomId && !checkingRoom && roomConflict && roomConflict.length > 0 && (
+                <div className="flex items-start gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    Sala já reservada nesse horário por "{roomConflict[0].titulo}" ({roomConflict[0].hora_inicio}-{roomConflict[0].hora_fim}
+                    {roomConflict[0].tipo ? `, ${ROOM_CONFLICT_TYPE_LABEL[roomConflict[0].tipo]}` : ''}).
+                    Escolha outro horário ou sala.
+                  </span>
+                </div>
+              )}
+
+              {!meetingData.roomId && (
+                <>
+                  <Label htmlFor="location" className="pt-2 block">Local externo *</Label>
+                  <Input
+                    id="location"
+                    value={meetingData.location}
+                    onChange={(e) => handleInputChange('location', e.target.value)}
+                    placeholder="Ex: Sede do cliente, Edifício Principal"
+                    required
+                  />
+                </>
+              )}
             </div>
           )}
 

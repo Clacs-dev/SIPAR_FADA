@@ -393,6 +393,12 @@ export function getMenuItems(
         show: true
       },
       {
+        id: 'mapa-impostos',
+        label: 'Mapa de Impostos',
+        icon: 'FileBarChart',
+        show: true
+      },
+      {
         id: 'messages',
         label: 'Mensagens',
         icon: 'MessageSquare',
@@ -428,6 +434,12 @@ export function getMenuItems(
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
+        show: true
+      },
+      {
+        id: 'mapa-impostos',
+        label: 'Mapa de Impostos',
+        icon: 'FileBarChart',
         show: true
       },
       {
@@ -490,6 +502,12 @@ export function getMenuItems(
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
+        show: true
+      },
+      {
+        id: 'mapa-impostos',
+        label: 'Mapa de Impostos',
+        icon: 'FileBarChart',
         show: true
       },
       {
@@ -614,6 +632,12 @@ export function getMenuItems(
         id: 'facturas',
         label: 'Gestão de Pagamento',
         icon: 'Receipt',
+        show: true
+      },
+      {
+        id: 'mapa-impostos',
+        label: 'Mapa de Impostos',
+        icon: 'FileBarChart',
         show: true
       },
       {
@@ -749,6 +773,61 @@ export function getMenuItems(
 
   // Fallback
   return [];
+}
+
+// Chave do modulo de licenca (ver requireLicenseModule(...) em cada rota do
+// backend, e o mapeamento em config.permissionModule de modules.routes.ts)
+// correspondente a cada item do menu - usado para esconder do sidebar
+// modulos que a licenca actual desta instalacao nao inclui. Um item de menu
+// sem entrada aqui (dashboard, agenda, gestao de licenca, diagnostico do
+// sistema, etc.) nunca e escondido por licenca, so por RBAC.
+const MENU_ITEM_LICENSE_MODULE: Record<string, string | string[]> = {
+  presentations: 'presentations',
+  audiences: 'audiences',
+  // "Gestão de Solicitações" e "Minhas Solicitações" tratam Cartas de
+  // Apresentação E Pedidos de Audiência - mostra-se se pelo menos um dos
+  // dois estiver incluido na licenca.
+  history: ['presentations', 'audiences'],
+  'my-requests': ['presentations', 'audiences'],
+  actas: 'actas',
+  comunicacoes: 'communications',
+  compras: 'finance',
+  cotacoes: 'finance',
+  facturas: 'invoices',
+  'minhas-facturas': 'invoices',
+  // Mapa de Impostos cruza dados de Facturas e Compras - visível se qualquer um dos dois estiver licenciado.
+  'mapa-impostos': ['invoices', 'finance'],
+  'internal-meetings': 'internal_meetings',
+  'meeting-rooms': 'internal_meetings',
+  messages: 'messages',
+  users: 'users',
+  'roles-permissions-admin': 'roles',
+  'departments-admin': 'departments',
+  'areas-admin': 'departments',
+  'audit-dashboard': 'audit',
+  'email-management': 'email',
+  settings: 'settings',
+  trash: 'settings',
+  'push-notifications': 'notifications',
+};
+
+/**
+ * Filtra os itens de menu (ja resolvidos por RBAC via getMenuItems) pelos
+ * modulos incluidos na licenca activa desta instalacao - mesma semantica de
+ * LicenseService.moduleIncluded no backend: sem licenca activada ainda, ou
+ * lista de modulos vazia (licenca "cheia"), nao esconde nada.
+ */
+export function filterMenuItemsByLicense<T extends { id: string }>(
+  items: T[],
+  licenseModules: string[] | null | undefined
+): T[] {
+  if (!licenseModules || licenseModules.length === 0) return items;
+  return items.filter((item) => {
+    const required = MENU_ITEM_LICENSE_MODULE[item.id];
+    if (!required) return true;
+    const requiredList = Array.isArray(required) ? required : [required];
+    return requiredList.some((moduleKey) => licenseModules.includes(moduleKey));
+  });
 }
 
 /**

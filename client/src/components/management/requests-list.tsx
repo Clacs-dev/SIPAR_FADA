@@ -10,7 +10,7 @@ import { AcceptRequestDialog } from "./accept-request-dialog";
 import { DelegateDialog } from "./delegate-dialog";
 import { ScheduleMeetingDialog } from "./schedule-meeting-dialog";
 import { DocumentViewer } from "../forms/document-viewer";
-import { Eye, Check, X, UserCheck, FileText, Calendar as CalendarIcon } from "lucide-react";
+import { Eye, Check, X, UserCheck, FileText, Calendar as CalendarIcon, Ban } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { format, isToday, isYesterday, isWithinInterval, subDays, startOfMonth, endOfMonth } from "date-fns@4.1.0";
@@ -192,6 +192,23 @@ export function RequestsList() {
     }
   };
 
+  // Data/hora da reuniao agendada por schedule-meeting-dialog.tsx (preferredDate +
+  // time, mesclados no JSON flexivel e devolvidos directamente no recurso -
+  // ver recordToResource em module-routes-helper.ts). Sem data definida nao
+  // ha como saber se ja "chegou a hora", por isso trata-se como ja alcancada
+  // (fail-open) em vez de esconder para sempre os botoes de resultado.
+  const getScheduledDateTime = (item: any): Date | null => {
+    if (!item.preferredDate) return null;
+    const time = item.time || '00:00';
+    const parsed = new Date(`${item.preferredDate}T${time}:00`);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const isMeetingTimeReached = (item: any): boolean => {
+    const dt = getScheduledDateTime(item);
+    return dt ? dt.getTime() <= Date.now() : true;
+  };
+
   // Confirma se a reuniao agendada (carta de apresentacao ou audiencia)
   // aconteceu ou nao - sem isto o pedido ficava para sempre em "Agendado",
   // mesmo depois da data da reuniao ja ter passado.
@@ -229,6 +246,41 @@ export function RequestsList() {
     } catch (error) {
  console.error('Error updating meeting outcome:', error);
       toast.error('Erro ao actualizar o estado da reunião');
+    }
+  };
+
+  // Cancelar uma reuniao agendada antes de a data/hora chegar - so faz sentido
+  // enquanto ainda nao houve reuniao para confirmar (ver isMeetingTimeReached).
+  const handleCancelMeeting = async (id: string, type: 'presentation' | 'audience') => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        toast.error("Sessão expirada");
+        return;
+      }
+
+      const endpoint = type === 'presentation' ? 'presentations' : 'audiences';
+      const response = await fetch(
+        `${API_BASE_URL}/${endpoint}/${id}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: 'cancelado' })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao cancelar a reunião');
+      }
+
+      toast.success('Reunião cancelada');
+      fetchData();
+    } catch (error) {
+ console.error('Error cancelling meeting:', error);
+      toast.error('Erro ao cancelar a reunião');
     }
   };
 
@@ -329,13 +381,13 @@ export function RequestsList() {
                 fileName={item.documentName}
               />
             )}
-            {(item.status === 'agendado' && item.scheduledDate) && (
+            {(item.status === 'agendado' && getScheduledDateTime(item)) && (
               <div className="border-t pt-4 mt-4">
                 <h4 className="mb-3">Informações do Agendamento</h4>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <h4>Data e Hora</h4>
-                    <p>{format(new Date(item.scheduledDate), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
+                    <p>{format(getScheduledDateTime(item)!, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</p>
                   </div>
                   {item.meetingType && (
                     <div>
@@ -435,38 +487,52 @@ export function RequestsList() {
         </>
       )}
       {item.status === 'agendado' && (
-        <>
-          <Button
-            size="sm"
-            className="text-white hover:opacity-90"
-            style={{ backgroundColor: 'var(--tone-success)' }}
-            onClick={() => handleMeetingOutcome(item.id, 'presentation', 'realizado')}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            Aconteceu
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
-            onClick={() => handleMeetingOutcome(item.id, 'presentation', 'nao_compareceu')}
-          >
-            <X className="h-4 w-4 mr-1" />
-            Não Aconteceu
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setSelectedRequest(item);
-              setSelectedType('presentation');
-              setScheduleDialogOpen(true);
-            }}
-          >
-            <CalendarIcon className="h-4 w-4 mr-1" />
-            Adiar
-          </Button>
-        </>
+        isMeetingTimeReached(item) ? (
+          <>
+            <Button
+              size="sm"
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-success)' }}
+              onClick={() => handleMeetingOutcome(item.id, 'presentation', 'realizado')}
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Aconteceu
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+              onClick={() => handleMeetingOutcome(item.id, 'presentation', 'nao_compareceu')}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Não Aconteceu
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSelectedRequest(item);
+                setSelectedType('presentation');
+                setScheduleDialogOpen(true);
+              }}
+            >
+              <CalendarIcon className="h-4 w-4 mr-1" />
+              Adiar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+              onClick={() => handleCancelMeeting(item.id, 'presentation')}
+            >
+              <Ban className="h-4 w-4 mr-1" />
+              Cancelar
+            </Button>
+          </>
+        )
       )}
       {item.status === 'delegado' && (
         <div className="flex items-center gap-2">
@@ -561,10 +627,10 @@ export function RequestsList() {
                     </div>
                   )}
                   <div>
-                    <strong>Data e Hora:</strong> {item.scheduledDate ? format(new Date(item.scheduledDate), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : 'N/A'}
+                    <strong>Data e Hora:</strong> {getScheduledDateTime(item) ? format(getScheduledDateTime(item)!, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : 'N/A'}
                   </div>
                   <div>
-                    <strong>Horário:</strong> {item.scheduledTime || 'N/A'}
+                    <strong>Horário:</strong> {item.time || 'N/A'}
                   </div>
                   <div>
                     <strong>Duração:</strong> {item.duration || 'N/A'}
@@ -641,38 +707,52 @@ export function RequestsList() {
         </>
       )}
       {item.status === 'agendado' && (
-        <>
-          <Button
-            size="sm"
-            className="text-white hover:opacity-90"
-            style={{ backgroundColor: 'var(--tone-success)' }}
-            onClick={() => handleMeetingOutcome(item.id, 'audience', 'realizado')}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            Aconteceu
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
-            onClick={() => handleMeetingOutcome(item.id, 'audience', 'nao_compareceu')}
-          >
-            <X className="h-4 w-4 mr-1" />
-            Não Aconteceu
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setSelectedRequest(item);
-              setSelectedType('audience');
-              setScheduleDialogOpen(true);
-            }}
-          >
-            <CalendarIcon className="h-4 w-4 mr-1" />
-            Adiar
-          </Button>
-        </>
+        isMeetingTimeReached(item) ? (
+          <>
+            <Button
+              size="sm"
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-success)' }}
+              onClick={() => handleMeetingOutcome(item.id, 'audience', 'realizado')}
+            >
+              <Check className="h-4 w-4 mr-1" />
+              Aconteceu
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+              onClick={() => handleMeetingOutcome(item.id, 'audience', 'nao_compareceu')}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Não Aconteceu
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setSelectedRequest(item);
+                setSelectedType('audience');
+                setScheduleDialogOpen(true);
+              }}
+            >
+              <CalendarIcon className="h-4 w-4 mr-1" />
+              Adiar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              style={{ color: 'var(--tone-warn)', borderColor: 'var(--tone-warn)' }}
+              onClick={() => handleCancelMeeting(item.id, 'audience')}
+            >
+              <Ban className="h-4 w-4 mr-1" />
+              Cancelar
+            </Button>
+          </>
+        )
       )}
       {item.status === 'delegado' && (
         <div className="flex items-center gap-2">

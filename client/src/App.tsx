@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { Mail, RefreshCw } from "lucide-react";
 import { AuthProvider, useAuth } from "./components/auth/auth-context";
+import { ErrorBoundary } from "./components/auth/error-boundary";
 import { LicenseProvider, useLicense } from "./hooks/use-license";
 import { LicenseBanner } from "./components/license/license-banner";
 import { LicenseExpiredScreen } from "./components/license/license-expired-screen";
@@ -27,6 +29,7 @@ import { Actas } from "./components/management/actas";
 import { Comunicacoes } from "./components/management/comunicacoes";
 import { Compras } from "./components/management/compras";
 import { Facturas } from "./components/management/facturas";
+import { MapaImpostos } from "./components/shared/mapa-impostos";
 import { MeetingRoomsAdmin } from "./components/meeting-rooms/meeting-rooms-admin";
 import { IntegrationsConfig } from "./components/admin/integrations-config";
 import { DepartmentsAdmin } from "./components/admin/departments-admin";
@@ -39,6 +42,7 @@ import { DepartmentDashboard } from "./components/dashboard/department-dashboard
 import { DepartmentReports } from "./components/reports/department-reports";
 import ActaDemoPage from "./pages/acta-demo";
 import { Toaster } from "./components/ui/sonner";
+import { DocumentPreviewHost } from "./components/ui/document-preview";
 import { toast } from "sonner@2.0.3";
 import {
   AlertDialog,
@@ -57,6 +61,9 @@ import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 function AppContent() {
   const { user, isLoading } = useAuth();
   const { isRestricted } = useLicense();
+  // Id da factura a abrir directamente nos detalhes quando se navega para o
+  // separador "facturas" a partir de uma linha do Mapa de Impostos (sidebar).
+  const [facturaAlvoId, setFacturaAlvoId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   // Id de uma acta a abrir directamente ao navegar para "Livro de Actas" (a
   // partir do botao "Ver Acta" na Agenda ou nas Reunioes Internas).
@@ -178,7 +185,7 @@ function AppContent() {
                 className="p-6 border border-border rounded-lg cursor-pointer hover:bg-accent"
                 onClick={() => setActiveTab("integrations-config")}
               >
-                <h3>📧 E-mail e plataformas de reunião</h3>
+                <h3 className="flex items-center gap-2"><Mail className="h-4 w-4" />E-mail e plataformas de reunião</h3>
                 <p className="text-muted-foreground text-sm">
                   Configure o envio de e-mails (Gmail/SMTP) e as integrações de reunião
                 </p>
@@ -320,7 +327,24 @@ function AppContent() {
         if (!hasPermission(user.role, "VIEW_FACTURAS")) {
           return <div>Acesso negado</div>;
         }
-        return <Facturas />;
+        return (
+          <Facturas
+            initialFacturaId={facturaAlvoId}
+            onInitialFacturaHandled={() => setFacturaAlvoId(null)}
+          />
+        );
+
+      case "mapa-impostos":
+        // Clicar numa linha leva directamente aos detalhes dessa factura
+        // (com o seu estado real: pendente, validado, aprovado, etc.).
+        return (
+          <MapaImpostos
+            onOpenFactura={(facturaId) => {
+              setFacturaAlvoId(facturaId);
+              setActiveTab("facturas");
+            }}
+          />
+        );
 
       case "minhas-facturas":
         // Rota específica para utilizadores externos
@@ -351,7 +375,13 @@ function AppContent() {
             {isRestricted && activeTab !== "license-management" ? (
               <LicenseExpiredScreen onGoToLicense={() => setActiveTab("license-management")} />
             ) : (
-              renderContent()
+              // Isola erros de renderização de um ecrã ao ecrã atual - sem isto,
+              // qualquer excecao nao tratada (ex.: campo undefined vindo da API)
+              // desmontava a aplicacao inteira e deixava uma tela branca, so
+              // recuperavel com F5.
+              <ErrorBoundary key={activeTab}>
+                {renderContent()}
+              </ErrorBoundary>
             )}
           </div>
         </main>
@@ -394,7 +424,7 @@ function ResetDemoUsersCard() {
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <div className="p-6 border border-border rounded-lg cursor-pointer hover:bg-accent">
-          <h3>🔄 Resetar Utilizadores Demo</h3>
+          <h3 className="flex items-center gap-2"><RefreshCw className="h-4 w-4" />Resetar Utilizadores Demo</h3>
           <p className="text-muted-foreground text-sm">
             Recriar utilizadores com novos departamentos (27 roles)
           </p>
@@ -424,10 +454,13 @@ function ResetDemoUsersCard() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <LicenseProvider>
-        <AppContent />
-      </LicenseProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <LicenseProvider>
+          <AppContent />
+          <DocumentPreviewHost />
+        </LicenseProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

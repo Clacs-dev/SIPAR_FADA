@@ -24,7 +24,7 @@ import { hasPermission } from "../auth/permissions";
 import { Acta } from "./acta-types";
 import { ActaDetails } from "./acta-details";
 import { ActaCreateForm } from "./acta-create-form";
-import { downloadActaPDF } from "../../utils/acta-pdf-export";
+import { gerarPDFActa } from "../../utils/pdf-generator";
 
 interface ActasListProps {
   // Quando definido, a lista abre directamente os detalhes desta acta (usado
@@ -130,8 +130,7 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
   const handleDownloadPDF = async (acta: Acta) => {
     try {
       toast.info('A gerar PDF...');
-      await downloadActaPDF(acta);
-      toast.success('PDF baixado com sucesso!');
+      gerarPDFActa(acta);
     } catch (error) {
  console.error('Erro ao baixar PDF:', error);
       toast.error('Erro ao baixar PDF');

@@ -17,7 +17,9 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useProcurement } from "../../hooks/use-procurement";
 import { CotacaoFormDialog } from "./cotacao-form-dialog";
-import type { PedidoCompra } from "./types";
+import { PedidoItensDialog } from "./pedido-itens-dialog";
+import { MinhaCotacaoDetailsDialog } from "./minha-cotacao-details-dialog";
+import type { PedidoCompra, CotacaoFornecedor } from "./types";
 import { toast } from "sonner";
 
 interface FornecedorPortalProps {
@@ -25,11 +27,25 @@ interface FornecedorPortalProps {
   fornecedorNome: string;
 }
 
+// O backend so calcula percentual_atendimento no endpoint de detalhe de um
+// pedido (computeCotacaoScores em modules.routes.ts) - a listagem usada por
+// este portal nao o inclui. Como ja temos aqui tudo o que e preciso
+// (itens_resposta da propria cotacao + total de itens do pedido), calcula-se
+// localmente em vez de mostrar "a calcular" para sempre.
+function calcularPercentualAtendimento(cotacao: CotacaoFornecedor, totalItensPedido: number): number {
+  if (typeof cotacao.percentual_atendimento === 'number') return cotacao.percentual_atendimento;
+  const itensDisponiveis = (cotacao.itens_resposta || []).filter((i) => i.disponivel === 'sim').length;
+  if (totalItensPedido <= 0) return 0;
+  return Math.min(100, Math.round((itensDisponiveis / totalItensPedido) * 100));
+}
+
 export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPortalProps) {
   const [activeTab, setActiveTab] = useState("disponiveis");
   const [selectedPedido, setSelectedPedido] = useState<PedidoCompra | null>(null);
   const [cotacaoDialogOpen, setCotacaoDialogOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pedidoItensAberto, setPedidoItensAberto] = useState<PedidoCompra | null>(null);
+  const [minhaCotacaoAberta, setMinhaCotacaoAberta] = useState<{ pedido: PedidoCompra; cotacao: CotacaoFornecedor } | null>(null);
 
   const {
     pedidos,
@@ -324,19 +340,17 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
 
                     {/* Ações */}
                     <div className="flex flex-col gap-2">
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
-                        onClick={() => {
-                          // TODO: Abrir dialog de detalhes
-                        }}
+                        onClick={() => setPedidoItensAberto(pedido)}
                       >
                         <Eye className="h-4 w-4 mr-1" />
                         Ver Itens
                       </Button>
-                      
+
                       {!jaCotou && (
-                        <Button 
+                        <Button
                           size="sm"
                           onClick={() => handleCotarPedido(pedido)}
                         >
@@ -344,12 +358,16 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                           Submeter Cotação
                         </Button>
                       )}
-                      
+
                       {jaCotou && (
-                        <Button 
-                          size="sm" 
+                        <Button
+                          size="sm"
                           variant="outline"
                           className="text-tone-success border-tone-success/30"
+                          onClick={() => {
+                            const minhaCotacao = pedido.cotacoes?.find((c) => c.fornecedor_id === fornecedorId);
+                            if (minhaCotacao) setMinhaCotacaoAberta({ pedido, cotacao: minhaCotacao });
+                          }}
                         >
                           <Eye className="h-4 w-4 mr-1" />
                           Ver Minha Cotação
@@ -411,19 +429,21 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                         <div>
                           <span className="text-muted-foreground">Valor Total:</span>
                           <p className="font-semibold text-tone-success">
-                            {minhaCotacao.valor_total.toLocaleString('pt-AO')} AOA
+                            {(minhaCotacao.valor_total ?? 0).toLocaleString('pt-AO')} AOA
                           </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Atendimento:</span>
                           <p className="font-medium">
-                            {minhaCotacao.percentual_atendimento.toFixed(0)}% dos itens
+                            {calcularPercentualAtendimento(minhaCotacao, pedido.itens?.length || 0)}% dos itens
                           </p>
                         </div>
                         <div>
                           <span className="text-muted-foreground">Submetida em:</span>
                           <p className="font-medium">
-                            {format(new Date(minhaCotacao.submitted_at), "dd/MM/yyyy", { locale: ptBR })}
+                            {minhaCotacao.submitted_at
+                              ? format(new Date(minhaCotacao.submitted_at), "dd/MM/yyyy", { locale: ptBR })
+                              : 'N/A'}
                           </p>
                         </div>
                       </div>
@@ -444,7 +464,11 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       )}
                     </div>
 
-                    <Button size="sm" variant="outline">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setMinhaCotacaoAberta({ pedido, cotacao: minhaCotacao })}
+                    >
                       <Eye className="h-4 w-4 mr-1" />
                       Ver Detalhes
                     </Button>
@@ -536,6 +560,21 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
           onSubmit={handleSubmitCotacao}
         />
       )}
+
+      {/* Dialog "Ver Itens" do pedido */}
+      <PedidoItensDialog
+        open={!!pedidoItensAberto}
+        onClose={() => setPedidoItensAberto(null)}
+        pedido={pedidoItensAberto}
+      />
+
+      {/* Dialog "Ver Minha Cotação" / "Ver Detalhes" */}
+      <MinhaCotacaoDetailsDialog
+        open={!!minhaCotacaoAberta}
+        onClose={() => setMinhaCotacaoAberta(null)}
+        pedido={minhaCotacaoAberta?.pedido || null}
+        cotacao={minhaCotacaoAberta?.cotacao || null}
+      />
     </div>
   );
 }

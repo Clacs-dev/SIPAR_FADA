@@ -17,6 +17,8 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useProcurement } from "../../hooks/use-procurement";
 import { useFornecedores } from "../../hooks/use-fornecedores";
+import { toast } from "sonner@2.0.3";
+import { visualizarOrdemCompra } from "../../utils/pdf-generator";
 import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
@@ -39,6 +41,9 @@ export function ComprasMain() {
     publicarPedido,
     analisarCotacoes,
     aprovarCotacao,
+    ordensCompra,
+    fetchOrdens,
+    updateStatusOrdem,
   } = useProcurement();
 
   const { fornecedores, fetchFornecedores } = useFornecedores();
@@ -47,7 +52,8 @@ export function ComprasMain() {
     fetchPedidos();
     fetchStats();
     fetchFornecedores();
-  }, [fetchPedidos, fetchStats, fetchFornecedores]);
+    fetchOrdens();
+  }, [fetchPedidos, fetchStats, fetchFornecedores, fetchOrdens]);
 
   const getStatusBadge = (status: StatusPedidoCompra) => {
     const badges: Record<StatusPedidoCompra, { label: string; color: string; icon: any }> = {
@@ -117,6 +123,17 @@ export function ComprasMain() {
     if (sucesso) {
       await fetchPedidos();
       await fetchStats();
+      await fetchOrdens();
+    }
+  };
+
+  // Confirmar a rececao da ordem de compra: e este passo que gera a factura
+  // (ja como "validado") em Gestao de Pagamento - aprovar a cotacao so emite a ordem.
+  const handleConfirmarRececao = async (ordemId: string) => {
+    const sucesso = await updateStatusOrdem(ordemId, "recebida");
+    if (sucesso) {
+      toast.success("Receção confirmada. A factura foi enviada para Gestão de Pagamento (Validados).");
+      await fetchOrdens();
     }
   };
 
@@ -345,6 +362,22 @@ export function ComprasMain() {
                         Analisar Cotações
                       </Button>
                     )}
+                    {pedido.status === "concluido" && ordensCompra
+                      .filter(o => o.pedido_id === pedido.id)
+                      .map(ordem => (
+                        <Button key={`ver-${ordem.id}`} size="sm" variant="outline" onClick={() => visualizarOrdemCompra({ ordemId: ordem.id }).catch((err) => toast.error(err?.message || "Erro ao abrir a Ordem de Compra"))}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          Ordem de Compra ({ordem.numero})
+                        </Button>
+                      ))}
+                    {pedido.status === "concluido" && ordensCompra
+                      .filter(o => o.pedido_id === pedido.id && o.status !== "recebida")
+                      .map(ordem => (
+                        <Button key={ordem.id} size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => handleConfirmarRececao(ordem.id)}>
+                          <Package className="h-4 w-4 mr-1" />
+                          Confirmar Receção ({ordem.numero})
+                        </Button>
+                      ))}
                     {pedido.status === "em_analise" && (
                       <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => handleAprovar(pedido.id, pedido.cotacao_vencedora_id)}>
                         <CheckCircle2 className="h-4 w-4 mr-1" />
