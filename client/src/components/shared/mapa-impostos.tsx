@@ -54,14 +54,34 @@ interface MapaImpostosProps {
 
 type FiltroOrigem = 'todas' | 'compras' | 'financeiro';
 type FiltroTipo = 'todos' | 'mercadoria' | 'servico' | 'ambos';
+type FiltroStatus = 'todos' | string;
+
+// Rótulos de estado iguais aos usados no resto do módulo de Facturas
+// (client/src/components/facturas/facturas-main.tsx:getStatusBadge), para o
+// filtro e a coluna "Estado" aqui mostrarem sempre o mesmo texto.
+const STATUS_LABELS: Record<string, string> = {
+  rascunho: 'Rascunho',
+  registada: 'Registada',
+  pendente: 'Pendente',
+  validado: 'Aprovado-DSG',
+  aprovado: 'Aprovado',
+  submetido_ao_banco: 'Submetido ao Banco',
+  pago: 'Pago',
+  rejeitado: 'Rejeitado',
+  cancelado: 'Cancelado',
+};
+const STATUS_ORDENADOS = ['pendente', 'validado', 'aprovado', 'submetido_ao_banco', 'pago', 'rejeitado', 'cancelado', 'rascunho', 'registada'];
 
 export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImpostosProps) {
   const [loading, setLoading] = useState(true);
   const [facturas, setFacturas] = useState<FacturaFiscal[]>([]);
+  // Filtra pela Data de Emissão da factura (ver coluna "Data Emissão" na
+  // tabela) - não pela data de vencimento, pagamento ou submissão ao banco.
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
   const [filtroOrigem, setFiltroOrigem] = useState<FiltroOrigem>('todas');
+  const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('todos');
   const [busca, setBusca] = useState('');
 
   useEffect(() => {
@@ -138,13 +158,22 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
       if (dataFim && linha.data_emissao && linha.data_emissao > dataFim) return false;
       if (filtroTipo !== 'todos' && linha.tipo !== filtroTipo) return false;
       if (filtroOrigem !== 'todas' && linha.origem !== filtroOrigem) return false;
+      if (filtroStatus !== 'todos' && linha.status !== filtroStatus) return false;
       if (busca) {
         const alvo = `${linha.numero || ''} ${linha.fornecedorNome || ''}`.toLowerCase();
         if (!alvo.includes(busca.toLowerCase())) return false;
       }
       return true;
     });
-  }, [linhas, dataInicio, dataFim, filtroTipo, filtroOrigem, busca]);
+  }, [linhas, dataInicio, dataFim, filtroTipo, filtroOrigem, filtroStatus, busca]);
+
+  // Estados realmente presentes nas facturas carregadas, por ordem do
+  // ciclo de vida (STATUS_ORDENADOS) - evita mostrar opções de estado que
+  // não existem em nenhuma factura actual.
+  const statusDisponiveis = useMemo(() => {
+    const presentes = new Set(linhas.map((l) => l.status).filter((s): s is string => !!s));
+    return STATUS_ORDENADOS.filter((s) => presentes.has(s));
+  }, [linhas]);
 
   const totais = useMemo(() => linhasFiltradas.reduce((acc, l) => ({
     valorMercadoria: acc.valorMercadoria + l.valorMercadoria,
@@ -217,13 +246,13 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
         <CardHeader>
           <CardTitle className="text-base">Filtros</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-5">
+        <CardContent className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
           <div className="space-y-2">
-            <Label>Data Início</Label>
+            <Label>Emissão desde</Label>
             <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Data Fim</Label>
+            <Label>Emissão até</Label>
             <Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
           </div>
           <div className="space-y-2">
@@ -249,6 +278,19 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
               <option value="todas">Todas</option>
               <option value="compras">Compras</option>
               <option value="financeiro">Financeiro (directo)</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label>Estado</Label>
+            <select
+              className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              value={filtroStatus}
+              onChange={(e) => setFiltroStatus(e.target.value)}
+            >
+              <option value="todos">Todos</option>
+              {statusDisponiveis.map((s) => (
+                <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>
+              ))}
             </select>
           </div>
           <div className="space-y-2">
@@ -281,7 +323,7 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
                 <TableRow>
                   <TableHead>Nº Factura</TableHead>
                   <TableHead>Fornecedor</TableHead>
-                  <TableHead>Data</TableHead>
+                  <TableHead>Data Emissão</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Taxa IVA</TableHead>
                   <TableHead className="text-right">Valor Mercadoria/Serviços</TableHead>
@@ -323,7 +365,7 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
                     </TableCell>
                     <TableCell className="text-right font-semibold">{formatCurrency(l.valorFinal, l.moeda)}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{l.status || '-'}</Badge>
+                      <Badge variant="secondary">{l.status ? (STATUS_LABELS[l.status] || l.status) : '-'}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}
