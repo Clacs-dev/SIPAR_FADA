@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   Receipt,
   Plus,
@@ -117,30 +117,6 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       morada: f.endereco || [f.cidade, f.provincia].filter(Boolean).join(', ') || '',
     }));
 
-  // Dados de exemplo - Estatísticas
-  const stats: FacturaStats = {
-    total_facturas: 18,
-    total_valor: 12500000,
-    total_pago: 7800000,
-    total_pendente: 4700000,
-    registadas: 3,
-    em_validacao: 4,
-    aprovadas: 6,
-    rejeitadas: 1,
-    pagas: 4,
-    vencidas: 2,
-    a_vencer_30dias: 5,
-    por_fornecedor: [
-      { fornecedor_nome: 'SONANGOL', total: 6, valor: 5200000 },
-      { fornecedor_nome: 'Empresa de Distribuição de Energia', total: 5, valor: 3800000 },
-      { fornecedor_nome: 'Papelaria Central Lda', total: 4, valor: 2500000 },
-    ],
-  };
-
- console.log(' Dashboard de Facturas - User Role:', user?.role);
- console.log(' Dashboard de Facturas - ActiveTab:', activeTab);
- console.log(' Dashboard de Facturas - Stats:', stats);
-
   // Helper functions
   // Indicador de anexos igual em todos os separadores (o detalhe, aberto a
   // partir de qualquer um, mostra os anexos e o historico completos).
@@ -168,6 +144,80 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     const fornecedor = fornecedores.find(f => f.id === factura.fornecedor_id);
     return fornecedor?.nome || 'Fornecedor não especificado';
   };
+
+  // Estatísticas do dashboard calculadas a partir das facturas reais já
+  // carregadas da API (antes eram números fixos de exemplo - Sonangol, etc.
+  // - que nunca reflectiam os dados verdadeiros).
+  const stats: FacturaStats = useMemo(() => {
+    const agora = new Date();
+    const limite30Dias = new Date(agora.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const getValor = (f: Factura) => f.valor ?? f.total ?? 0;
+
+    let registadas = 0, em_validacao = 0, aprovadas = 0, rejeitadas = 0, pagas = 0;
+    let vencidas = 0, a_vencer_30dias = 0;
+    let total_valor = 0, total_pago = 0, total_pendente = 0;
+    const porFornecedorMap = new Map<string, { total: number; valor: number }>();
+
+    for (const factura of facturas) {
+      const valor = getValor(factura);
+      total_valor += valor;
+
+      switch (factura.status) {
+        case 'pendente':
+        case 'registada':
+        case 'rascunho':
+          registadas++;
+          break;
+        case 'validado':
+          em_validacao++;
+          break;
+        case 'aprovado':
+        case 'submetido_ao_banco':
+          aprovadas++;
+          break;
+        case 'pago':
+          pagas++;
+          break;
+        case 'rejeitado':
+          rejeitadas++;
+          break;
+      }
+
+      if (factura.status === 'pago') {
+        total_pago += valor;
+      } else if (factura.status !== 'rejeitado' && factura.status !== 'cancelado') {
+        total_pendente += valor;
+        const vencimento = factura.data_vencimento ? new Date(factura.data_vencimento) : null;
+        if (vencimento && !Number.isNaN(vencimento.getTime())) {
+          if (vencimento < agora) vencidas++;
+          else if (vencimento <= limite30Dias) a_vencer_30dias++;
+        }
+      }
+
+      const nomeFornecedor = getFornecedorNome(factura);
+      const atual = porFornecedorMap.get(nomeFornecedor) || { total: 0, valor: 0 };
+      porFornecedorMap.set(nomeFornecedor, { total: atual.total + 1, valor: atual.valor + valor });
+    }
+
+    const por_fornecedor = Array.from(porFornecedorMap.entries())
+      .map(([fornecedor_nome, v]) => ({ fornecedor_nome, ...v }))
+      .sort((a, b) => b.valor - a.valor);
+
+    return {
+      total_facturas: facturas.length,
+      total_valor,
+      total_pago,
+      total_pendente,
+      registadas,
+      em_validacao,
+      aprovadas,
+      rejeitadas,
+      pagas,
+      vencidas,
+      a_vencer_30dias,
+      por_fornecedor,
+    };
+  }, [facturas, fornecedores]);
 
   const getStatusBadge = (status: string) => {
     const badges = {
