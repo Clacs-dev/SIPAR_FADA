@@ -226,7 +226,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
       pendente: { label: 'Pendente', color: 'var(--tone-info)' },
       validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
-      aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
+      aprovado: { label: 'Despesas Aprovadas', color: 'var(--tone-success)' },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
       rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
       cancelado: { label: 'Cancelado', color: 'var(--tone-neutral)' },
@@ -901,7 +901,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                 </TabsTrigger>
                 <TabsTrigger value="aprovadas">
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Aprovados ({facturas.filter(f => f.status === 'aprovado').length})
+                  Despesas Aprovadas ({facturas.filter(f => f.status === 'aprovado').length})
                 </TabsTrigger>
                 <TabsTrigger value="ordens_pagamento">
                   <FileSignature className="mr-2 h-4 w-4" />
@@ -955,7 +955,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                       <option value="rascunho">Rascunho</option>
                       <option value="pendente">Pendente</option>
                       <option value="validado">Aprovado-DSG</option>
-                      <option value="aprovado">Aprovado</option>
+                      <option value="aprovado">Despesas Aprovadas</option>
                       <option value="submetido_ao_banco">Submetido ao Banco</option>
                       <option value="rejeitado">Rejeitado</option>
                       <option value="cancelado">Cancelado</option>

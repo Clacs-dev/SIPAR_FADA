@@ -86,7 +86,7 @@ export function MinhasFacturas() {
       em_validacao: { label: 'Em Validação', color: 'var(--tone-info)', icon: Clock },
       validado: { label: 'Validado', color: 'var(--tone-info)', icon: CheckCircle },
       aprovada: { label: 'Aprovada', color: 'var(--tone-success)', icon: CheckCircle },
-      aprovado: { label: 'Aprovado', color: 'var(--tone-success)', icon: CheckCircle },
+      aprovado: { label: 'Despesas Aprovadas', color: 'var(--tone-success)', icon: CheckCircle },
       rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)', icon: XCircle },
       rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)', icon: XCircle },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)', icon: CheckCircle },

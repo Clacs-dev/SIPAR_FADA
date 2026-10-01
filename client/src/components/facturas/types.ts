@@ -31,12 +31,16 @@ export interface ItemFactura {
   descricao: string;
   quantidade: number;
   preco_unitario: number;
-  // Classificação fiscal do item (Angola): "produto" aplica IVA (taxa em
-  // "iva": 14/7/5/2%); "servico" aplica retenção na fonte de 6,5% em vez de
-  // IVA (ver client/src/utils/fiscal.ts). Default "produto" quando ausente
-  // (itens antigos, criados antes desta distinção existir).
+  // Classificação do item (Angola) - só para reporting (ex: split
+  // Mercadoria/Serviços no Mapa de Impostos), não decide sozinha o imposto
+  // aplicado (ver client/src/utils/fiscal.ts). Default "produto" quando
+  // ausente (itens antigos, criados antes desta distinção existir).
   tipo_operacao?: TipoOperacaoFiscalItem;
+  // IVA (0/2/5/7/14%) e retenção na fonte (6,5%, activada por
+  // "aplica_retencao") são independentes - um item pode ter os dois ao
+  // mesmo tempo, só um, ou nenhum.
   iva: number;
+  aplica_retencao?: boolean;
   valor_retencao?: number;
   total: number;
 }

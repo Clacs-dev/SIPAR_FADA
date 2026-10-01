@@ -63,12 +63,14 @@ export async function montarFacturaDaOrdem(ordem: any, user: { id?: string; name
     // IVA (produtos, 14/7/5/2%) ou Retenção na Fonte (serviços, 6,5%) - ver server/src/utils/fiscal.ts.
     const tipoOperacao = classificarTipoOperacao(item.tipo);
     const taxaIvaEscolhida = Number(resposta.iv_percentagem ?? resposta.taxa_iva ?? resposta.iva ?? item.iva);
-    const fiscal = calcularFiscal(subtotal, tipoOperacao, taxaIvaEscolhida);
+    const aplicaRetencao = tipoOperacao === 'servico';
+    const fiscal = calcularFiscal(subtotal, taxaIvaEscolhida, aplicaRetencao);
     return {
       id: item.id || `item-${index + 1}`,
       descricao,
       tipo: item.tipo,
       tipo_operacao: tipoOperacao,
+      aplica_retencao: aplicaRetencao,
       unidade: item.unidade,
       especificacoes_tecnicas: item.especificacoes_tecnicas || undefined,
       quantidade,
@@ -228,7 +230,22 @@ export async function garantirOrdemCompraDaFactura(facturaId: string, user: { id
   if (!ESTADOS_COM_ORDEM_COMPRA.includes(factura.status)) return null;
 
   const data = safeParse(factura.data, {});
-  const fornecedorId = data.fornecedor_id || null;
+  // data.fornecedor_id so e um Fornecedor.id valido quando a factura veio do
+  // Procurement; facturas submetidas directamente pelo fornecedor externo
+  // (ver client/src/components/external/submit-factura-form.tsx) gravam ali
+  // o User.id de quem submeteu, que nao existe na tabela Fornecedor - usa-lo
+  // directamente como chave estrangeira rebenta o purchaseOrder.create()
+  // abaixo (Foreign key constraint violated). Resolve para o Fornecedor
+  // ligado a essa conta, se existir; caso contrario fica sem fornecedor
+  // associado (o campo e opcional).
+  let fornecedorId: string | null = data.fornecedor_id || null;
+  if (fornecedorId) {
+    const fornecedorValido = await prisma.fornecedor.findUnique({ where: { id: fornecedorId } });
+    if (!fornecedorValido) {
+      const porConta = await prisma.fornecedor.findFirst({ where: { userId: fornecedorId } });
+      fornecedorId = porConta?.id || null;
+    }
+  }
   const itensFactura: any[] = Array.isArray(data.itens) ? data.itens : [];
   const itens = itensFactura.length > 0
     ? itensFactura
@@ -288,10 +305,13 @@ export async function montarDocumentoOrdemCompra(ordem: any) {
       const quantidade = Number(item.quantidade ?? 1) || 0;
       const preco = Number(item.preco_unitario ?? 0) || 0;
       const subtotal = round2(quantidade * preco);
-      // tipo_operacao vem do item da factura (produto/servico); fallback ao
-      // antigo campo "tipo" para itens gravados antes desta feature.
+      // tipo_operacao vem do item da factura (produto/servico), só para
+      // reporting. "aplica_retencao" vem directamente do item quando
+      // presente (formulário novo); para itens gravados antes desta
+      // feature, cai no antigo comportamento (servico implicava retenção).
       const tipoOperacao = classificarTipoOperacao(item.tipo_operacao || item.tipo);
-      const fiscal = calcularFiscal(subtotal, tipoOperacao, Number(item.taxa_iva ?? item.iva));
+      const aplicaRetencao = typeof item.aplica_retencao === 'boolean' ? item.aplica_retencao : tipoOperacao === 'servico';
+      const fiscal = calcularFiscal(subtotal, Number(item.taxa_iva ?? item.iva), aplicaRetencao);
       return {
         id: item.id || `item-${index + 1}`,
         descricao: item.descricao || '',
@@ -299,6 +319,7 @@ export async function montarDocumentoOrdemCompra(ordem: any) {
         quantidade,
         preco_unitario: preco,
         tipo_operacao: tipoOperacao,
+        aplica_retencao: aplicaRetencao,
         iva: fiscal.taxa_iva,
         taxa_iva: fiscal.taxa_iva,
         valor_iva: fiscal.valor_iva,

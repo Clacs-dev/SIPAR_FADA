@@ -15,7 +15,7 @@ import {
 import { Alert, AlertDescription } from "../ui/alert";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
-import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, somarFiscal, type TipoOperacaoFiscal } from '../../utils/fiscal';
+import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, LIMIAR_RETENCAO_SERVICOS, calcularFiscal, somarFiscal, type TipoOperacaoFiscal } from '../../utils/fiscal';
 import { toast } from "sonner@2.0.3";
 import { formatarIban, formatarNib, validarIban, validarNib } from "../../utils/bank-format";
 import { MoneyInput } from "../ui/money-input";
@@ -27,6 +27,7 @@ interface FacturaItem {
   preco_unitario: number;
   tipo_operacao: TipoOperacaoFiscal;
   iva: number;
+  aplica_retencao: boolean;
 }
 
 interface SubmitFacturaFormProps {
@@ -152,6 +153,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
       preco_unitario: 0,
       tipo_operacao: 'produto',
       iva: 14,
+      aplica_retencao: false,
     },
   ]);
 
@@ -162,7 +164,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
   // fonte de 6,5% para serviços - ver client/src/utils/fiscal.ts)
   const calcularTotais = () => {
     const linhas = itens.map((item) =>
-      calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva)
+      calcularFiscal(item.quantidade * item.preco_unitario, item.iva, item.aplica_retencao)
     );
     const somatorio = somarFiscal(linhas);
 
@@ -197,6 +199,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         preco_unitario: 0,
         tipo_operacao: 'produto',
         iva: 14,
+        aplica_retencao: false,
       },
     ]);
   };
@@ -209,16 +212,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
 
   const handleItemChange = (id: string, field: keyof FacturaItem, value: any) => {
     setItens(
-      itens.map((item) => {
-        if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        // Ao mudar para "serviço" força a retenção (sem IVA); ao mudar para
-        // "produto" volta à taxa de IVA geral por omissão.
-        if (field === 'tipo_operacao') {
-          updated.iva = value === 'servico' ? 0 : 14;
-        }
-        return updated;
-      })
+      itens.map((item) => (item.id === id ? { ...item, [field]: value } : item))
     );
   };
 
@@ -314,7 +308,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         fornecedor_nome: user?.name,
         fornecedor_email: user?.email,
         itens: itens.map((item) => {
-          const fiscal = calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva);
+          const fiscal = calcularFiscal(item.quantidade * item.preco_unitario, item.iva, item.aplica_retencao);
           return { ...item, iva: fiscal.taxa_iva, valor_retencao: fiscal.valor_retencao, total: fiscal.valor_final };
         }),
         // "fornecedor"/"valor" sao os campos que o servidor exige (ver
@@ -790,38 +784,41 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                       value={item.tipo_operacao}
                       onChange={(e) => handleItemChange(item.id, 'tipo_operacao', e.target.value)}
                     >
-                      <option value="produto">Produto (IVA)</option>
-                      <option value="servico">Serviço (Retenção)</option>
+                      <option value="produto">Produto</option>
+                      <option value="servico">Serviço</option>
                     </select>
                   </div>
                   <div className="space-y-2">
-                    {item.tipo_operacao === 'servico' ? (
-                      <>
-                        <Label>Retenção na Fonte</Label>
-                        <div className="w-full px-3 py-2 border border-input rounded-md bg-accent text-sm">
-                          {TAXA_RETENCAO_SERVICOS}%
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <Label>IVA (%)</Label>
-                        <select
-                          className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
-                          value={item.iva}
-                          onChange={(e) =>
-                            handleItemChange(item.id, 'iva', parseFloat(e.target.value) || 0)
-                          }
-                        >
-                          {TAXAS_IVA_PRODUTOS.map((taxa) => (
-                            <option key={taxa} value={taxa}>{taxa}%</option>
-                          ))}
-                        </select>
-                      </>
+                    <Label>IVA (%)</Label>
+                    <select
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-sm"
+                      value={item.iva}
+                      onChange={(e) =>
+                        handleItemChange(item.id, 'iva', parseFloat(e.target.value) || 0)
+                      }
+                    >
+                      {TAXAS_IVA_PRODUTOS.map((taxa) => (
+                        <option key={taxa} value={taxa}>{taxa}%</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2 flex flex-col justify-end">
+                    <label className={`flex items-center gap-2 px-3 py-2 border border-input rounded-md bg-background text-sm ${item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input
+                        type="checkbox"
+                        checked={item.aplica_retencao}
+                        disabled={item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS}
+                        onChange={(e) => handleItemChange(item.id, 'aplica_retencao', e.target.checked)}
+                      />
+                      Retenção na fonte ({TAXA_RETENCAO_SERVICOS}%)
+                    </label>
+                    {item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS && (
+                      <p className="text-xs text-muted-foreground">Sem retenção até {formatCurrency(LIMIAR_RETENCAO_SERVICOS)}</p>
                     )}
                   </div>
                   <div className="col-span-2 flex items-end">
                     <p className="text-sm text-muted-foreground">
-                      A Pagar: {formatCurrency(calcularFiscal(item.quantidade * item.preco_unitario, item.tipo_operacao, item.iva).valor_final)}
+                      A Pagar: {formatCurrency(calcularFiscal(item.quantidade * item.preco_unitario, item.iva, item.aplica_retencao).valor_final)}
                     </p>
                   </div>
                 </div>
@@ -839,7 +836,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                 <span>{formatCurrency(totais.ivaTotal)}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}% serviços):</span>
+                <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}%):</span>
                 <span className="text-amber-600">-{formatCurrency(totais.retencaoTotal)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t">

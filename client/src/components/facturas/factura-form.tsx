@@ -9,7 +9,7 @@ import { Textarea } from "../ui/textarea";
 import { Factura, ItemFactura, Fornecedor, FacturaTipo } from "./types";
 import { FileUpload } from "../ui/file-upload";
 import { useFileUpload } from "../../hooks/use-file-upload";
-import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, somarFiscal } from "../../utils/fiscal";
+import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, LIMIAR_RETENCAO_SERVICOS, calcularFiscal, somarFiscal } from "../../utils/fiscal";
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL } from "@/services/api";
@@ -65,6 +65,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         preco_unitario: 0,
         tipo_operacao: 'produto',
         iva: 14,
+        aplica_retencao: false,
         valor_retencao: 0,
         total: 0,
       }
@@ -110,18 +111,13 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       [field]: value,
     };
 
-    // Ao mudar para "serviço" força a retenção (sem IVA); ao mudar para
-    // "produto" volta à taxa de IVA geral por omissão.
-    if (field === 'tipo_operacao') {
-      newItens[index].iva = value === 'servico' ? 0 : 14;
-    }
-
-    // Recalcular total do item (Angola: IVA 14/7/5/2% para produtos, ou
-    // retenção na fonte de 6,5% para serviços - nunca os dois - ver utils/fiscal.ts)
-    if (field === 'quantidade' || field === 'preco_unitario' || field === 'iva' || field === 'tipo_operacao') {
+    // Recalcular total do item - IVA (0/2/5/7/14%) e retenção na fonte
+    // (6,5%, activada por "aplica_retencao") são independentes, podem
+    // aplicar-se os dois ao mesmo item (ver utils/fiscal.ts).
+    if (field === 'quantidade' || field === 'preco_unitario' || field === 'iva' || field === 'aplica_retencao') {
       const item = newItens[index];
       const subtotal = item.quantidade * item.preco_unitario;
-      const fiscal = calcularFiscal(subtotal, item.tipo_operacao === 'servico' ? 'servico' : 'produto', item.iva);
+      const fiscal = calcularFiscal(subtotal, item.iva, item.aplica_retencao);
       item.iva = fiscal.taxa_iva;
       item.valor_retencao = fiscal.valor_retencao;
       item.total = fiscal.valor_final;
@@ -140,6 +136,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         preco_unitario: 0,
         tipo_operacao: 'produto',
         iva: 14,
+        aplica_retencao: false,
         valor_retencao: 0,
         total: 0,
       }
@@ -155,7 +152,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const calculateTotals = () => {
     const linhas = itens.map((item) => {
       const subtotal = item.quantidade * item.preco_unitario;
-      return calcularFiscal(subtotal, item.tipo_operacao === 'servico' ? 'servico' : 'produto', item.iva);
+      return calcularFiscal(subtotal, item.iva, item.aplica_retencao);
     });
     const somatorio = somarFiscal(linhas);
 
@@ -557,44 +554,48 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     value={item.tipo_operacao || 'produto'}
                     onChange={(e) => handleItemChange(index, 'tipo_operacao', e.target.value)}
                   >
-                    <option value="produto">Produto (IVA)</option>
-                    <option value="servico">Serviço (Retenção)</option>
+                    <option value="produto">Produto</option>
+                    <option value="servico">Serviço</option>
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  {item.tipo_operacao === 'servico' ? (
-                    <>
-                      <Label>Retenção na Fonte</Label>
-                      <div className="w-full px-3 py-2 border border-input rounded-md bg-accent text-sm">
-                        {TAXA_RETENCAO_SERVICOS}%
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <Label>IVA (%)</Label>
-                      <select
-                        className="w-full px-3 py-2 border border-input rounded-md bg-background"
-                        value={item.iva}
-                        onChange={(e) => handleItemChange(index, 'iva', parseFloat(e.target.value))}
-                      >
-                        {TAXAS_IVA_PRODUTOS.map((taxa) => (
-                          <option key={taxa} value={taxa}>{taxa}%</option>
-                        ))}
-                      </select>
-                    </>
+                  <Label>IVA (%)</Label>
+                  <select
+                    className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    value={item.iva}
+                    onChange={(e) => handleItemChange(index, 'iva', parseFloat(e.target.value))}
+                  >
+                    {TAXAS_IVA_PRODUTOS.map((taxa) => (
+                      <option key={taxa} value={taxa}>{taxa}%</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2 flex flex-col justify-end">
+                  <label className={`flex items-center gap-2 px-3 py-2 border border-input rounded-md bg-background text-sm ${item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!item.aplica_retencao}
+                      disabled={item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS}
+                      onChange={(e) => handleItemChange(index, 'aplica_retencao', e.target.checked)}
+                    />
+                    Retenção na fonte ({TAXA_RETENCAO_SERVICOS}%)
+                  </label>
+                  {item.quantidade * item.preco_unitario <= LIMIAR_RETENCAO_SERVICOS && (
+                    <p className="text-xs text-muted-foreground">Sem retenção até {formatCurrency(LIMIAR_RETENCAO_SERVICOS)}</p>
                   )}
                 </div>
               </div>
 
               <div className="flex justify-end gap-4">
-                {item.tipo_operacao === 'servico' && (item.valor_retencao || 0) > 0 && (
+                {(item.valor_retencao || 0) > 0 && (
                   <div className="text-sm">
                     <span className="text-muted-foreground">Retenção: </span>
                     <span className="font-medium text-amber-600">-{formatCurrency(item.valor_retencao || 0)}</span>
                   </div>
                 )}
-                {item.tipo_operacao !== 'servico' && item.iva > 0 && (
+                {item.iva > 0 && (
                   <div className="text-sm">
                     <span className="text-muted-foreground">IVA Cativo: </span>
                     <span className="font-medium text-amber-600">
@@ -621,7 +622,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
               <span className="font-medium">{formatCurrency(totals.iva_total)}</span>
             </div>
             <div className="flex justify-between text-sm">
-              <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}% serviços):</span>
+              <span>Valor Retenção ({TAXA_RETENCAO_SERVICOS}%):</span>
               <span className="font-medium text-amber-600">-{formatCurrency(totals.retencao_total)}</span>
             </div>
             <div className="flex justify-between text-lg font-bold border-t border-border pt-2">

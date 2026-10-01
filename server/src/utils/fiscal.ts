@@ -20,9 +20,11 @@
  * duplicada por não existir pacote partilhado entre client e server).
  */
 
-export const TAXAS_IVA_PRODUTOS = [14, 7, 5, 2] as const;
+export const TAXAS_IVA_PRODUTOS = [14, 7, 5, 2, 0] as const;
 export const TAXA_IVA_PADRAO = 14;
 export const TAXA_RETENCAO_SERVICOS = 6.5;
+/** Serviços de valor bruto igual ou inferior a este limiar nunca sofrem retenção na fonte. */
+export const LIMIAR_RETENCAO_SERVICOS = 20000;
 
 export type TipoOperacaoFiscal = 'produto' | 'servico';
 
@@ -32,7 +34,7 @@ export interface LinhaFiscal {
   valor_iva: number;
   taxa_retencao: number;
   valor_retencao: number;
-  /** Valor efectivamente a pagar ao fornecedor: valor_bruto menos o que fica retido (IVA cativo e/ou retenção de serviços - nunca os dois na mesma linha). */
+  /** Valor efectivamente a pagar ao fornecedor: valor_bruto menos IVA cativo e/ou retenção - os dois podem aplicar-se ao mesmo item. */
   valor_final: number;
 }
 
@@ -44,43 +46,42 @@ function round2(value: number): number {
  * Classifica um item (produto vs serviço) a partir do campo `tipo` já usado
  * hoje em ItemPedido/ItemFactura. Só "servico" é tratado como serviço - todos
  * os outros valores (material, equipamento, consumivel, software, outro, ou
- * em branco) são tratados como produto/bem, sujeitos a IVA.
+ * em branco) são tratados como produto/bem. Usado só para reporting (ex:
+ * split Mercadoria/Serviços no Mapa de Impostos) - não decide sozinho que
+ * imposto se aplica (ver `calcularFiscal`).
  */
 export function classificarTipoOperacao(tipoItem?: string | null): TipoOperacaoFiscal {
   return tipoItem === 'servico' ? 'servico' : 'produto';
 }
 
-/** Garante que a taxa de IVA escolhida é uma das taxas legais; caso contrário usa a taxa geral (14%). */
+/** Garante que a taxa de IVA escolhida é uma das taxas legais (incluindo 0%); caso contrário usa a taxa geral (14%). */
 export function normalizarTaxaIva(taxa?: number | null): number {
   const valor = Number(taxa);
   return (TAXAS_IVA_PRODUTOS as readonly number[]).includes(valor) ? valor : TAXA_IVA_PADRAO;
 }
 
-export function calcularFiscal(valorBruto: number, tipo: TipoOperacaoFiscal, taxaIva?: number): LinhaFiscal {
+/**
+ * IVA e retenção na fonte são independentes: um item pode ter só IVA, só
+ * retenção, os dois ao mesmo tempo (ex: serviço sujeito a IVA reduzido e a
+ * retenção de 6,5%), ou nenhum dos dois (taxa de IVA 0%, sem retenção).
+ */
+export function calcularFiscal(valorBruto: number, taxaIva?: number, aplicarRetencao?: boolean): LinhaFiscal {
   const bruto = round2(valorBruto);
-
-  if (tipo === 'servico') {
-    const valorRetencao = round2(bruto * TAXA_RETENCAO_SERVICOS / 100);
-    return {
-      valor_bruto: bruto,
-      taxa_iva: 0,
-      valor_iva: 0,
-      taxa_retencao: TAXA_RETENCAO_SERVICOS,
-      valor_retencao: valorRetencao,
-      valor_final: round2(bruto - valorRetencao),
-    };
-  }
-
   const taxa = normalizarTaxaIva(taxaIva);
   const valorIva = round2(bruto * taxa / 100);
+  // Serviços de valor igual ou inferior a LIMIAR_RETENCAO_SERVICOS (20.000 Kz)
+  // nunca sofrem retenção na fonte, mesmo que assinalado no formulário.
+  const retencaoAplicavel = !!aplicarRetencao && bruto > LIMIAR_RETENCAO_SERVICOS;
+  const valorRetencao = retencaoAplicavel ? round2(bruto * TAXA_RETENCAO_SERVICOS / 100) : 0;
+
   return {
     valor_bruto: bruto,
     taxa_iva: taxa,
     valor_iva: valorIva,
-    taxa_retencao: 0,
-    valor_retencao: 0,
-    // IVA cativo: retido na totalidade, não pago ao fornecedor.
-    valor_final: round2(bruto - valorIva),
+    taxa_retencao: retencaoAplicavel ? TAXA_RETENCAO_SERVICOS : 0,
+    valor_retencao: valorRetencao,
+    // IVA cativo e retenção são ambos retidos na totalidade, não pagos ao fornecedor.
+    valor_final: round2(bruto - valorIva - valorRetencao),
   };
 }
 

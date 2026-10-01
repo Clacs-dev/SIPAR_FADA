@@ -180,7 +180,7 @@ export function FacturaDetails({
       validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
       em_validacao: { label: 'Em Aprovação-DSG', color: 'var(--tone-info)' },
       aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
-      aprovado: { label: 'Aprovado', color: 'var(--tone-success)' },
+      aprovado: { label: 'Despesas Aprovadas', color: 'var(--tone-success)' },
       rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)' },
       rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
@@ -461,7 +461,7 @@ export function FacturaDetails({
               ).catch((err) => toast.error(err?.message || 'Erro ao abrir o documento'))}
             >
               <ShoppingCart className="mr-2 h-4 w-4" />
-              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Liberação de Despesa_DSG'}
+              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Autorizar Despesas'}
             </Button>
           )}
           <Button variant="outline" onClick={() => gerarPDFFactura(factura)}>
@@ -570,7 +570,7 @@ export function FacturaDetails({
                   {factura.numero_ordem && (
                     <div>
                       <p className="text-sm text-muted-foreground">
-                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Liberação de Despesa_DSG'}
+                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Autorizar Despesas'}
                       </p>
                       <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
                     </div>
@@ -653,9 +653,8 @@ export function FacturaDetails({
                         <p className="font-medium">{item.descricao}</p>
                         <p className="text-sm text-muted-foreground">
                           Qtd: {item.quantidade} × {formatCurrency(item.preco_unitario)}
-                          {item.tipo_operacao === 'servico'
-                            ? ` (Retenção ${item.valor_retencao ? formatCurrency(item.valor_retencao) : '6,5%'})`
-                            : (item.iva > 0 && ` (IVA ${item.iva}%)`)}
+                          {item.iva > 0 && ` (IVA ${item.iva}%)`}
+                          {(item.valor_retencao || 0) > 0 && ` (Retenção ${formatCurrency(item.valor_retencao || 0)})`}
                         </p>
                       </div>
                       <p className="font-bold">{formatCurrency(item.total)}</p>

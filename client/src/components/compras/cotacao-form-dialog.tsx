@@ -136,7 +136,7 @@ export function CotacaoFormDialog({
       if (resposta.disponivel === "sim" && resposta.preco_unitario && resposta.quantidade_disponivel) {
         const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
         const tipoOperacao = classificarTipoOperacao(pedido.itens[index]?.tipo);
-        const fiscal = calcularFiscal(subtotal, tipoOperacao, resposta.iv_percentagem);
+        const fiscal = calcularFiscal(subtotal, resposta.iv_percentagem, tipoOperacao === 'servico');
         return total + fiscal.valor_final;
       }
       return total;
@@ -482,7 +482,7 @@ export function CotacaoFormDialog({
                       {resposta.preco_unitario && resposta.quantidade_disponivel && (() => {
                         const subtotal = resposta.preco_unitario * resposta.quantidade_disponivel;
                         const tipoOperacao = classificarTipoOperacao(item.tipo);
-                        const fiscal = calcularFiscal(subtotal, tipoOperacao, resposta.iv_percentagem);
+                        const fiscal = calcularFiscal(subtotal, resposta.iv_percentagem, tipoOperacao === 'servico');
                         return (
                           <div className="bg-tone-success-soft p-3 rounded-lg space-y-2">
                             <div className="grid grid-cols-2 gap-4 text-sm">

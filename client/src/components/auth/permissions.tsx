@@ -382,7 +382,7 @@ export function getMenuItems(
       },
       {
         id: 'compras',
-        label: 'Procurement',
+        label: 'Procurement(DSG)',
         icon: 'ShoppingBag',
         show: true
       },
@@ -494,7 +494,7 @@ export function getMenuItems(
       },
       {
         id: 'compras',
-        label: 'Procurement',
+        label: 'Procurement(DSG)',
         icon: 'ShoppingBag',
         show: true
       },
@@ -624,7 +624,7 @@ export function getMenuItems(
       },
       {
         id: 'compras',
-        label: 'Procurement',
+        label: 'Procurement(DSG)',
         icon: 'ShoppingBag',
         show: true
       },
@@ -871,7 +871,7 @@ export function getProfileBadge(
     'financeiro': { label: 'Financeiro', color: 'bg-green-600' },
     'recursos_humanos': { label: 'Recursos Humanos', color: 'bg-teal-600' },
     'juridico': { label: 'Jurídico', color: 'bg-blue-700' },
-    'compras': { label: 'Procurement', color: 'bg-cyan-600' },
+    'compras': { label: 'Procurement(DSG)', color: 'bg-cyan-600' },
     'tecnologia_informacao': { label: 'Tecnologia', color: 'bg-blue-600' },
     'operacoes': { label: 'Operações', color: 'bg-emerald-600' },
     'operacional_frota': { label: 'Gestão de Frota', color: 'bg-green-700' },

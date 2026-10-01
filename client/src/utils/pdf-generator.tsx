@@ -364,7 +364,10 @@ export function gerarPDFFactura(factura: any): void {
       item.descricao,
       String(item.quantidade),
       `${(item.preco_unitario || 0).toLocaleString('pt-PT')} ${moeda}`,
-      item.tipo_operacao === 'servico' ? `Retenção ${item.taxa_retencao || 6.5}%` : `IVA ${item.iva || 0}%`,
+      [
+        (item.iva || 0) > 0 ? `IVA ${item.iva}%` : null,
+        (item.valor_retencao || 0) > 0 ? `Retenção ${item.taxa_retencao || 6.5}%` : null,
+      ].filter(Boolean).join(' + ') || '—',
       `${(item.total || 0).toLocaleString('pt-PT')} ${moeda}`,
     ]);
 
@@ -750,7 +753,10 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
       String(item.quantidade ?? ''),
       item.unidade || '—',
       fmt(item.preco_unitario),
-      item.tipo_operacao === 'servico' ? `Ret. ${item.taxa_retencao || 6.5}%` : `${item.iva || 0}%`,
+      [
+        (item.iva || 0) > 0 ? `IVA ${item.iva}%` : null,
+        (item.valor_retencao || 0) > 0 ? `Ret. ${item.taxa_retencao || 6.5}%` : null,
+      ].filter(Boolean).join(' + ') || '—',
       fmt(item.total),
     ]),
     startY: y,
