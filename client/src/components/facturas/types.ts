@@ -249,7 +249,7 @@ export interface RelatorioFinanceiro {
 export interface OrdemPagamentoInterna {
   id: string;
   numero: string;
-  status: 'rascunho' | 'assinado' | 'pago';
+  status: 'rascunho' | 'assinado' | 'submetido_ao_banco' | 'pago';
   descricao: string;
   valor: number;
   moeda: string;
@@ -266,6 +266,14 @@ export interface OrdemPagamentoInterna {
     nome: string;
     assinatura_url?: string;
     assinado_em: string;
+  }[];
+  anexos: {
+    id?: string;
+    nome: string;
+    url: string;
+    tamanho?: number;
+    tipo?: string;
+    uploaded_at?: string;
   }[];
   created_by_id?: string;
   created_by_name?: string;

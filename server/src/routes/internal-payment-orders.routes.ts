@@ -195,6 +195,41 @@ router.delete('/:id', requireAuth as any, async (req: AuthenticatedRequest, res:
   }
 });
 
+// Anexa os dossies/documentos que justificam a despesa (ficheiros ja
+// carregados via POST /storage/upload). Permitido em qualquer estado excepto
+// "pago" - os anexos podem ser juntados depois de assinada, nao so enquanto
+// rascunho, ao contrario dos restantes campos (ver PUT acima).
+router.post('/:id/anexos', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user!;
+    if (!PODE_GERIR.includes(user.role)) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para anexar documentos a esta ordem' });
+    }
+    const existing = await prisma.internalPaymentOrder.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de Pagamento Interna nao encontrada' });
+    if (existing.status === 'pago') {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'Nao e possivel anexar documentos a uma ordem ja paga' });
+    }
+
+    const novosAnexos = Array.isArray(req.body.anexos) ? req.body.anexos : [];
+    if (novosAnexos.length === 0) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'Nenhum anexo indicado' });
+    }
+
+    const data = safeJsonParse(existing.data, {});
+    const anexos = [...(Array.isArray(data.anexos) ? data.anexos : []), ...novosAnexos];
+
+    const ordem = await prisma.internalPaymentOrder.update({
+      where: { id: existing.id },
+      data: { data: JSON.stringify({ ...data, anexos }) }
+    });
+
+    return res.status(200).json({ ordem: toResource(ordem) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Regista a assinatura (Presidente/Administrador) usando a imagem de assinatura
 // guardada no perfil do utilizador - identico ao fluxo da Ordem de Pagamento a
 // Fornecedor (ver POST /facturas/:id/ordem-pagamento/assinar).
@@ -248,6 +283,36 @@ router.post('/:id/assinar', requireAuth as any, async (req: AuthenticatedRequest
   }
 });
 
+// Submete a Ordem de Pagamento Interna ao banco - so Financeiro, mesmo passo
+// obrigatorio que a Ordem de Pagamento a Fornecedor tem antes de poder ser
+// paga (ver module-routes-helper.ts:setStatus, transicao "submetido_ao_banco").
+router.post('/:id/submeter-banco', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user!;
+    if (!PODE_PAGAR.includes(user.role)) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Apenas o Financeiro pode submeter ao banco' });
+    }
+    const existing = await prisma.internalPaymentOrder.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de Pagamento Interna nao encontrada' });
+    if (existing.status !== 'assinado') {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'A ordem precisa das duas assinaturas antes de ser submetida ao banco' });
+    }
+
+    const ordem = await prisma.internalPaymentOrder.update({
+      where: { id: existing.id },
+      data: { status: 'submetido_ao_banco' }
+    });
+
+    await auditService.logAction('internal_payment_order_submitted_bank', 'info', { ordemId: ordem.id }, {
+      userId: user.id, userEmail: user.email, userRole: user.role, resource: 'internal_payment_order', resourceId: ordem.id, success: true,
+    });
+
+    return res.status(200).json({ ordem: toResource(ordem) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Marca a Ordem de Pagamento Interna como paga - so Financeiro, tal como na
 // Ordem de Pagamento a Fornecedor (canPay).
 router.post('/:id/pagar', requireAuth as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -258,8 +323,8 @@ router.post('/:id/pagar', requireAuth as any, async (req: AuthenticatedRequest, 
     }
     const existing = await prisma.internalPaymentOrder.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de Pagamento Interna nao encontrada' });
-    if (existing.status !== 'assinado') {
-      return res.status(400).json({ error: 'BAD_REQUEST', message: 'A ordem precisa das duas assinaturas antes de ser marcada como paga' });
+    if (existing.status !== 'submetido_ao_banco') {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'A ordem precisa de ser submetida ao banco antes de ser marcada como paga' });
     }
 
     const ordem = await prisma.internalPaymentOrder.update({

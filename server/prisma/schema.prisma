@@ -399,7 +399,7 @@ model Factura {
 model InternalPaymentOrder {
   id             String    @id @default(uuid())
   numero         String    @unique
-  status         String    @default("rascunho") // rascunho -> assinado (ambas as assinaturas) -> pago
+  status         String    @default("rascunho") // rascunho -> assinado (ambas as assinaturas) -> submetido_ao_banco -> pago
   descricao      String
   valor          Float
   moeda          String    @default("AOA")

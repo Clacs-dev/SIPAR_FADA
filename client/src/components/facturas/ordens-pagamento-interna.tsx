@@ -47,6 +47,7 @@ function getStatusBadge(status: string) {
   const map: Record<string, { label: string; tone: string }> = {
     rascunho: { label: 'Rascunho', tone: 'var(--tone-neutral)' },
     assinado: { label: 'Assinado', tone: 'var(--tone-info)' },
+    submetido_ao_banco: { label: 'Submetido ao Banco', tone: 'var(--tone-gold)' },
     pago: { label: 'Pago', tone: 'var(--tone-success)' },
   };
   const item = map[status] || map.rascunho;
@@ -86,6 +87,7 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
   const [selecionada, setSelecionada] = useState<OrdemPagamentoInterna | null>(null);
   const [uploadingSignature, setUploadingSignature] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [uploadingAnexo, setUploadingAnexo] = useState(false);
 
   const podeGerir = PODE_GERIR.includes(userRole);
   const podePagar = userRole === 'financeiro' || userRole === 'admin_sistema';
@@ -232,6 +234,75 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
       toast.success('Assinatura registada com sucesso!');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Erro ao assinar');
+    }
+  };
+
+  const handleSubmeterBanco = async () => {
+    if (!selecionada) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/internal-payment-orders/${selecionada.id}/submeter-banco`, {
+        method: 'POST',
+        headers: getAuthHeaders(false),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Erro ao submeter ao banco');
+      }
+      const data = await response.json();
+      setSelecionada(data.ordem);
+      setOrdens((prev) => prev.map((o) => (o.id === data.ordem.id ? data.ordem : o)));
+      toast.success('Ordem de Pagamento Interna submetida ao banco');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao submeter ao banco');
+    }
+  };
+
+  // Anexa os dossies/documentos que justificam a despesa (facturas, recibos,
+  // despachos, etc.) - disponível em qualquer estado até a ordem ser paga.
+  const handleAnexarDossie = async (files: FileList) => {
+    if (!selecionada || !accessToken) return;
+    setUploadingAnexo(true);
+    try {
+      const anexosCarregados: { nome: string; url: string; tamanho: number; tipo: string; uploaded_at: string }[] = [];
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_BASE_URL}/storage/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+          body: formData,
+        });
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.message || err.error || `Erro ao carregar ${file.name}`);
+        }
+        const data = await response.json();
+        anexosCarregados.push({
+          nome: file.name,
+          url: data.file?.url,
+          tamanho: file.size,
+          tipo: file.type,
+          uploaded_at: new Date().toISOString(),
+        });
+      }
+
+      const response = await fetch(`${API_BASE_URL}/internal-payment-orders/${selecionada.id}/anexos`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ anexos: anexosCarregados }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || 'Erro ao anexar documentos');
+      }
+      const data = await response.json();
+      setSelecionada(data.ordem);
+      setOrdens((prev) => prev.map((o) => (o.id === data.ordem.id ? data.ordem : o)));
+      toast.success('Documento(s) anexado(s) com sucesso');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao anexar documentos');
+    } finally {
+      setUploadingAnexo(false);
     }
   };
 
@@ -551,7 +622,60 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
                 })}
               </div>
 
+              {/* Dossiês / documentos que justificam a despesa */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Dossiês / Documentos Justificativos</Label>
+                  {selecionada.status !== 'pago' && (
+                    <label>
+                      <input
+                        type="file"
+                        multiple
+                        accept="application/pdf,image/*"
+                        className="hidden"
+                        disabled={uploadingAnexo}
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files.length > 0) handleAnexarDossie(e.target.files);
+                          e.target.value = '';
+                        }}
+                      />
+                      <Button size="sm" variant="outline" disabled={uploadingAnexo} asChild>
+                        <span>
+                          <Upload className="mr-1 h-3 w-3" />
+                          {uploadingAnexo ? 'A carregar...' : 'Anexar dossiê'}
+                        </span>
+                      </Button>
+                    </label>
+                  )}
+                </div>
+                {selecionada.anexos && selecionada.anexos.length > 0 ? (
+                  <div className="space-y-1">
+                    {selecionada.anexos.map((anexo, index) => (
+                      <a
+                        key={anexo.id || index}
+                        href={anexo.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between text-sm p-2 border border-border rounded-lg hover:bg-accent"
+                      >
+                        <span className="truncate">{anexo.nome}</span>
+                        <Download className="h-3.5 w-3.5 text-muted-foreground shrink-0 ml-2" />
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Nenhum documento anexado ainda.</p>
+                )}
+              </div>
+
               {selecionada.status === 'assinado' && podePagar && (
+                <Button className="w-full" onClick={handleSubmeterBanco}>
+                  <FileSignature className="mr-2 h-4 w-4" />
+                  Submeter ao Banco
+                </Button>
+              )}
+
+              {selecionada.status === 'submetido_ao_banco' && podePagar && (
                 <Button className="w-full" onClick={handleMarcarPaga}>
                   <DollarSign className="mr-2 h-4 w-4" />
                   Marcar como Paga
