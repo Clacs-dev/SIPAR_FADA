@@ -251,13 +251,15 @@ export async function garantirOrdemCompraDaFactura(facturaId: string, user: { id
     ? itensFactura
     : [{ descricao: factura.descricao || 'Fornecimento conforme factura', quantidade: 1, preco_unitario: factura.valor || 0, iva: 0, total: factura.valor || 0 }];
 
+  // Sequência própria (prefixo AD) - este documento é a "Autorização de
+  // Despesas", não uma Ordem de Compra real do Procurement.
   const { SequenceService } = await import('./sequence.service');
-  const sequencia = await SequenceService.next('purchaseOrder');
+  const sequencia = await SequenceService.next('despesaAutorizada');
 
   return prisma.$transaction(async (tx) => {
     const ordem = await tx.purchaseOrder.create({
       data: {
-        numero: sequencia?.value || `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+        numero: sequencia?.value || `AD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
         fornecedorId,
         fornecedor: factura.fornecedor || data.fornecedor_nome || NOME_GENERICO,
         valor: factura.valor || data.total || 0,
@@ -374,6 +376,10 @@ export async function montarDocumentoOrdemCompra(ordem: any) {
 
     factura_numero: factura?.numero || ordemData.factura_numero,
     numero_factura_fornecedor: ordemData.numero_fornecedor,
+
+    // Assinaturas automáticas (DSG ao validar, PCA ao autorizar a despesa) -
+    // ver assinarAutorizacaoDespesasAutomaticamente em module-routes-helper.
+    assinaturas: Array.isArray(ordemData.assinaturas) ? ordemData.assinaturas : [],
 
     itens,
     subtotal: subtotal || ordem.valor,

@@ -36,6 +36,13 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const { accessToken } = useAuth();
   const [dadosBancariosFornecedor, setDadosBancariosFornecedor] = useState<DadosBancariosFornecedor | null>(null);
   const [loadingDadosBancarios, setLoadingDadosBancarios] = useState(false);
+  // Adicionar conta bancária ao fornecedor seleccionado, sem sair deste
+  // formulário, quando ele ainda não tem nenhuma guardada.
+  const [addContaBancariaOpen, setAddContaBancariaOpen] = useState(false);
+  const [savingContaBancaria, setSavingContaBancaria] = useState(false);
+  const [novaContaBancaria, setNovaContaBancaria] = useState({
+    banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola',
+  });
   // Fornecedor ainda não cadastrado na plataforma: em vez de escolher da
   // lista, digita-se o NIF (consulta a AGT para preencher o nome) e o nome
   // fica livre para editar - a factura grava-se na mesma, sem exigir um
@@ -77,9 +84,29 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   // guardados directamente no registo de Fornecedor) - para quem regista a
   // factura internamente (Compras/Financeiro) ver/confirmar para onde vai o
   // pagamento, sem ter de digitar nada.
+  const recarregarDadosBancarios = async (): Promise<DadosBancariosFornecedor | null> => {
+    if (!formData.fornecedor_id || !accessToken) return null;
+    setLoadingDadosBancarios(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}/dados-bancarios`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const data = res.ok ? await res.json() : null;
+      const dados = data?.dados_bancarios || null;
+      setDadosBancariosFornecedor(dados);
+      return dados;
+    } catch {
+      setDadosBancariosFornecedor(null);
+      return null;
+    } finally {
+      setLoadingDadosBancarios(false);
+    }
+  };
+
   useEffect(() => {
     let cancelado = false;
     setDadosBancariosFornecedor(null);
+    setAddContaBancariaOpen(false);
     if (!formData.fornecedor_id || !accessToken) return;
     setLoadingDadosBancarios(true);
     fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}/dados-bancarios`, {
@@ -169,6 +196,35 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     };
   };
 
+  // Guarda uma conta bancária no próprio registo do Fornecedor (não na
+  // factura) - fica disponível para esta e para futuras facturas do mesmo
+  // fornecedor, tal como o PUT /procurement/fornecedores/:id já suporta.
+  const handleSalvarContaBancaria = async () => {
+    if (!formData.fornecedor_id || !accessToken) return;
+    if (!novaContaBancaria.banco_iban.trim() && !novaContaBancaria.banco_nib.trim()) {
+      toast.error('Indique o IBAN ou o NIB da conta.');
+      return;
+    }
+    setSavingContaBancaria(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(novaContaBancaria),
+      });
+      if (!response.ok) throw new Error('Erro ao guardar a conta bancária');
+      await recarregarDadosBancarios();
+      setAddContaBancariaOpen(false);
+      setNovaContaBancaria({ banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola' });
+      toast.success('Conta bancária guardada.');
+    } catch (err) {
+ console.error('Erro ao guardar conta bancária do fornecedor:', err);
+      toast.error('Erro ao guardar a conta bancária do fornecedor.');
+    } finally {
+      setSavingContaBancaria(false);
+    }
+  };
+
   const handleSave = () => {
     // Fornecedor da lista já cadastrada, ou um "ad-hoc" (nome + NIF digitados
     // à mão, ainda sem registo de Fornecedor na plataforma).
@@ -177,6 +233,12 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       : fornecedores.find((f) => f.id === formData.fornecedor_id);
     if (!fornecedorSelecionado) {
       toast.error(fornecedorNaoListado ? 'Indique o nome do fornecedor.' : 'Selecione um fornecedor antes de gravar a factura.');
+      return;
+    }
+    // Sem dados bancários não há para onde emitir o pagamento - bloqueia
+    // aqui em vez de deixar a Ordem de Pagamento ficar incompleta mais tarde.
+    if (!fornecedorNaoListado && !dadosBancariosFornecedor) {
+      toast.error('Este fornecedor ainda não tem dados bancários guardados. Adicione-os antes de gravar a factura.');
       return;
     }
     if (itens.some((item) => !item.descricao || item.quantidade <= 0 || item.preco_unitario <= 0)) {
@@ -379,7 +441,21 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
               })()}
 
               <div className="pt-2 border-t border-border/60">
-                <p className="text-sm font-medium mb-1">Dados Bancários do Fornecedor</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-medium">Dados Bancários do Fornecedor</p>
+                  {!loadingDadosBancarios && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2"
+                      onClick={() => setAddContaBancariaOpen((v) => !v)}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      {dadosBancariosFornecedor ? 'Nova conta' : 'Adicionar conta'}
+                    </Button>
+                  )}
+                </div>
                 {loadingDadosBancarios ? (
                   <p className="text-sm text-muted-foreground">A carregar...</p>
                 ) : dadosBancariosFornecedor ? (
@@ -391,7 +467,28 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     {dadosBancariosFornecedor.banco_swift && <p><strong>SWIFT:</strong> {dadosBancariosFornecedor.banco_swift}</p>}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">Este fornecedor ainda não tem dados bancários guardados.</p>
+                  <p className="text-sm text-destructive">Este fornecedor ainda não tem dados bancários guardados. Não é possível gravar a factura sem isso.</p>
+                )}
+
+                {addContaBancariaOpen && (
+                  <div className="mt-3 p-3 border rounded-lg bg-background space-y-2">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Input placeholder="Banco" value={novaContaBancaria.banco_nome} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_nome: e.target.value })} />
+                      <Input placeholder="Titular da conta" value={novaContaBancaria.banco_titular} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_titular: e.target.value })} />
+                      <Input placeholder="IBAN" value={novaContaBancaria.banco_iban} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_iban: e.target.value })} />
+                      <Input placeholder="NIB" value={novaContaBancaria.banco_nib} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_nib: e.target.value })} />
+                      <Input placeholder="SWIFT/BIC" value={novaContaBancaria.banco_swift} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_swift: e.target.value })} />
+                      <Input placeholder="Cidade" value={novaContaBancaria.banco_cidade} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_cidade: e.target.value })} />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" size="sm" variant="outline" onClick={() => setAddContaBancariaOpen(false)} disabled={savingContaBancaria}>
+                        Cancelar
+                      </Button>
+                      <Button type="button" size="sm" onClick={handleSalvarContaBancaria} disabled={savingContaBancaria}>
+                        {savingContaBancaria ? 'A guardar...' : 'Guardar conta'}
+                      </Button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>

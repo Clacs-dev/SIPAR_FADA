@@ -406,10 +406,10 @@ export function FacturaDetails({
               style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowApproveForm(true)}
               disabled={factura.status !== 'validado'}
-              title={factura.status !== 'validado' ? `Status atual: ${factura.status}. Necessário: validado` : 'Aprovar factura'}
+              title={factura.status !== 'validado' ? `Status atual: ${factura.status}. Necessário: validado` : 'Autorizar despesas'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
-              Aprovar
+              Autorizar Despesas
             </Button>
           )}
           
@@ -452,7 +452,7 @@ export function FacturaDetails({
             </Button>
           )}
           {/* Ordem de Compra: a do Procurement de origem, ou - factura normal -
-              "Liberação de Despesa_DSG" emitida quando a factura e validada. */}
+              "Autorização de Despesas" emitida quando a factura e validada. */}
           {(factura.purchase_order_id || ['validado', 'aprovado', 'submetido_ao_banco', 'pago'].includes(factura.status)) && (
             <Button
               variant="outline"
@@ -860,11 +860,11 @@ export function FacturaDetails({
                 </div>
               )}
 
-              {/* Aprovar */}
+              {/* Autorizar Despesas */}
               {canApprove && factura.status === 'validado' && !showApproveForm && (
                 <Button className="w-full" onClick={() => setShowApproveForm(true)}>
                   <CheckCircle className="mr-2 h-4 w-4" />
-                  Aprovar Factura
+                  Autorizar Despesas
                 </Button>
               )}
 

@@ -125,7 +125,7 @@ export interface Factura {
   // distingue se a factura veio do Procurement ('procurement', documento
   // continua "Ordem de Compra", vai para o fornecedor) ou foi criada
   // directamente em Gestão de Pagamento (sem valor, documento interno
-  // chamado "Liberação de Despesa_DSG").
+  // chamado "Autorização de Despesas").
   purchase_order_id?: string;
   numero_ordem?: string;
   origem?: string;

@@ -258,6 +258,45 @@ export async function resolveFornecedorBankInfo(record: any, data: any): Promise
   };
 }
 
+/**
+ * Assina automaticamente o documento "Autorização de Despesas" (PurchaseOrder
+ * emitido a partir de uma factura, ver garantirOrdemCompraDaFactura) com a
+ * assinatura já guardada no perfil de quem acabou de validar/aprovar a
+ * factura - sem passo manual de assinatura separado, ao contrário da Ordem
+ * de Pagamento. Silenciosa: se o utilizador ainda não carregou a assinatura
+ * no perfil, a transição de estado continua a avançar na mesma, só sem
+ * assinatura automática (fica por assinar manualmente mais tarde, se vier a
+ * existir esse fluxo).
+ */
+async function assinarAutorizacaoDespesasAutomaticamente(purchaseOrderId: string | null | undefined, papel: 'dsg' | 'pca', user: { id: string; name: string }) {
+  if (!purchaseOrderId) return;
+  try {
+    const signerUser = await prisma.user.findUnique({ where: { id: user.id } });
+    if (!signerUser?.signatureImage) return;
+
+    const ordem = await prisma.purchaseOrder.findUnique({ where: { id: purchaseOrderId } });
+    if (!ordem) return;
+
+    const data = safeJsonParse(ordem.data, {});
+    const assinaturas = (Array.isArray(data.assinaturas) ? data.assinaturas : [])
+      .filter((assinatura: any) => assinatura.papel !== papel);
+    assinaturas.push({
+      papel,
+      user_id: user.id,
+      nome: user.name,
+      assinatura_url: signerUser.signatureImage,
+      assinado_em: new Date().toISOString(),
+    });
+
+    await prisma.purchaseOrder.update({
+      where: { id: purchaseOrderId },
+      data: { data: stringify({ ...data, assinaturas }) },
+    });
+  } catch (error) {
+    logger.warn(`Falha ao assinar automaticamente a Autorização de Despesas (ordem ${purchaseOrderId}, papel ${papel}):`, error);
+  }
+}
+
 function pickNumber(value: any): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   const parsed = Number(value);
@@ -868,18 +907,30 @@ export class ModuleRoutesHelper {
         });
       }
 
-      // A Ordem de Pagamento tem de existir antes de submeter ao banco (e, por
-      // consequencia, antes de pagar - "pago" so e alcancavel a partir de
+      const data = safeJsonParse(existing.data, {});
+
+      // A Ordem de Pagamento tem de existir, e estar assinada pelo Presidente
+      // E pelo Administrador, antes de submeter ao banco (e, por consequencia,
+      // antes de pagar - "pago" so e alcancavel a partir de
       // "submetido_ao_banco"). Sem isto seria possivel saltar este passo
       // chamando a API directamente, contornando o botao da interface.
-      if (config.model === 'factura' && nextStatus === 'submetido_ao_banco' && !(existing as any).numeroOrdemPagamento) {
-        return res.status(400).json({
-          error: 'BAD_REQUEST',
-          message: 'Gere a Ordem de Pagamento antes de submeter a factura ao banco.'
-        });
+      if (config.model === 'factura' && nextStatus === 'submetido_ao_banco') {
+        if (!(existing as any).numeroOrdemPagamento) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: 'Gere a Ordem de Pagamento antes de submeter a factura ao banco.'
+          });
+        }
+        const assinaturasOP = Array.isArray(data.ordem_pagamento?.assinaturas) ? data.ordem_pagamento.assinaturas : [];
+        const temPresidente = assinaturasOP.some((a: any) => a.papel === 'presidente');
+        const temAdministrador = assinaturasOP.some((a: any) => a.papel === 'administrador');
+        if (!temPresidente || !temAdministrador) {
+          return res.status(400).json({
+            error: 'BAD_REQUEST',
+            message: 'A Ordem de Pagamento precisa das assinaturas do Presidente e do Administrador antes de ser submetida ao banco.'
+          });
+        }
       }
-
-      const data = safeJsonParse(existing.data, {});
       // A transicao para "pago" tem de gravar a data de pagamento na coluna real
       // (paidAt), nao so no JSON flexivel - e o que "Data de Pagamento"/relatorios
       // e o filtro de facturas em atraso usam para saber que foi paga e quando.
@@ -919,6 +970,11 @@ export class ModuleRoutesHelper {
           .then(async () => { updated = await delegateFor(config).findUnique({ where: { id: req.params.id } }); })
           .catch((error) => logger.error(`Falha ao emitir Ordem de Compra da factura ${req.params.id}:`, error));
       }
+      // Assinatura automática do DSG na Autorização de Despesas, no mesmo
+      // momento em que valida a factura - sem passo de assinatura à parte.
+      if (config.model === 'factura' && nextStatus === 'validado') {
+        await assinarAutorizacaoDespesasAutomaticamente((updated as any).purchaseOrderId, 'dsg', { id: user.id, name: user.name });
+      }
 
       // Sincronizacao Gestao de Pagamento: assim que a factura fica aprovada, gera
       // automaticamente o numero da Ordem de Pagamento (despacho/conta a debitar ficam
@@ -947,6 +1003,12 @@ export class ModuleRoutesHelper {
             }),
           }
         });
+      }
+
+      // Assinatura automática do PCA na Autorização de Despesas, no mesmo
+      // momento em que autoriza a despesa - sem passo de assinatura à parte.
+      if (config.model === 'factura' && nextStatus === STATUS.APROVADO) {
+        await assinarAutorizacaoDespesasAutomaticamente((updated as any).purchaseOrderId, 'pca', { id: user.id, name: user.name });
       }
 
       // Notifica o fornecedor quando a factura avanca para submissao ao banco ou pagamento.

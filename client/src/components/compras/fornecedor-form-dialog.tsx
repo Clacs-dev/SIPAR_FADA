@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { Building2, Mail, Phone, MapPin, Globe, User, AlertCircle, X, Plus, Tag } from "lucide-react";
+import { Building2, Mail, Phone, MapPin, Globe, User, AlertCircle, X, Plus, Tag, Landmark } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -71,6 +71,17 @@ export function FornecedorFormDialog({
   const [valorMinimo, setValorMinimo] = useState("");
   const [observacoes, setObservacoes] = useState("");
 
+  // Dados bancários (só usados quando o fornecedor não tem conta própria no
+  // portal - ver server resolveFornecedorBankInfo, que prefere os dados da
+  // conta de utilizador ligada quando existe).
+  const [bancoNome, setBancoNome] = useState("");
+  const [bancoTitular, setBancoTitular] = useState("");
+  const [bancoIban, setBancoIban] = useState("");
+  const [bancoNib, setBancoNib] = useState("");
+  const [bancoSwift, setBancoSwift] = useState("");
+  const [bancoCidade, setBancoCidade] = useState("");
+  const [bancoPais, setBancoPais] = useState("Angola");
+
   // Preencher form se for edição
   useEffect(() => {
     if (fornecedor) {
@@ -96,6 +107,13 @@ export function FornecedorFormDialog({
       setPrazoEntrega(fornecedor.prazo_entrega_padrao_dias?.toString() || "");
       setValorMinimo(fornecedor.valor_minimo_pedido?.toString() || "");
       setObservacoes(fornecedor.observacoes || "");
+      setBancoNome(fornecedor.banco_nome || "");
+      setBancoTitular(fornecedor.banco_titular || "");
+      setBancoIban(fornecedor.banco_iban || "");
+      setBancoNib(fornecedor.banco_nib || "");
+      setBancoSwift(fornecedor.banco_swift || "");
+      setBancoCidade(fornecedor.banco_cidade || "");
+      setBancoPais(fornecedor.banco_pais || "Angola");
     }
   }, [fornecedor]);
 
@@ -153,6 +171,13 @@ export function FornecedorFormDialog({
       prazo_entrega_padrao_dias: prazoEntrega ? parseInt(prazoEntrega) : 0,
       valor_minimo_pedido: valorMinimo ? parseFloat(valorMinimo) : 0,
       observacoes: observacoes.trim() || undefined,
+      banco_nome: bancoNome.trim() || undefined,
+      banco_titular: bancoTitular.trim() || undefined,
+      banco_iban: bancoIban.trim() || undefined,
+      banco_nib: bancoNib.trim() || undefined,
+      banco_swift: bancoSwift.trim() || undefined,
+      banco_cidade: bancoCidade.trim() || undefined,
+      banco_pais: bancoPais.trim() || undefined,
     };
 
     try {
@@ -188,6 +213,13 @@ export function FornecedorFormDialog({
       setPrazoEntrega("");
       setValorMinimo("");
       setObservacoes("");
+      setBancoNome("");
+      setBancoTitular("");
+      setBancoIban("");
+      setBancoNib("");
+      setBancoSwift("");
+      setBancoCidade("");
+      setBancoPais("Angola");
       onClose();
     }
   };
@@ -652,6 +684,84 @@ export function FornecedorFormDialog({
                 placeholder="Informações adicionais sobre o fornecedor..."
                 rows={3}
               />
+            </div>
+          </div>
+
+          {/* Dados Bancários */}
+          <div className="space-y-4">
+            <h3 className="font-semibold text-sm flex items-center gap-2">
+              <Landmark className="h-4 w-4" />
+              Dados Bancários
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Usados para a Ordem de Pagamento quando este fornecedor não tiver conta própria no portal.
+              Se mais tarde ele próprio fizer login e guardar os dados bancários dele, esses passam a ter prioridade.
+            </p>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="banco-titular">Titular da Conta</Label>
+                <Input
+                  id="banco-titular"
+                  value={bancoTitular}
+                  onChange={(e) => setBancoTitular(e.target.value)}
+                  placeholder="Nome do titular da conta"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-nome">Banco</Label>
+                <Input
+                  id="banco-nome"
+                  value={bancoNome}
+                  onChange={(e) => setBancoNome(e.target.value)}
+                  placeholder="Nome do banco"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-iban">IBAN</Label>
+                <Input
+                  id="banco-iban"
+                  value={bancoIban}
+                  onChange={(e) => setBancoIban(e.target.value)}
+                  placeholder="AO06 0000 0000 0000 0000 0000 0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-nib">NIB</Label>
+                <Input
+                  id="banco-nib"
+                  value={bancoNib}
+                  onChange={(e) => setBancoNib(e.target.value)}
+                  placeholder="0000 0000 0000 0000 0000 0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-swift">Código SWIFT/BIC</Label>
+                <Input
+                  id="banco-swift"
+                  value={bancoSwift}
+                  onChange={(e) => setBancoSwift(e.target.value)}
+                  placeholder="Ex: BAOAAOLU"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-cidade">Cidade do Banco</Label>
+                <Input
+                  id="banco-cidade"
+                  value={bancoCidade}
+                  onChange={(e) => setBancoCidade(e.target.value)}
+                  placeholder="Ex: Luanda"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-pais">País do Banco</Label>
+                <Input
+                  id="banco-pais"
+                  value={bancoPais}
+                  onChange={(e) => setBancoPais(e.target.value)}
+                  placeholder="Angola"
+                />
+              </div>
             </div>
           </div>
 

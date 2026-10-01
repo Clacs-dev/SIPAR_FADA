@@ -20,7 +20,6 @@ import { FacturasDashboard } from "./facturas-dashboard";
 import { FacturaForm } from "./factura-form";
 import { FacturaDetails } from "./factura-details";
 import { OrdensPagamentoInterna } from "./ordens-pagamento-interna";
-import { MapaImpostos } from "../shared/mapa-impostos";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { DepartmentFilter } from "../common/department-filter";
@@ -887,10 +886,6 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   <List className="mr-2 h-4 w-4" />
                   Todas ({facturas.length})
                 </TabsTrigger>
-                <TabsTrigger value="mapa_impostos">
-                  <Receipt className="mr-2 h-4 w-4" />
-                  Mapa de Impostos
-                </TabsTrigger>
                 <TabsTrigger value="pendentes">
                   <Clock className="mr-2 h-4 w-4" />
                   Pendentes ({facturas.filter(f => f.status === 'pendente').length})
@@ -924,20 +919,6 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
             {/* Dashboard */}
             <TabsContent value="dashboard">
               <FacturasDashboard stats={stats} />
-            </TabsContent>
-
-            {/* Mapa de Impostos: IVA (produtos) e Retenção na Fonte (serviços) */}
-            <TabsContent value="mapa_impostos">
-              <MapaImpostos
-                contexto="financeiro"
-                onOpenFactura={(facturaId) => {
-                  const alvo = facturas.find((f) => f.id === facturaId);
-                  if (alvo) {
-                    setSelectedFactura(alvo);
-                    setView('details');
-                  }
-                }}
-              />
             </TabsContent>
 
             {/* Todas */}

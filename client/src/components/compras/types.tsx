@@ -205,7 +205,19 @@ export interface Fornecedor {
   
   // Credenciais
   usuario_id?: string; // Se tem acesso ao sistema
-  
+  user_id?: string | null;
+  tem_conta?: boolean;
+
+  // Dados bancários (guardados directamente no registo quando o fornecedor
+  // não tem conta de utilizador própria - ver server resolveFornecedorBankInfo)
+  banco_nome?: string;
+  banco_titular?: string;
+  banco_iban?: string;
+  banco_nib?: string;
+  banco_swift?: string;
+  banco_cidade?: string;
+  banco_pais?: string;
+
   // Status
   situacao: StatusFornecedor;
   observacoes?: string;

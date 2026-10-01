@@ -655,6 +655,10 @@ export interface OrdemCompraDocumento {
   observacoes?: string;
   factura_numero?: string;
   numero_factura_fornecedor?: string;
+  // Assinaturas automáticas da Autorização de Despesas (origem "factura"):
+  // "dsg" ao validar, "pca" ao autorizar a despesa - ver
+  // assinarAutorizacaoDespesasAutomaticamente no servidor.
+  assinaturas?: Array<{ papel: 'dsg' | 'pca'; nome: string; assinatura_url?: string }>;
   itens: Array<{ descricao: string; unidade?: string; quantidade: number; preco_unitario: number; tipo_operacao?: 'produto' | 'servico'; iva: number; taxa_retencao?: number; valor_retencao?: number; total: number }>;
   subtotal: number;
   iva_total: number;
@@ -689,8 +693,8 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
   // O mesmo documento serve dois fluxos com nomes diferentes: quando emitido
   // pelo Procurement (para um fornecedor externo) continua "Ordem de Compra";
   // quando gerado a partir de uma factura validada directamente em Gestão de
-  // Pagamento (uso interno), passa a chamar-se "Liberação de Despesa_DSG".
-  const tituloDocumento = oc.origem === 'factura' ? 'LIBERAÇÃO DE DESPESA_DSG' : 'ORDEM DE COMPRA';
+  // Pagamento (uso interno), passa a chamar-se "Autorização de Despesas".
+  const tituloDocumento = oc.origem === 'factura' ? 'AUTORIZAÇÃO DE DESPESAS' : 'ORDEM DE COMPRA';
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
@@ -820,8 +824,39 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
       doc.text(nome, x + larguraAssinatura / 2, y + 10, { align: 'center' });
     }
   };
-  assinatura(marginLeft, 'Emitido por (Compras)', oc.emitida_por_nome);
-  assinatura(marginRight - larguraAssinatura, 'Aprovado por');
+
+  if (oc.origem === 'factura') {
+    // Autorização de Despesas: assinaturas automáticas do DSG (ao validar) e
+    // do PCA (ao autorizar a despesa) - imagem real quando existe, senão
+    // linha em branco (ainda não chegou a essa etapa).
+    const assinaturas = oc.assinaturas || [];
+    const dsg = assinaturas.find((a) => a.papel === 'dsg');
+    const pca = assinaturas.find((a) => a.papel === 'pca');
+    const assinaturaComImagem = (x: number, rotulo: string, assinada?: { nome: string; assinatura_url?: string }) => {
+      if (assinada?.assinatura_url) {
+        try {
+          doc.addImage(assinada.assinatura_url, 'PNG', x, y - 11, larguraAssinatura, 11);
+        } catch (error) {
+ console.warn('Não foi possível inserir a imagem de assinatura:', error);
+          doc.line(x, y, x + larguraAssinatura, y);
+        }
+      } else {
+        doc.line(x, y, x + larguraAssinatura, y);
+      }
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(rotulo, x + larguraAssinatura / 2, y + 5, { align: 'center' });
+      if (assinada?.nome) {
+        doc.setFont('helvetica', 'bold');
+        doc.text(assinada.nome, x + larguraAssinatura / 2, y + 10, { align: 'center' });
+      }
+    };
+    assinaturaComImagem(marginLeft, 'DSG (Compras)', dsg);
+    assinaturaComImagem(marginRight - larguraAssinatura, 'PCA', pca);
+  } else {
+    assinatura(marginLeft, 'Emitido por (Compras)', oc.emitida_por_nome);
+    assinatura(marginRight - larguraAssinatura, 'Aprovado por');
+  }
 
   const footerY = pageHeight - 20;
   doc.setFontSize(8);
