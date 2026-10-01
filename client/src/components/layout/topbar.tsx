@@ -46,11 +46,11 @@ export function TopBar({ onTabChange }: { onTabChange: (tab: string) => void }) 
     setLoading(true);
     try {
       const [pRes, aRes, cRes, fRes, actRes, pedRes, fornRes] = await Promise.all([
-        fetch(`${API_BASE_URL}/presentations`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/audiences`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/comunicacoes`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/facturas`, { headers: getAuthHeaders() }),
-        fetch(`${API_BASE_URL}/actas`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/presentations?all=true`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/audiences?all=true`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/comunicacoes?all=true`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/facturas?all=true`, { headers: getAuthHeaders() }),
+        fetch(`${API_BASE_URL}/actas?all=true`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/procurement/pedidos`, { headers: getAuthHeaders() }),
         fetch(`${API_BASE_URL}/procurement/fornecedores`, { headers: getAuthHeaders() }),
       ]);

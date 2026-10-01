@@ -226,7 +226,7 @@ export function DashboardOverview({ onTabChange }: { onTabChange?: (tab: string)
 
       // Fetch presentations
       const presentationsRes = await fetch(
-        `${API_BASE_URL}/presentations`,
+        `${API_BASE_URL}/presentations?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -234,7 +234,7 @@ export function DashboardOverview({ onTabChange }: { onTabChange?: (tab: string)
 
       // Fetch audiences
       const audiencesRes = await fetch(
-        `${API_BASE_URL}/audiences`,
+        `${API_BASE_URL}/audiences?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

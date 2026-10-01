@@ -11,6 +11,8 @@ import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useFornecedores } from "../../hooks/use-fornecedores";
+import { useClientPagination } from "../../hooks/use-client-pagination";
+import { PaginationBar } from "../common/pagination-bar";
 import { FornecedorFormDialog } from "./fornecedor-form-dialog";
 import { 
   AlertDialog,
@@ -113,6 +115,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
   };
 
   const fornecedoresFiltrados = fornecedores;
+  const fornecedoresPag = useClientPagination(fornecedoresFiltrados);
 
   // Estatísticas
   const stats = {
@@ -196,7 +199,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
       )}
 
       <div className="space-y-4">
-        {!loading && fornecedoresFiltrados.map((fornecedor) => (
+        {!loading && fornecedoresPag.pageItems.map((fornecedor) => (
           <Card key={fornecedor.id} className="hover:shadow-md transition-shadow">
             <CardContent className="pt-6">
               <div className="flex items-start justify-between gap-4">
@@ -336,6 +339,7 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
           </Card>
         ))}
       </div>
+      <PaginationBar pagination={fornecedoresPag.pagination} onPageChange={fornecedoresPag.setPage} />
 
       {/* Dialog de Formulário */}
       <FornecedorFormDialog

@@ -5,6 +5,8 @@ import { ComunicacoesDashboard } from "./comunicacoes-dashboard";
 import { Comunicacao, ComunicacaoFilters } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { useComunicacoes, type UtilizadorDepartamento } from "../../hooks/use-comunicacoes";
+import { useClientPagination } from "../../hooks/use-client-pagination";
+import { PaginationBar } from "../common/pagination-bar";
 import { ShareDialog } from "../shared/share-dialog";
 import { gerarRelatorioConsolidado } from "../../utils/pdf-generator";
 import { toast } from "sonner@2.0.3";
@@ -250,6 +252,16 @@ export function ComunicacoesMain() {
     return true;
   });
 
+  const todasComunicacoes = filteredComunicacoes.filter(c => c.status !== 'arquivado');
+  const saidaComunicacoes = filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_origem === user?.departamento);
+  const entradaComunicacoes = filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_destino === user?.departamento);
+  const arquivoComunicacoes = filteredComunicacoes.filter(c => c.status === 'arquivado');
+
+  const todasPag = useClientPagination(todasComunicacoes);
+  const saidaPag = useClientPagination(saidaComunicacoes);
+  const entradaPag = useClientPagination(entradaComunicacoes);
+  const arquivoPag = useClientPagination(arquivoComunicacoes);
+
   const getStatusBadge = (status: string) => {
     const badges = {
       pendente: { label: 'Pendente', color: 'var(--tone-warn)' },
@@ -439,15 +451,15 @@ export function ComunicacoesMain() {
           </TabsTrigger>
           <TabsTrigger value="saida">
             <ArrowUpCircle className="mr-2 h-4 w-4" />
-            Saída ({comunicacoes.filter(c => c && c.departamento_origem === user?.departamento).length})
+            Saída ({saidaComunicacoes.length})
           </TabsTrigger>
           <TabsTrigger value="entrada">
             <Download className="mr-2 h-4 w-4" />
-            Entrada ({comunicacoes.filter(c => c && c.departamento_destino === user?.departamento).length})
+            Entrada ({entradaComunicacoes.length})
           </TabsTrigger>
           <TabsTrigger value="arquivo">
             <Archive className="mr-2 h-4 w-4" />
-            Arquivo ({comunicacoes.filter(c => c && c.status === 'arquivado').length})
+            Arquivo ({arquivoComunicacoes.length})
           </TabsTrigger>
         </TabsList>
 
@@ -484,7 +496,7 @@ export function ComunicacoesMain() {
           {/* Lista */}
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado').length === 0 && (
+          {!loading && todasComunicacoes.length === 0 && (
             <Card>
               <CardContent className="pt-6 text-center text-muted-foreground">
                 Nenhuma comunicação encontrada
@@ -492,7 +504,7 @@ export function ComunicacoesMain() {
             </Card>
           )}
 
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado').map((comunicacao) => (
+          {!loading && todasPag.pageItems.map((comunicacao) => (
             <Card
               key={comunicacao.id}
               className="cursor-pointer hover:shadow-md transition-shadow"
@@ -586,6 +598,7 @@ export function ComunicacoesMain() {
               </CardContent>
             </Card>
           ))}
+          <PaginationBar pagination={todasPag.pagination} onPageChange={todasPag.setPage} />
         </TabsContent>
 
         {/* Lista de Comunicações - Saída (enviadas pelo departamento) */}
@@ -621,7 +634,7 @@ export function ComunicacoesMain() {
           {/* Lista */}
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_origem === user?.departamento).length === 0 && (
+          {!loading && saidaComunicacoes.length === 0 && (
             <Card>
               <CardContent className="pt-6 text-center text-muted-foreground">
                 Nenhuma comunicação de saída encontrada
@@ -629,7 +642,7 @@ export function ComunicacoesMain() {
             </Card>
           )}
 
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_origem === user?.departamento).map((comunicacao) => (
+          {!loading && saidaPag.pageItems.map((comunicacao) => (
             <Card
               key={comunicacao.id}
               className="cursor-pointer hover:shadow-md transition-shadow"
@@ -713,6 +726,7 @@ export function ComunicacoesMain() {
               </CardContent>
             </Card>
           ))}
+          <PaginationBar pagination={saidaPag.pagination} onPageChange={saidaPag.setPage} />
         </TabsContent>
 
         {/* Lista de Comunicações - Entrada (recebidas pelo departamento) */}
@@ -748,7 +762,7 @@ export function ComunicacoesMain() {
           {/* Lista */}
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_destino === user?.departamento).length === 0 && (
+          {!loading && entradaComunicacoes.length === 0 && (
             <Card>
               <CardContent className="pt-6 text-center text-muted-foreground">
                 Nenhuma comunicação de entrada encontrada
@@ -756,7 +770,7 @@ export function ComunicacoesMain() {
             </Card>
           )}
 
-          {!loading && filteredComunicacoes.filter(c => c.status !== 'arquivado' && c.departamento_destino === user?.departamento).map((comunicacao) => (
+          {!loading && entradaPag.pageItems.map((comunicacao) => (
             <Card
               key={comunicacao.id}
               className="cursor-pointer hover:shadow-md transition-shadow"
@@ -814,13 +828,14 @@ export function ComunicacoesMain() {
               </CardContent>
             </Card>
           ))}
+          <PaginationBar pagination={entradaPag.pagination} onPageChange={entradaPag.setPage} />
         </TabsContent>
 
         {/* Arquivo */}
         <TabsContent value="arquivo" className="space-y-4">
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
-          
-          {!loading && filteredComunicacoes.filter(c => c.status === 'arquivado').length === 0 && (
+
+          {!loading && arquivoComunicacoes.length === 0 && (
             <Card>
               <CardContent className="pt-6 text-center text-muted-foreground">
                 Nenhuma comunicação arquivada
@@ -828,7 +843,7 @@ export function ComunicacoesMain() {
             </Card>
           )}
 
-          {!loading && filteredComunicacoes.filter(c => c.status === 'arquivado').map((comunicacao) => (
+          {!loading && arquivoPag.pageItems.map((comunicacao) => (
             <Card
               key={comunicacao.id}
               className="cursor-pointer hover:shadow-md transition-shadow opacity-75"
@@ -867,6 +882,7 @@ export function ComunicacoesMain() {
               </CardContent>
             </Card>
           ))}
+          <PaginationBar pagination={arquivoPag.pagination} onPageChange={arquivoPag.setPage} />
         </TabsContent>
       </Tabs>
 

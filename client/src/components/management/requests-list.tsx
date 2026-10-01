@@ -13,6 +13,8 @@ import { DocumentViewer } from "../forms/document-viewer";
 import { Eye, Check, X, UserCheck, FileText, Calendar as CalendarIcon, Ban } from "lucide-react";
 import { toast } from "sonner@2.0.3";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
+import { PaginationBar } from "../common/pagination-bar";
+import { useClientPagination } from "../../hooks/use-client-pagination";
 import { format, isToday, isYesterday, isWithinInterval, subDays, startOfMonth, endOfMonth } from "date-fns@4.1.0";
 import { ptBR } from "date-fns@4.1.0/locale";
 
@@ -46,7 +48,7 @@ export function RequestsList() {
 
       // Fetch presentations
       const presentationsResponse = await fetch(
-        `${API_BASE_URL}/presentations`,
+        `${API_BASE_URL}/presentations?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -54,7 +56,7 @@ export function RequestsList() {
 
       // Fetch audiences
       const audiencesResponse = await fetch(
-        `${API_BASE_URL}/audiences`,
+        `${API_BASE_URL}/audiences?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -821,6 +823,20 @@ export function RequestsList() {
     return matchesStatus && matchesDate;
   });
 
+  const presentationsRecebido = filteredPresentations.filter(p => p.status === 'pendente');
+  const presentationsAceites = filteredPresentations.filter(p => p.status === 'aprovado' || p.status === 'aceite_admin' || p.status === 'delegado');
+  const presentationsAgendados = filteredPresentations.filter(p => p.status === 'agendado');
+  const audiencesRecebido = filteredAudiences.filter(a => a.status === 'pendente');
+  const audiencesAceites = filteredAudiences.filter(a => a.status === 'aprovado' || a.status === 'aceite_admin' || a.status === 'delegado');
+  const audiencesAgendados = filteredAudiences.filter(a => a.status === 'agendado');
+
+  const presentationsRecebidoPag = useClientPagination(presentationsRecebido);
+  const presentationsAceitesPag = useClientPagination(presentationsAceites);
+  const presentationsAgendadosPag = useClientPagination(presentationsAgendados);
+  const audiencesRecebidoPag = useClientPagination(audiencesRecebido);
+  const audiencesAceitesPag = useClientPagination(audiencesAceites);
+  const audiencesAgendadosPag = useClientPagination(audiencesAgendados);
+
   return (
     <div className="space-y-6">
       <div>
@@ -865,13 +881,13 @@ export function RequestsList() {
           <Tabs defaultValue="recebido">
             <TabsList className="grid grid-cols-3 max-w-[70%] mx-auto">
               <TabsTrigger value="recebido">
-                Recebido ({filteredPresentations.filter(p => p.status === 'pendente').length})
+                Recebido ({presentationsRecebido.length})
               </TabsTrigger>
               <TabsTrigger value="aceites">
-                Aceites ({filteredPresentations.filter(p => p.status === 'aprovado' || p.status === 'aceite_admin' || p.status === 'delegado').length})
+                Aceites ({presentationsAceites.length})
               </TabsTrigger>
               <TabsTrigger value="agendados">
-                Agendado ({filteredPresentations.filter(p => p.status === 'agendado').length})
+                Agendado ({presentationsAgendados.length})
               </TabsTrigger>
             </TabsList>
 
@@ -880,7 +896,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredPresentations.filter(p => p.status === 'pendente').length === 0 ? (
+                  ) : presentationsRecebido.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhuma carta recebida</p>
                   ) : (
                     <Table>
@@ -896,8 +912,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredPresentations
-                          .filter(p => p.status === 'pendente')
+                        {presentationsRecebidoPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -925,6 +940,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={presentationsRecebidoPag.pagination} onPageChange={presentationsRecebidoPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -934,7 +950,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredPresentations.filter(p => p.status === 'aprovado' || p.status === 'aceite_admin' || p.status === 'delegado').length === 0 ? (
+                  ) : presentationsAceites.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhuma carta aceite</p>
                   ) : (
                     <Table>
@@ -950,8 +966,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredPresentations
-                          .filter(p => p.status === 'aprovado' || p.status === 'aceite_admin' || p.status === 'delegado')
+                        {presentationsAceitesPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -979,6 +994,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={presentationsAceitesPag.pagination} onPageChange={presentationsAceitesPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -988,7 +1004,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredPresentations.filter(p => p.status === 'agendado').length === 0 ? (
+                  ) : presentationsAgendados.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhuma carta agendada</p>
                   ) : (
                     <Table>
@@ -1004,8 +1020,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredPresentations
-                          .filter(p => p.status === 'agendado')
+                        {presentationsAgendadosPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -1033,6 +1048,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={presentationsAgendadosPag.pagination} onPageChange={presentationsAgendadosPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1043,13 +1059,13 @@ export function RequestsList() {
           <Tabs defaultValue="recebido">
             <TabsList className="grid grid-cols-3 max-w-[70%] mx-auto">
               <TabsTrigger value="recebido">
-                Recebido ({filteredAudiences.filter(a => a.status === 'pendente').length})
+                Recebido ({audiencesRecebido.length})
               </TabsTrigger>
               <TabsTrigger value="aceites">
-                Aceites ({filteredAudiences.filter(a => a.status === 'aprovado' || a.status === 'aceite_admin' || a.status === 'delegado').length})
+                Aceites ({audiencesAceites.length})
               </TabsTrigger>
               <TabsTrigger value="agendados">
-                Agendado ({filteredAudiences.filter(a => a.status === 'agendado').length})
+                Agendado ({audiencesAgendados.length})
               </TabsTrigger>
             </TabsList>
 
@@ -1058,7 +1074,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredAudiences.filter(a => a.status === 'pendente').length === 0 ? (
+                  ) : audiencesRecebido.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhum pedido recebido</p>
                   ) : (
                     <Table>
@@ -1073,8 +1089,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredAudiences
-                          .filter(a => a.status === 'pendente')
+                        {audiencesRecebidoPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -1101,6 +1116,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={audiencesRecebidoPag.pagination} onPageChange={audiencesRecebidoPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1110,7 +1126,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredAudiences.filter(a => a.status === 'aprovado' || a.status === 'aceite_admin' || a.status === 'delegado').length === 0 ? (
+                  ) : audiencesAceites.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhum pedido aceite</p>
                   ) : (
                     <Table>
@@ -1125,8 +1141,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredAudiences
-                          .filter(a => a.status === 'aprovado' || a.status === 'aceite_admin' || a.status === 'delegado')
+                        {audiencesAceitesPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -1153,6 +1168,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={audiencesAceitesPag.pagination} onPageChange={audiencesAceitesPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1162,7 +1178,7 @@ export function RequestsList() {
                 <CardContent className="pt-6">
                   {loading ? (
                     <p className="text-center text-muted-foreground">A carregar...</p>
-                  ) : filteredAudiences.filter(a => a.status === 'agendado').length === 0 ? (
+                  ) : audiencesAgendados.length === 0 ? (
                     <p className="text-center text-muted-foreground">Nenhum pedido agendado</p>
                   ) : (
                     <Table>
@@ -1177,8 +1193,7 @@ export function RequestsList() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredAudiences
-                          .filter(a => a.status === 'agendado')
+                        {audiencesAgendadosPag.pageItems
                           .map((item) => (
                             <TableRow key={item.id}>
                               <TableCell>{item.company}</TableCell>
@@ -1205,6 +1220,7 @@ export function RequestsList() {
                       </TableBody>
                     </Table>
                   )}
+                  <PaginationBar pagination={audiencesAgendadosPag.pagination} onPageChange={audiencesAgendadosPag.setPage} />
                 </CardContent>
               </Card>
             </TabsContent>

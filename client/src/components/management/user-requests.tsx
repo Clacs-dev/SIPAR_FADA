@@ -34,7 +34,7 @@ export function UserRequests() {
 
       // Fetch presentations
       const presentationsResponse = await fetch(
-        `${API_BASE_URL}/presentations`,
+        `${API_BASE_URL}/presentations?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }
@@ -42,7 +42,7 @@ export function UserRequests() {
 
       // Fetch audiences
       const audiencesResponse = await fetch(
-        `${API_BASE_URL}/audiences`,
+        `${API_BASE_URL}/audiences?all=true`,
         {
           headers: { 'Authorization': `Bearer ${token}` }
         }

@@ -87,7 +87,7 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
   useEffect(() => {
     let cancelado = false;
     setLoading(true);
-    fetch(`${API_BASE_URL}/facturas`, { headers: getAuthHeaders() })
+    fetch(`${API_BASE_URL}/facturas?all=true`, { headers: getAuthHeaders() })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('Erro ao carregar facturas'))))
       .then((result) => {
         if (cancelado) return;

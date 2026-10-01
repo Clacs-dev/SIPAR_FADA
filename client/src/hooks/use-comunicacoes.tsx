@@ -69,8 +69,13 @@ export function useComunicacoes(): UseComunicacoesReturn {
     setError(null);
 
     try {
-      // Construir query string com filtros
+      // Construir query string com filtros. "all=true" pede o conjunto
+      // completo ao backend (que agora pagina a 50/pagina por defeito) -
+      // os separadores por estado neste ecrã filtram em memoria sobre TODAS
+      // as comunicacoes, por isso precisam do conjunto inteiro, nao so da
+      // 1ª pagina.
       const queryParams = new URLSearchParams();
+      queryParams.append('all', 'true');
       if (filters?.status) queryParams.append('status', filters.status);
       if (filters?.prioridade) queryParams.append('prioridade', filters.prioridade);
       if (filters?.departamento_origem) queryParams.append('departamento_origem', filters.departamento_origem);

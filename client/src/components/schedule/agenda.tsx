@@ -49,8 +49,8 @@ export function Agenda({ onNavigateToActa }: AgendaProps = {}) {
       const headers = { 'Authorization': `Bearer ${token}` };
 
       const [presentationsResponse, audiencesResponse, internalMeetingsResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/presentations`, { headers }),
-        fetch(`${API_BASE_URL}/audiences`, { headers }),
+        fetch(`${API_BASE_URL}/presentations?all=true`, { headers }),
+        fetch(`${API_BASE_URL}/audiences?all=true`, { headers }),
         fetch(`${API_BASE_URL}/internal-meetings`, { headers }),
       ]);
 

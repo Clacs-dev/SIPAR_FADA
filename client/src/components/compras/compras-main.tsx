@@ -22,6 +22,8 @@ import { visualizarOrdemCompra } from "../../utils/pdf-generator";
 import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
+import { useClientPagination } from "../../hooks/use-client-pagination";
+import { PaginationBar } from "../common/pagination-bar";
 import type { PedidoCompra, StatusPedidoCompra } from "./types";
 
 export function ComprasMain() {
@@ -164,6 +166,8 @@ export function ComprasMain() {
   };
 
   const pedidosFiltrados = getFilteredPedidos();
+  const pedidosPag = useClientPagination(pedidosFiltrados);
+  useEffect(() => { pedidosPag.setPage(1); }, [activeTab]);
 
   // Se está na view de fornecedores, mostrar apenas isso
   if (fornecedoresView) {
@@ -277,7 +281,7 @@ export function ComprasMain() {
           )}
 
           {/* Lista de Pedidos */}
-          {!loading && pedidosFiltrados.map((pedido) => (
+          {!loading && pedidosPag.pageItems.map((pedido) => (
             <Card 
               key={pedido.id} 
               className="cursor-pointer hover:shadow-md transition-shadow"
@@ -389,6 +393,7 @@ export function ComprasMain() {
               </CardContent>
             </Card>
           ))}
+          <PaginationBar pagination={pedidosPag.pagination} onPageChange={pedidosPag.setPage} />
         </TabsContent>
       </Tabs>
 

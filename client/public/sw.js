@@ -1,61 +1,74 @@
-// Service Worker para notificações push
-const CACHE_NAME = 'apresentacoes-app-v1';
+// Service Worker do SIPAR-FADA: shell estático em cache (para instalação
+// como PWA / arranque mais rápido) + notificações push. Nunca faz cache de
+// pedidos à API (qualquer URL com "/api/") - esses vão sempre à rede, para
+// nunca mostrar facturas/pedidos/actas desactualizados.
+const CACHE_NAME = 'sipar-fada-shell-v1';
 const urlsToCache = [
   '/',
+  '/manifest.json',
   '/icon-192x192.png',
+  '/icon-512x512.png',
   '/badge-72x72.png'
 ];
 
-// Instalar service worker
-self.addEventListener('install', function(event) {
- console.log('Service Worker: Installing...');
+self.addEventListener('install', function (event) {
+  self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(function(cache) {
- console.log('Service Worker: Caching files');
-        return cache.addAll(urlsToCache);
-      })
-  );
-});
-
-// Ativar service worker
-self.addEventListener('activate', function(event) {
- console.log('Service Worker: Activating...');
-  event.waitUntil(
-    caches.keys().then(function(cacheNames) {
-      return Promise.all(
-        cacheNames.map(function(cacheName) {
-          if (cacheName !== CACHE_NAME) {
- console.log('Service Worker: Deleting old cache');
-            return caches.delete(cacheName);
-          }
-        })
-      );
+    caches.open(CACHE_NAME).then(function (cache) {
+      return cache.addAll(urlsToCache);
     })
   );
 });
 
-// Interceptar requisições de rede
-self.addEventListener('fetch', function(event) {
+self.addEventListener('activate', function (event) {
+  event.waitUntil(
+    caches.keys().then(function (cacheNames) {
+      return Promise.all(
+        cacheNames.map(function (cacheName) {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(function () {
+      return self.clients.claim();
+    })
+  );
+});
+
+self.addEventListener('fetch', function (event) {
+  const request = event.request;
+
+  // Só GET, só o mesmo site, e nunca chamadas à API - tudo isso vai
+  // directo à rede, sem passar pelo cache.
+  if (request.method !== 'GET') return;
+  if (!request.url.startsWith(self.location.origin)) return;
+  if (request.url.includes('/api/')) return;
+
+  // Rede primeiro, com o cache só como reserva para quando estiver
+  // offline - evita servir para sempre uma versão antiga do shell da app
+  // (ex: index.html a apontar para ficheiros JS/CSS de uma build antiga).
   event.respondWith(
-    caches.match(event.request)
-      .then(function(response) {
-        // Cache hit - return response
-        if (response) {
-          return response;
+    fetch(request)
+      .then(function (response) {
+        if (response && response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then(function (cache) { cache.put(request, copy); });
         }
-        return fetch(event.request);
-      }
-    )
+        return response;
+      })
+      .catch(function () {
+        return caches.match(request);
+      })
   );
 });
 
 // Receber notificações push
 self.addEventListener('push', function(event) {
  console.log('Service Worker: Push received', event);
-  
+
   let notificationData = {
-    title: 'Sistema de Gestão',
+    title: 'SIPAR-FADA',
     body: 'Nova notificação disponível',
     icon: '/icon-192x192.png',
     badge: '/badge-72x72.png',
@@ -93,13 +106,13 @@ self.addEventListener('push', function(event) {
 // Lidar com cliques na notificação
 self.addEventListener('notificationclick', function(event) {
  console.log('Service Worker: Notification click received', event);
-  
+
   event.notification.close();
 
   // Verificar se existe uma ação específica
   if (event.action) {
  console.log('Service Worker: Action clicked:', event.action);
-    
+
     switch (event.action) {
       case 'view':
         event.waitUntil(
@@ -125,12 +138,12 @@ self.addEventListener('notificationclick', function(event) {
               return client.focus();
             }
           }
-          
+
           // Caso contrário, abrir nova janela
           if (clients.openWindow) {
             const notificationData = event.notification.data || {};
             let url = '/';
-            
+
             // Personalizar URL baseado no tipo de notificação
             if (notificationData.type === 'status_change') {
               url = '/?tab=my-requests';
@@ -139,7 +152,7 @@ self.addEventListener('notificationclick', function(event) {
             } else if (notificationData.type === 'broadcast') {
               url = '/?notification=broadcast';
             }
-            
+
             return clients.openWindow(url);
           }
         })
@@ -150,12 +163,10 @@ self.addEventListener('notificationclick', function(event) {
 // Lidar com fechamento da notificação
 self.addEventListener('notificationclose', function(event) {
  console.log('Service Worker: Notification closed', event);
-  
-  // Opcional: enviar analytics sobre notificações fechadas
+
   const notificationData = event.notification.data || {};
-  
+
   if (notificationData.trackClose) {
-    // Aqui poderia enviar dados de tracking
  console.log('Tracking notification close for:', notificationData);
   }
 });
@@ -163,7 +174,7 @@ self.addEventListener('notificationclose', function(event) {
 // Sincronização em background
 self.addEventListener('sync', function(event) {
  console.log('Service Worker: Background sync', event);
-  
+
   if (event.tag === 'background-sync') {
     event.waitUntil(
       doBackgroundSync()
@@ -171,23 +182,9 @@ self.addEventListener('sync', function(event) {
   }
 });
 
-// Função para sincronização em background
 function doBackgroundSync() {
-  // Implementar lógica de sincronização quando a conexão for restaurada
   return Promise.resolve();
 }
 
-// Lidar com mudanças na conectividade
-self.addEventListener('online', function(event) {
- console.log('Service Worker: App is online');
-  // Pode sincronizar dados quando voltar online
-});
-
-self.addEventListener('offline', function(event) {
- console.log('Service Worker: App is offline');
-  // Pode armazenar dados para sincronizar depois
-});
-
-// Versionamento do service worker
-const SW_VERSION = '1.0.0';
+const SW_VERSION = '1.1.0';
 console.log(`Service Worker version ${SW_VERSION} loaded`);

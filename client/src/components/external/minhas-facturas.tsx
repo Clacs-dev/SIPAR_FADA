@@ -44,7 +44,7 @@ export function MinhasFacturas() {
  console.log('Carregando facturas do fornecedor externo...');
       
       const response = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,

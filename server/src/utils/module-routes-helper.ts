@@ -662,10 +662,41 @@ export class ModuleRoutesHelper {
         ...(!hasReadAll && hasReadOwn ? { createdById: user.id } : {}),
         deletedAt: null,
       };
-      const records = await delegateFor(config).findMany({ where, orderBy: { createdAt: 'desc' } });
+
+      // Paginacao: 50 registos por pagina por defeito (limite maximo 200,
+      // para nao deixar um ?limit=99999 contornar o proposito disto).
+      // "?all=true" devolve a coleccao inteira sem paginar - usado pelos
+      // ecrans que calculam estatisticas/totais agregados sobre TODOS os
+      // registos (ex: Mapa de Impostos, Dashboard de Facturas), que
+      // ficariam com numeros errados se so vissem a pagina actual.
+      const DEFAULT_LIMIT = 50;
+      const MAX_LIMIT = 200;
+      const wantsAll = req.query.all === 'true';
+      const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+      const limit = wantsAll
+        ? undefined
+        : Math.min(MAX_LIMIT, Math.max(1, parseInt(String(req.query.limit ?? String(DEFAULT_LIMIT)), 10) || DEFAULT_LIMIT));
+
+      const delegate = delegateFor(config);
+      const total = await delegate.count({ where });
+      const records = await delegate.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        ...(limit ? { skip: (page - 1) * limit, take: limit } : {}),
+      });
       const resources = records.map(recordToResource);
 
-      return res.status(200).json({ success: true, [config.collectionKey]: resources, data: resources });
+      return res.status(200).json({
+        success: true,
+        [config.collectionKey]: resources,
+        data: resources,
+        pagination: {
+          page: wantsAll ? 1 : page,
+          limit: limit ?? total,
+          total,
+          totalPages: limit ? Math.max(1, Math.ceil(total / limit)) : 1,
+        },
+      });
     } catch (error) {
       next(error);
     }

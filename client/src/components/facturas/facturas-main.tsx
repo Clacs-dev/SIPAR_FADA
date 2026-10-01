@@ -24,9 +24,11 @@ import { MapaImpostos } from "../shared/mapa-impostos";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { DepartmentFilter } from "../common/department-filter";
+import { PaginationBar } from "../common/pagination-bar";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { toast } from "sonner@2.0.3";
 import { useFornecedores } from "../../hooks/use-fornecedores";
+import { useClientPagination } from "../../hooks/use-client-pagination";
 
 interface FacturasMainProps {
   /** Id de uma factura a abrir directamente nos detalhes (ex: vindo do Mapa de Impostos). */
@@ -57,7 +59,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       try {
         setLoading(true);
         const response = await fetch(
-          `${API_BASE_URL}/facturas`,
+          `${API_BASE_URL}/facturas?all=true`,
           {
             headers: {
               'Authorization': `Bearer ${accessToken}`,
@@ -253,6 +255,24 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     if (filters.fornecedor_id && factura.fornecedor_id !== filters.fornecedor_id) return false;
     return true;
   });
+  const pendentesFacturas = facturas.filter(f => f.status === 'pendente');
+  const validadosFacturas = facturas.filter(f => f.status === 'validado');
+  const aprovadasFacturas = facturas.filter(f => f.status === 'aprovado');
+  const submetidoBancoFacturas = facturas.filter(f => f.status === 'submetido_ao_banco');
+  const pagamentosFacturas = facturas.filter(f => f.status === 'pago');
+  const ordensPagamentoFacturas = facturas.filter(f => !!f.numero_ordem_pagamento);
+
+  // Paginação de apresentação (50 por página) para cada separador - a lista
+  // completa de facturas já está em memória (ver fetch acima), por isso só
+  // a renderização é paginada, com um estado de página independente por
+  // separador.
+  const todasPag = useClientPagination(filteredFacturas);
+  const pendentesPag = useClientPagination(pendentesFacturas);
+  const validadosPag = useClientPagination(validadosFacturas);
+  const aprovadasPag = useClientPagination(aprovadasFacturas);
+  const submetidoBancoPag = useClientPagination(submetidoBancoFacturas);
+  const pagamentosPag = useClientPagination(pagamentosFacturas);
+  const ordensPagamentoPag = useClientPagination(ordensPagamentoFacturas);
 
   const handleSaveFactura = async (facturaData: Partial<Factura>) => {
     if (!accessToken) {
@@ -268,7 +288,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
  console.log('Enviando factura para o backend:', facturaData);
 
       const response = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           method: 'POST',
           headers: {
@@ -290,7 +310,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar a lista de facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -353,7 +373,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -414,7 +434,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -473,7 +493,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -568,7 +588,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -695,7 +715,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
       // Recarregar facturas
       const facturasResponse = await fetch(
-        `${API_BASE_URL}/facturas`,
+        `${API_BASE_URL}/facturas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -967,7 +987,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  filteredFacturas.map((factura) => (
+                  todasPag.pageItems.map((factura) => (
                     <Card
                       key={factura.id}
                       className="hover:bg-accent cursor-pointer transition-colors"
@@ -1018,12 +1038,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={todasPag.pagination} onPageChange={todasPag.setPage} />
             </TabsContent>
 
             {/* Pendentes */}
             <TabsContent value="pendentes" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => f.status === 'pendente').length === 0 ? (
+                {pendentesFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <Clock className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1031,7 +1052,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => f.status === 'pendente').map((factura) => (
+                  pendentesPag.pageItems.map((factura) => (
                   <Card
                     key={factura.id}
                     className="hover:bg-accent cursor-pointer transition-colors"
@@ -1064,12 +1085,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={pendentesPag.pagination} onPageChange={pendentesPag.setPage} />
             </TabsContent>
 
             {/* Validados */}
             <TabsContent value="validados" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => f.status === 'validado').length === 0 ? (
+                {validadosFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1077,7 +1099,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => f.status === 'validado').map((factura) => (
+                  validadosPag.pageItems.map((factura) => (
                     <Card
                       key={factura.id}
                       className="hover:bg-accent cursor-pointer transition-colors"
@@ -1111,12 +1133,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={validadosPag.pagination} onPageChange={validadosPag.setPage} />
             </TabsContent>
 
             {/* Aprovadas */}
             <TabsContent value="aprovadas" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => f.status === 'aprovado').length === 0 ? (
+                {aprovadasFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1124,7 +1147,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => f.status === 'aprovado').map((factura) => (
+                  aprovadasPag.pageItems.map((factura) => (
                   <Card
                     key={factura.id}
                     className="hover:bg-accent cursor-pointer transition-colors"
@@ -1157,12 +1180,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={aprovadasPag.pagination} onPageChange={aprovadasPag.setPage} />
             </TabsContent>
 
             {/* Submetido ao Banco */}
             <TabsContent value="submetido_banco" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => f.status === 'submetido_ao_banco').length === 0 ? (
+                {submetidoBancoFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1170,7 +1194,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => f.status === 'submetido_ao_banco').map((factura) => (
+                  submetidoBancoPag.pageItems.map((factura) => (
                     <Card
                       key={factura.id}
                       className="hover:bg-accent cursor-pointer transition-colors"
@@ -1204,12 +1228,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={submetidoBancoPag.pagination} onPageChange={submetidoBancoPag.setPage} />
             </TabsContent>
 
             {/* Pagamentos */}
             <TabsContent value="pagamentos" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => f.status === 'pago').length === 0 ? (
+                {pagamentosFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1217,7 +1242,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => f.status === 'pago').map((factura) => (
+                  pagamentosPag.pageItems.map((factura) => (
                   <Card
                     key={factura.id}
                     className="hover:bg-accent cursor-pointer transition-colors"
@@ -1251,12 +1276,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   ))
                 )}
               </div>
+              <PaginationBar pagination={pagamentosPag.pagination} onPageChange={pagamentosPag.setPage} />
             </TabsContent>
 
             {/* Ordens de Pagamento Fornecedor */}
             <TabsContent value="ordens_pagamento" className="space-y-4">
               <div className="grid gap-4">
-                {facturas.filter(f => !!f.numero_ordem_pagamento).length === 0 ? (
+                {ordensPagamentoFacturas.length === 0 ? (
                   <Card>
                     <CardContent className="py-12 text-center">
                       <FileSignature className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -1266,7 +1292,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     </CardContent>
                   </Card>
                 ) : (
-                  facturas.filter(f => !!f.numero_ordem_pagamento).map((factura) => {
+                  ordensPagamentoPag.pageItems.map((factura) => {
                     const assinaturas = factura.ordem_pagamento?.assinaturas || [];
                     const totalmenteAssinada = assinaturas.some(a => a.papel === 'presidente') && assinaturas.some(a => a.papel === 'administrador');
                     return (
@@ -1307,6 +1333,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   })
                 )}
               </div>
+              <PaginationBar pagination={ordensPagamentoPag.pagination} onPageChange={ordensPagamentoPag.setPage} />
             </TabsContent>
 
             {/* Ordens de Pagamento Interna */}

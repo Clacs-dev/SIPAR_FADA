@@ -25,6 +25,8 @@ import { Acta } from "./acta-types";
 import { ActaDetails } from "./acta-details";
 import { ActaCreateForm } from "./acta-create-form";
 import { gerarPDFActa } from "../../utils/pdf-generator";
+import { useClientPagination } from "../../hooks/use-client-pagination";
+import { PaginationBar } from "../common/pagination-bar";
 
 interface ActasListProps {
   // Quando definido, a lista abre directamente os detalhes desta acta (usado
@@ -64,7 +66,7 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
       setLoading(true);
 
       const response = await fetch(
-        `${API_BASE_URL}/actas`,
+        `${API_BASE_URL}/actas?all=true`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -104,6 +106,22 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
   const filterActas = (status: string) => {
     if (status === 'todas') return actas;
     return actas.filter(a => a.status === status);
+  };
+
+  // Paginação de apresentação (50 por página) por separador - uma chamada
+  // do hook por estado (fixo), nunca dentro do .map() de baixo, para
+  // respeitar as regras dos hooks do React.
+  const todasActasPag = useClientPagination(filterActas('todas'));
+  const pendenteActasPag = useClientPagination(filterActas('pendente'));
+  const emCursoActasPag = useClientPagination(filterActas('em_curso'));
+  const finalizadaActasPag = useClientPagination(filterActas('finalizada'));
+  const aprovadaActasPag = useClientPagination(filterActas('aprovada'));
+  const actasPagByStatus: Record<string, ReturnType<typeof useClientPagination<Acta>>> = {
+    todas: todasActasPag,
+    pendente: pendenteActasPag,
+    em_curso: emCursoActasPag,
+    finalizada: finalizadaActasPag,
+    aprovada: aprovadaActasPag,
   };
 
   const handleViewDetails = (acta: Acta) => {
@@ -196,16 +214,16 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
               Todas ({actas.length})
             </TabsTrigger>
             <TabsTrigger value="pendente">
-              Pendentes ({actas.filter(a => a.status === 'pendente').length})
+              Pendentes ({pendenteActasPag.pagination.total})
             </TabsTrigger>
             <TabsTrigger value="em_curso">
-              Em Curso ({actas.filter(a => a.status === 'em_curso').length})
+              Em Curso ({emCursoActasPag.pagination.total})
             </TabsTrigger>
             <TabsTrigger value="finalizada">
-              Finalizadas ({actas.filter(a => a.status === 'finalizada').length})
+              Finalizadas ({finalizadaActasPag.pagination.total})
             </TabsTrigger>
             <TabsTrigger value="aprovada">
-              Aprovadas ({actas.filter(a => a.status === 'aprovada').length})
+              Aprovadas ({aprovadaActasPag.pagination.total})
             </TabsTrigger>
           </TabsList>
 
@@ -234,7 +252,7 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filterActas(status).map((acta) => (
+                      {actasPagByStatus[status].pageItems.map((acta) => (
                         <TableRow key={acta.id}>
                           <TableCell className="font-mono text-sm">
                             {acta.numero}
@@ -298,6 +316,7 @@ export function ActasList({ initialActaId, onInitialActaConsumed }: ActasListPro
                   </Table>
                 </div>
               )}
+              <PaginationBar pagination={actasPagByStatus[status].pagination} onPageChange={actasPagByStatus[status].setPage} />
             </TabsContent>
           ))}
         </Tabs>
