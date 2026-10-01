@@ -9,12 +9,13 @@ import { useAuth } from './auth-context';
 import { toast } from 'sonner@2.0.3';
 import { motion, AnimatePresence } from 'motion/react';
 import { getFriendlyErrorMessage } from '@/services/api';
-import { ClipboardList, CalendarClock, Zap, Settings } from 'lucide-react';
+import { ClipboardList, CalendarClock, Zap, Settings, Eye, EyeOff } from 'lucide-react';
 import { ServerUrlDialog } from './server-url-dialog';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
@@ -214,20 +215,31 @@ export function LoginForm() {
                     >
                       Senha
                     </label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Digite a sua senha"
-                      disabled={isLoading}
-                      className="h-11 focus-visible:ring-[var(--ring)]"
-                      style={{
-                        backgroundColor: 'var(--background)',
-                        borderColor: 'var(--login-border)',
-                        borderRadius: '9px'
-                      }}
-                    />
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Digite a sua senha"
+                        disabled={isLoading}
+                        className="h-11 pr-10 focus-visible:ring-[var(--ring)]"
+                        style={{
+                          backgroundColor: 'var(--background)',
+                          borderColor: 'var(--login-border)',
+                          borderRadius: '9px'
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        tabIndex={-1}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between">

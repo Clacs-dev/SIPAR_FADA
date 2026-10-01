@@ -461,7 +461,7 @@ export function FacturaDetails({
               ).catch((err) => toast.error(err?.message || 'Erro ao abrir o documento'))}
             >
               <ShoppingCart className="mr-2 h-4 w-4" />
-              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Autorizar Despesas'}
+              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Ver A. Despesa'}
             </Button>
           )}
           <Button variant="outline" onClick={() => gerarPDFFactura(factura)}>
@@ -570,7 +570,7 @@ export function FacturaDetails({
                   {factura.numero_ordem && (
                     <div>
                       <p className="text-sm text-muted-foreground">
-                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Autorizar Despesas'}
+                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Ver A. Despesa'}
                       </p>
                       <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
                     </div>

@@ -851,8 +851,8 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
         doc.text(assinada.nome, x + larguraAssinatura / 2, y + 10, { align: 'center' });
       }
     };
-    assinaturaComImagem(marginLeft, 'DSG (Compras)', dsg);
-    assinaturaComImagem(marginRight - larguraAssinatura, 'PCA', pca);
+    assinaturaComImagem(marginLeft, 'Aprovado por DSG', dsg);
+    assinaturaComImagem(marginRight - larguraAssinatura, 'Autorizado por PCA', pca);
   } else {
     assinatura(marginLeft, 'Emitido por (Compras)', oc.emitida_por_nome);
     assinatura(marginRight - larguraAssinatura, 'Aprovado por');

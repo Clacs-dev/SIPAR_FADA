@@ -55,6 +55,7 @@ function toResource(record: any) {
     banco_pais: record.bancoPais,
     paid_at: record.paidAt?.toISOString?.() || record.paidAt,
     assinaturas: Array.isArray(data.assinaturas) ? data.assinaturas : [],
+    anexos: Array.isArray(data.anexos) ? data.anexos : [],
     created_by_id: record.createdById,
     created_by_name: record.createdByName,
     created_at: record.createdAt?.toISOString?.() || record.createdAt,
@@ -94,7 +95,7 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
       return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para criar Ordens de Pagamento Interna' });
     }
 
-    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_cidade, banco_pais } = req.body;
+    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_cidade, banco_pais, anexos } = req.body;
     if (!descricao || !String(descricao).trim()) {
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'Descricao e obrigatoria' });
     }
@@ -123,7 +124,7 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
         bancoIban: banco_iban || null,
         bancoCidade: banco_cidade || null,
         bancoPais: banco_pais || null,
-        data: JSON.stringify({ assinaturas: [] }),
+        data: JSON.stringify({ assinaturas: [], anexos: Array.isArray(anexos) ? anexos : [] }),
         createdById: user.id,
         createdByName: user.name,
       }
