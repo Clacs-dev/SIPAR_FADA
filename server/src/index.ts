@@ -45,6 +45,7 @@ import nifRoutes from './routes/nif.routes';
 import mapaActividadesRoutes from './routes/mapa-actividades.routes';
 import { licenseService } from './services/license.service';
 import { sincronizarRbac } from './services/rbac-sync.service';
+import { migrarNumeracaoAutorizacaoDespesas } from './services/autorizacao-despesas-migracao.service';
 import { SettingsService } from './services/settings.service';
 
 export const app = express();
@@ -228,6 +229,10 @@ export function startServer(port = PORT) {
   // Acrescenta ao RBAC o que versoes novas precisam (role DSG Tecnico,
   // permissao do Mapa de Actividades) sem apagar ajustes do administrador.
   sincronizarRbac().catch((error) => logger.warn('[RBAC] Falha na sincronizacao de roles/permissoes:', error));
+
+  // Uma unica vez: "Ordem de Compra" (OC/...) passa a "Autorizacao de
+  // Despesas" (AD/...) tambem nos documentos ja emitidos.
+  migrarNumeracaoAutorizacaoDespesas().catch((error) => logger.warn('[AD] Falha na migracao da numeracao OC -> AD:', error));
 
   return app.listen(port, () => {
     logger.info(`Servidor Express do SIPAR20 rodando de forma estavel na porta: ${port}`);

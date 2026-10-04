@@ -43,7 +43,7 @@ interface UseProcurementReturn {
   analisarCotacoes: (pedidoId: string) => Promise<boolean>; // Muda para em_analise
   aprovarCotacao: (pedidoId: string, cotacaoId: string, justificativa: string) => Promise<boolean>;
   
-  // Ordem de Compra
+  // Autorização de Despesas
   fetchOrdens: () => Promise<void>;
   emitirOrdemCompra: (pedidoId: string) => Promise<OrdemCompra | null>;
   updateStatusOrdem: (ordemId: string, status: string) => Promise<boolean>;
@@ -270,7 +270,7 @@ export function useProcurement(): UseProcurementReturn {
         `/procurement/pedidos/${pedidoId}/aprovar`,
         { cotacao_id: cotacaoId, justificativa }
       );
-      toast.success('Cotação aprovada! Ordem de compra gerada.');
+      toast.success('Cotação aprovada! Autorização de Despesas gerada.');
       setPedidos(prev => prev.map(p => p.id === pedidoId ? response.pedido : p));
       if (response.ordem) {
         setOrdensCompra(prev => [response.ordem as OrdemCompra, ...prev]);
@@ -282,19 +282,19 @@ export function useProcurement(): UseProcurementReturn {
     }
   }, []);
 
-  // ==================== ORDEM DE COMPRA ====================
+  // ==================== AUTORIZAÇÃO DE DESPESAS ====================
 
   const emitirOrdemCompra = useCallback(async (pedidoId: string): Promise<OrdemCompra | null> => {
     try {
       const response = await apiClient.post<{ ordem: OrdemCompra; pedido: PedidoCompra }>(
         `/procurement/pedidos/${pedidoId}/emitir-ordem`
       );
-      toast.success('Ordem de compra emitida!');
+      toast.success('Autorização de Despesas emitida!');
       setPedidos(prev => prev.map(p => p.id === pedidoId ? response.pedido : p));
       setOrdensCompra(prev => [response.ordem, ...prev]);
       return response.ordem;
     } catch (err: any) {
-      toast.error('Erro ao emitir ordem de compra');
+      toast.error('Erro ao emitir autorização de despesas');
       return null;
     }
   }, []);

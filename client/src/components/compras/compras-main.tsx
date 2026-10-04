@@ -52,7 +52,7 @@ export function ComprasMain() {
   const { pode } = useMyPermissions();
   // O que aparece depende das permissoes do role (Roles e Permissoes):
   const podeMapaActividades = pode('activity_map', 'read_all');
-  const podeMapaImpostos = pode('invoices', 'read_all');             // o mapa le todas as facturas
+  const podeMapaImpostos = pode('tax_map', 'read_all');              // Roles e Permissões -> Mapa de Impostos
   const podeCriar = pode('finance', 'create');                       // novo pedido, cotacao em nome do fornecedor
   const podeDecidir = pode('finance', 'approve');                    // analisar, aprovar, confirmar rececao
   const podeVerFornecedores = pode('finance', ['read_all', 'create']);
@@ -112,7 +112,7 @@ export function ComprasMain() {
       em_cotacao: { label: "Em Cotação", color: "var(--tone-gold)", icon: TrendingUp },
       em_analise: { label: "Em Análise", color: "var(--tone-accent)", icon: AlertCircle },
       aprovado: { label: "Aprovado", color: "var(--tone-success)", icon: CheckCircle2 },
-      ordem_emitida: { label: "Ordem Emitida", color: "var(--tone-accent)", icon: FileText },
+      ordem_emitida: { label: "Autorização de Despesas Emitida", color: "var(--tone-accent)", icon: FileText },
       em_entrega: { label: "Em Entrega", color: "var(--tone-warn)", icon: Package },
       concluido: { label: "Concluído", color: "var(--tone-success)", icon: CheckCircle2 },
       cancelado: { label: "Cancelado", color: "var(--tone-danger)", icon: AlertCircle },
@@ -514,9 +514,9 @@ export function ComprasMain() {
                     {pedido.status === "concluido" && ordensCompra
                       .filter(o => o.pedido_id === pedido.id)
                       .map(ordem => (
-                        <Button key={`ver-${ordem.id}`} size="sm" variant="outline" onClick={() => visualizarOrdemCompra({ ordemId: ordem.id }).catch((err) => toast.error(err?.message || "Erro ao abrir a Ordem de Compra"))}>
+                        <Button key={`ver-${ordem.id}`} size="sm" variant="outline" onClick={() => visualizarOrdemCompra({ ordemId: ordem.id }).catch((err) => toast.error(err?.message || "Erro ao abrir a Autorização de Despesas"))}>
                           <Eye className="h-4 w-4 mr-1" />
-                          Ordem de Compra ({ordem.numero})
+                          Autorização de Despesas ({ordem.numero})
                         </Button>
                       ))}
                     {podeDecidir && pedido.status === "concluido" && ordensCompra

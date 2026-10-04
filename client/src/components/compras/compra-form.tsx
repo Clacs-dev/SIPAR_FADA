@@ -1,5 +1,5 @@
 /**
- * Formulários de Requisição e Ordem de Compra
+ * Formulários de Requisição e Autorização de Despesas
  */
 
 import { useState, useEffect } from "react";
@@ -49,7 +49,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
   });
   const [reqItens, setReqItens] = useState([{ descricao: "", quantidade: 1, especificacoes: "" }]);
 
-  // Ordem de Compra
+  // Autorização de Despesas
   const [ocData, setOcData] = useState({
     fornecedor_id: "",
     fornecedor_nome: "",
@@ -103,7 +103,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
             Procurement
           </DialogTitle>
           <DialogDescription>
-            Escolha uma aba: <strong>Requisição de Compra</strong> ou <strong>Ordem de Compra</strong>
+            Escolha uma aba: <strong>Requisição de Compra</strong> ou <strong>Autorização de Despesas</strong>
           </DialogDescription>
         </DialogHeader>
 
@@ -115,7 +115,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
             </TabsTrigger>
             <TabsTrigger value="ordem">
               <ShoppingBag className="mr-2 h-4 w-4" />
-              Ordem de Compra
+              Autorização de Despesas
             </TabsTrigger>
           </TabsList>
 
@@ -302,7 +302,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
             </form>
           </TabsContent>
 
-          {/* ORDEM DE COMPRA */}
+          {/* AUTORIZAÇÃO DE DESPESAS */}
           <TabsContent value="ordem">
             <form onSubmit={handleSubmitOC} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -448,10 +448,10 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
                 </div>
               </div>
 
-              {/* Itens da Ordem de Compra */}
+              {/* Itens da Autorização de Despesas */}
               <div className="border-t pt-4">
                 <div className="flex items-center justify-between mb-3">
-                  <Label>Itens da Ordem de Compra *</Label>
+                  <Label>Itens da Autorização de Despesas *</Label>
                   <Button
                     type="button"
                     size="sm"
@@ -527,7 +527,7 @@ export function CompraForm({ open, onClose, onSubmitRequisicao, onSubmitOrdemCom
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting ? "A criar..." : "Emitir Ordem de Compra"}
+                  {isSubmitting ? "A criar..." : "Emitir Autorização de Despesas"}
                 </Button>
               </DialogFooter>
             </form>

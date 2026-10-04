@@ -235,7 +235,7 @@ export interface Fornecedor {
 }
 
 /**
- * ORDEM DE COMPRA
+ * AUTORIZAÇÃO DE DESPESAS
  */
 export interface OrdemCompra {
   id: string;

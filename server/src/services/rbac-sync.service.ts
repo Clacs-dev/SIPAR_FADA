@@ -16,7 +16,7 @@
 
 import prisma from '../config/database';
 import logger from '../config/logger';
-import { ACTIONS as A, MODULES } from '../utils/permissions';
+import { ACTIONS as A, MODULES, MODULOS_SEPARADORES_PAGAMENTO } from '../utils/permissions';
 
 // Manter igual a DSG_TECNICO_PERMISSIONS em prisma/seed-rbac.ts.
 export const DSG_TECNICO_PERMISSIONS: { module: string; actions: string[] }[] = [
@@ -25,9 +25,12 @@ export const DSG_TECNICO_PERMISSIONS: { module: string; actions: string[] }[] = 
   { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },
   { module: MODULES.NOTIFICATIONS, actions: [A.READ_ALL] },
   { module: MODULES.SCHEDULE, actions: [A.READ_ALL] },
+  // Mesmos ecras da Gestao de Pagamento: todos os separadores + Mapa de Impostos.
+  ...MODULOS_SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: [A.READ_ALL] })),
 ];
 
 const MARCADOR_ACTIVITY_MAP = 'rbac.migracao.activity_map.v1';
+const MARCADOR_SEPARADORES = 'rbac.migracao.separadores_pagamento.v1';
 const ROLES_SEM_MAPA = new Set(['dsg_tecnico', 'externo', 'publico']);
 
 async function garantirPermissao(roleId: string, module: string, action: string) {
@@ -77,9 +80,31 @@ async function migrarMapaActividades() {
   return concedidos;
 }
 
+/**
+ * Os separadores da Gestao de Pagamento e o Mapa de Impostos passaram a ter
+ * permissao propria. Uma unica vez, concede-os a quem ja os via (roles com
+ * leitura de todas as facturas), para ninguem perder acesso.
+ */
+async function migrarSeparadoresPagamento() {
+  const feito = await prisma.systemSetting.findUnique({ where: { key: MARCADOR_SEPARADORES } });
+  if (feito) return 0;
+  const roles = await prisma.role.findMany({ where: { deletedAt: null }, include: { permissoes: true } });
+  let concedidos = 0;
+  for (const role of roles) {
+    if (role.slug === 'externo' || role.slug === 'publico') continue;
+    if (!role.permissoes.some((p) => p.module === MODULES.INVOICES && p.action === A.READ_ALL)) continue;
+    for (const module of MODULOS_SEPARADORES_PAGAMENTO) await garantirPermissao(role.id, module, A.READ_ALL);
+    concedidos += 1;
+  }
+  await prisma.systemSetting.create({ data: { key: MARCADOR_SEPARADORES, value: new Date().toISOString(), updatedByName: 'sistema' } });
+  return concedidos;
+}
+
 export async function sincronizarRbac() {
   const criado = await garantirRoleDsgTecnico();
   if (criado) logger.info('[RBAC] Role "dsg_tecnico" (DSG Técnico) criado com as permissões por omissão.');
   const n = await migrarMapaActividades();
   if (n > 0) logger.info(`[RBAC] Permissão do Mapa de Actividades concedida a ${n} role(s) que já tinham acesso.`);
+  const s = await migrarSeparadoresPagamento();
+  if (s > 0) logger.info(`[RBAC] Separadores da Gestão de Pagamento e Mapa de Impostos concedidos a ${s} role(s) que já os viam.`);
 }

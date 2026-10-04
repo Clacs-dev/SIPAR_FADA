@@ -1,5 +1,5 @@
 /**
- * Dialog Simplificado para Criar Ordem de Compra a partir de Requisição Aprovada
+ * Dialog Simplificado para Criar Autorização de Despesas a partir de Requisição Aprovada
  * Dados da requisição já vêm preenchidos automaticamente
  */
 
@@ -102,7 +102,7 @@ export function CriarOrdemDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-blue-600" />
-            Criar Ordem de Compra
+            Criar Autorização de Despesas
           </DialogTitle>
           <DialogDescription>
             Requisição: <strong>{requisicao.numero}</strong> - {requisicao.descricao}
@@ -253,7 +253,7 @@ export function CriarOrdemDialog({
               id="obs"
               value={observacoes}
               onChange={(e) => setObservacoes(e.target.value)}
-              placeholder="Informações adicionais sobre a ordem de compra"
+              placeholder="Informações adicionais sobre a autorização de despesas"
               rows={3}
             />
           </div>
@@ -269,7 +269,7 @@ export function CriarOrdemDialog({
               Cancelar
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? "A criar..." : "Criar Ordem de Compra"}
+              {submitting ? "A criar..." : "Criar Autorização de Despesas"}
             </Button>
           </div>
         </form>

@@ -29,7 +29,9 @@ const MODULES = {
   REPORTS: 'reports',
   ANALYTICS: 'analytics',
   ACTIVITY_MAP: 'activity_map',
+  TAX_MAP: 'tax_map',
 } as const;
+
 
 const A = {
   CREATE: 'create',
@@ -47,10 +49,19 @@ const A = {
   DELETE_OWN: 'delete_own',
 };
 
+// Separadores da Gestao de Pagamento + Mapa de Impostos (so "ver" = read_all).
+const SEPARADORES_PAGAMENTO = [
+  'pagamentos_dashboard', 'pagamentos_todas', 'pagamentos_pendentes', 'pagamentos_aprovados_dsg',
+  'pagamentos_autorizacao_despesas', 'pagamentos_ordens_fornecedor', 'pagamentos_ordens_interna',
+  'pagamentos_submetido_banco', 'pagamentos_pagos', MODULES.TAX_MAP,
+];
+const VER_SEPARADORES_PAGAMENTO: PermissionSpec[] = SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: ['read_all'] }));
+
 // Reproduz exatamente o que os grupos estaticos concediam hoje
 // (server/src/utils/permissions.ts), menos os modulos exclusivamente
 // tecnicos que passam para o novo role admin_sistema.
 const EXECUTIVO_PERMISSIONS: PermissionSpec[] = [
+  ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
   { module: MODULES.AUDIENCES, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
@@ -71,6 +82,7 @@ const EXECUTIVO_PERMISSIONS: PermissionSpec[] = [
 // auditoria/email/BD/configuracoes, mais visao geral (read_all) sobre os
 // modulos de negocio para fins de supervisao/suporte.
 const ADMIN_TECNICO_PERMISSIONS: PermissionSpec[] = [
+  ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT] },
   { module: MODULES.USERS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.MANAGE] },
   { module: MODULES.DEPARTMENTS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.MANAGE] },
@@ -123,6 +135,7 @@ const ATENDENTE_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
+  ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },
   { module: MODULES.AUDIENCES, actions: [A.READ_ALL] },
@@ -139,6 +152,7 @@ const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const COMPRAS_PERMISSIONS: PermissionSpec[] = [
+  ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },
   { module: MODULES.AUDIENCES, actions: [A.READ_ALL] },
@@ -160,6 +174,7 @@ const COMPRAS_PERMISSIONS: PermissionSpec[] = [
 // Actividades (activity_map) so se o Administrador do Sistema o conceder.
 // Manter igual a DSG_TECNICO_PERMISSIONS em src/services/rbac-sync.service.ts.
 const DSG_TECNICO_PERMISSIONS: PermissionSpec[] = [
+  ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.FINANCE, actions: [A.CREATE, A.READ_ALL, A.UPDATE_OWN, A.DELETE_OWN] },
   { module: MODULES.INVOICES, actions: [A.CREATE, A.READ_ALL, A.UPDATE_OWN, A.DELETE_OWN] },
   { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },

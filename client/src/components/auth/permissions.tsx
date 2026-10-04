@@ -834,7 +834,7 @@ export const MENU_ITEM_PERMISSION: Record<string, { module: string; actions: str
   cotacoes: [{ module: 'finance', actions: ['create'] }, { module: 'invoices', actions: ['create'] }],
   facturas: [{ module: 'invoices', actions: ['read_all', 'read_own'] }],
   'minhas-facturas': [{ module: 'invoices', actions: ['create', 'read_own'] }],
-  'mapa-impostos': [{ module: 'invoices', actions: ['read_all'] }],
+  'mapa-impostos': [{ module: 'tax_map', actions: ['read_all'] }],
   'mapa-actividades': [{ module: 'activity_map', actions: ['read_all'] }],
 };
 

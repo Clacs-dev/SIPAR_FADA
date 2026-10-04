@@ -43,7 +43,35 @@ export const MODULES = {
   // Mapa de Actividades (DSG): read_all = ver, export = descarregar .xlsx,
   // update = completar/corrigir linhas. Concedido explicitamente por role.
   ACTIVITY_MAP: 'activity_map',
+  // Mapa de Impostos (read_all = ver). Os dados vem das facturas, por isso
+  // tambem e preciso invoices:read_all.
+  TAX_MAP: 'tax_map',
+  // Separadores da Gestao de Pagamento (read_all = ver o separador). Cada um
+  // e ligado/desligado por role no ecra "Roles e Permissoes".
+  PAGAMENTOS_DASHBOARD: 'pagamentos_dashboard',
+  PAGAMENTOS_TODAS: 'pagamentos_todas',
+  PAGAMENTOS_PENDENTES: 'pagamentos_pendentes',
+  PAGAMENTOS_APROVADOS_DSG: 'pagamentos_aprovados_dsg',
+  PAGAMENTOS_AUTORIZACAO_DESPESAS: 'pagamentos_autorizacao_despesas',
+  PAGAMENTOS_ORDENS_FORNECEDOR: 'pagamentos_ordens_fornecedor',
+  PAGAMENTOS_ORDENS_INTERNA: 'pagamentos_ordens_interna',
+  PAGAMENTOS_SUBMETIDO_BANCO: 'pagamentos_submetido_banco',
+  PAGAMENTOS_PAGOS: 'pagamentos_pagos',
 } as const;
+
+/** Separadores da Gestao de Pagamento + Mapa de Impostos (modulos so de visualizacao). */
+export const MODULOS_SEPARADORES_PAGAMENTO = [
+  MODULES.PAGAMENTOS_DASHBOARD,
+  MODULES.PAGAMENTOS_TODAS,
+  MODULES.PAGAMENTOS_PENDENTES,
+  MODULES.PAGAMENTOS_APROVADOS_DSG,
+  MODULES.PAGAMENTOS_AUTORIZACAO_DESPESAS,
+  MODULES.PAGAMENTOS_ORDENS_FORNECEDOR,
+  MODULES.PAGAMENTOS_ORDENS_INTERNA,
+  MODULES.PAGAMENTOS_SUBMETIDO_BANCO,
+  MODULES.PAGAMENTOS_PAGOS,
+  MODULES.TAX_MAP,
+];
 
 export const ACTIONS = {
   CREATE: 'create',

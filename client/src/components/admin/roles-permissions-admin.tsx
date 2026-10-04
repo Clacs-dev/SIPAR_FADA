@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { SEPARADORES_PAGAMENTO } from "../auth/separadores-pagamento";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -36,7 +37,9 @@ import { useRoles, type Role, type RolePermissionRow } from "../../hooks/use-rol
 // matriz - marcar/desmarcar uma acao aqui para outro role nao tem qualquer
 // efeito real no acesso a esses modulos. Mostrado explicitamente na UI para
 // nao dar uma falsa sensacao de controlo granular.
-const MODULES: { value: string; label: string; restricted?: boolean }[] = [
+// "actions": colunas que fazem sentido para o modulo (as outras mostram "—").
+// "grupo": cabecalho de seccao mostrado antes do modulo.
+const MODULES: { value: string; label: string; restricted?: boolean; actions?: string[]; grupo?: string }[] = [
   { value: 'presentations', label: 'Cartas de Apresentação' },
   { value: 'audiences', label: 'Audiências' },
   { value: 'requests', label: 'Solicitações' },
@@ -50,6 +53,13 @@ const MODULES: { value: string; label: string; restricted?: boolean }[] = [
   { value: 'invoices', label: 'Facturas & Pagamentos (Gestão de Pagamento, Mapa de Impostos)' },
   { value: 'finance', label: 'Compras / Procurement (pedidos, cotações, fornecedores)' },
   { value: 'activity_map', label: 'Mapa de Actividades (DSG)' },
+  // Cada separador da Gestao de Pagamento: sem "Ler (todos)" o separador nao aparece.
+  ...SEPARADORES_PAGAMENTO.filter((s) => s.module !== 'activity_map').map((s, i) => ({
+    value: s.module,
+    label: s.module === 'tax_map' ? 'Mapa de Impostos (menu, Procurement e Gestão de Pagamento)' : s.label,
+    actions: ['read_all'],
+    grupo: i === 0 ? 'Gestão de Pagamento — separadores visíveis (Ler = ver o separador)' : undefined,
+  })),
   { value: 'documents', label: 'Documentos' },
   { value: 'messages', label: 'Mensagens' },
   { value: 'notifications', label: 'Notificações' },
@@ -296,21 +306,34 @@ export function RolesPermissionsAdmin() {
                   </TableHeader>
                   <TableBody>
                     {MODULES.map((m) => (
-                      <TableRow key={m.value}>
-                        <TableCell className="sticky left-0 bg-background font-medium whitespace-nowrap">
-                          {m.label}
-                          {m.restricted && <Badge variant="outline" className="ml-2 text-[10px]">restrito</Badge>}
-                        </TableCell>
-                        {ACTIONS.map((a) => (
-                          <TableCell key={a.value} className="text-center">
-                            <Checkbox
-                              checked={matrix.has(key(m.value, a.value))}
-                              onCheckedChange={() => toggle(m.value, a.value)}
-                              disabled={selectedRole.slug === 'admin_sistema'}
-                            />
+                      <Fragment key={m.value}>
+                        {m.grupo && (
+                          <TableRow>
+                            <TableCell colSpan={ACTIONS.length + 1} className="bg-muted/50 font-semibold text-sm">
+                              {m.grupo}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        <TableRow>
+                          <TableCell className={`sticky left-0 bg-background font-medium whitespace-nowrap ${m.actions ? 'pl-6' : ''}`}>
+                            {m.label}
+                            {m.restricted && <Badge variant="outline" className="ml-2 text-[10px]">restrito</Badge>}
                           </TableCell>
-                        ))}
-                      </TableRow>
+                          {ACTIONS.map((a) => (
+                            <TableCell key={a.value} className="text-center">
+                              {!m.actions || m.actions.includes(a.value) ? (
+                                <Checkbox
+                                  checked={matrix.has(key(m.value, a.value))}
+                                  onCheckedChange={() => toggle(m.value, a.value)}
+                                  disabled={selectedRole.slug === 'admin_sistema'}
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>

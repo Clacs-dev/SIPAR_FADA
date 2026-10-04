@@ -244,17 +244,17 @@ export function RequisicaoDetailsDialog({
             </div>
           </div>
 
-          {/* Ordem de Compra Vinculada */}
+          {/* Autorização de Despesas Vinculada */}
           {requisicao.status === 'ordem_compra' && requisicao.ordem_compra_numero && (
             <div className="border-t pt-4">
               <div className="border rounded-lg p-4" style={{ backgroundColor: 'var(--tone-info-soft)', borderColor: 'var(--tone-info)' }}>
-                <h5 className="font-semibold mb-2" style={{ color: 'var(--tone-info)' }}>Ordem de Compra Gerada</h5>
+                <h5 className="font-semibold mb-2" style={{ color: 'var(--tone-info)' }}>Autorização de Despesas Gerada</h5>
                 <p className="text-sm" style={{ color: 'var(--tone-info)' }}>
                   <strong>Número:</strong> {requisicao.ordem_compra_numero}
                 </p>
                 <p className="text-xs mt-2" style={{ color: 'var(--tone-info)' }}>
-                  Uma ordem de compra foi criada para esta requisição. 
-                  {canManage && " Acesse a aba 'Ordens de Compra' para ver mais detalhes."}
+                  Uma autorização de despesas foi criada para esta requisição. 
+                  {canManage && " Acesse a aba 'Autorizações de Despesas' para ver mais detalhes."}
                 </p>
               </div>
             </div>
@@ -295,7 +295,7 @@ export function RequisicaoDetailsDialog({
                       style={{ backgroundColor: 'var(--tone-info)' }}
                     >
                       <Package className="mr-2 h-4 w-4" />
-                      Criar Ordem de Compra
+                      Criar Autorização de Despesas
                     </Button>
                   )}
                 </div>

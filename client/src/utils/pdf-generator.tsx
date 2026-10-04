@@ -669,7 +669,7 @@ export interface OrdemCompraDocumento {
 }
 
 /**
- * Gera o PDF oficial da Ordem de Compra (mesmo cabecalho/rodape FADA da Ordem
+ * Gera o PDF oficial da Autorização de Despesas (mesmo cabecalho/rodape FADA da Ordem
  * de Pagamento): fornecedor, origem (pedido de compra ou factura), itens com
  * preco e IVA, totais com valor por extenso e espacos de assinatura.
  */
@@ -690,11 +690,10 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
  console.warn('Não foi possível inserir o logótipo do FADA:', error);
   }
 
-  // O mesmo documento serve dois fluxos com nomes diferentes: quando emitido
-  // pelo Procurement (para um fornecedor externo) continua "Ordem de Compra";
-  // quando gerado a partir de uma factura validada directamente em Gestão de
-  // Pagamento (uso interno), passa a chamar-se "Autorização de Despesas".
-  const tituloDocumento = oc.origem === 'factura' ? 'AUTORIZAÇÃO DE DESPESAS' : 'ORDEM DE COMPRA';
+  // O documento chama-se sempre "Autorização de Despesas" (numeração AD/...),
+  // tanto quando emitido pelo Procurement como a partir de uma factura
+  // validada directamente em Gestão de Pagamento.
+  const tituloDocumento = 'AUTORIZAÇÃO DE DESPESAS';
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
@@ -750,7 +749,7 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
   y = Math.max(yFornecedor, yOrigem) + 4;
 
   autoTable(doc, {
-    head: [['#', 'Descrição', 'Qtd', 'Unid.', 'Preço unit.', 'IVA/Retenção', 'Total']],
+    head: [['#', 'Descrição', 'Qtd', 'Unid.', 'Preço unit.', 'IVA / Ret.', 'Total']],
     body: (oc.itens || []).map((item, i) => [
       String(i + 1),
       item.descricao || '—',
@@ -773,18 +772,20 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
       2: { halign: 'right', cellWidth: 12 },
       3: { cellWidth: 16 },
       4: { halign: 'right', cellWidth: 30 },
-      5: { halign: 'right', cellWidth: 12 },
+      5: { halign: 'center', cellWidth: 22 },
       6: { halign: 'right', cellWidth: 32 },
     },
   } as any);
   y = (doc.lastAutoTable?.finalY || y) + 6;
 
+  // Totais: o rótulo numa linha e o valor por baixo (alinhado à direita).
   const linhaTotal = (rotulo: string, valor: string, negrito = false) => {
     doc.setFont('helvetica', negrito ? 'bold' : 'normal');
     doc.setFontSize(negrito ? 11 : 9.5);
-    doc.text(rotulo, marginRight - 60, y);
+    doc.text(rotulo, marginRight - 70, y);
+    y += negrito ? 5.5 : 4.5;
     doc.text(valor, marginRight, y, { align: 'right' });
-    y += negrito ? 7 : 5.5;
+    y += negrito ? 7 : 6;
   };
   linhaTotal('Valor Bruto:', fmt(oc.subtotal));
   if (oc.iva_total) linhaTotal('Valor IVA (Cativo):', `-${fmt(oc.iva_total)}`);
@@ -872,7 +873,7 @@ export function gerarPDFOrdemCompra(oc: OrdemCompraDocumento): jsPDF {
 }
 
 /**
- * Busca os dados da Ordem de Compra ao servidor e abre o PDF na
+ * Busca os dados da Autorização de Despesas ao servidor e abre o PDF na
  * pre-visualizacao (de onde pode ser descarregado). Com facturaId, garante que
  * a factura validada tem a sua ordem (emitida no servidor se ainda nao existir).
  */
@@ -881,7 +882,7 @@ export async function visualizarOrdemCompra(alvo: { ordemId?: string; facturaId?
     ? await apiClient.get<{ ordem: OrdemCompraDocumento }>(`/procurement/ordens/${alvo.ordemId}/documento`)
     : await apiClient.post<{ ordem: OrdemCompraDocumento }>(`/facturas/${alvo.facturaId}/ordem-compra`, {});
   const doc = gerarPDFOrdemCompra(response.ordem);
-  previewPdf(doc, `Ordem_Compra_${response.ordem.numero.replace(/[\/\s]/g, '-')}.pdf`);
+  previewPdf(doc, `Autorizacao_Despesas_${response.ordem.numero.replace(/[\/\s]/g, '-')}.pdf`);
   return response.ordem;
 }
 

@@ -521,7 +521,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                       <div>
                         <span className="text-muted-foreground">Status:</span>
                         <p className="font-medium">
-                          {pedido.status === "ordem_emitida" && "Ordem de Compra Emitida"}
+                          {pedido.status === "ordem_emitida" && "Autorização de Despesas Emitida"}
                           {pedido.status === "em_entrega" && "Em Entrega"}
                           {pedido.status === "concluido" && "Concluído"}
                         </p>
@@ -538,7 +538,7 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
 
                   <Button size="sm">
                     <Eye className="h-4 w-4 mr-1" />
-                    Ver Ordem de Compra
+                    Ver Autorização de Despesas
                   </Button>
                 </div>
               </CardContent>

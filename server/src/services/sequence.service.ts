@@ -11,11 +11,11 @@ const PREFIX_BY_MODULE: Record<string, { prefix: string; monthly: boolean; field
   contrato: { prefix: 'CONT', monthly: false, field: 'numero' },
   reclamacao: { prefix: 'REC', monthly: true, field: 'codigo' },
   procurement: { prefix: 'PROC', monthly: true, field: 'numero' },
-  purchaseOrder: { prefix: 'OC', monthly: true, field: 'numero' },
-  // Documento "Autorização de Despesas" (facturas registadas directamente em
-  // Gestão de Pagamento, sem vir de uma Ordem de Compra do Procurement) -
-  // sequência própria, separada da OC real, para não misturar numeração.
-  despesaAutorizada: { prefix: 'AD', monthly: true, field: 'numero' },
+  // Documento "Autorização de Despesas" (AD/aaaa/mm/nnnn): uma unica
+  // sequencia para os emitidos pelo Procurement e para os das facturas
+  // registadas directamente em Gestao de Pagamento (antes "Ordem de Compra",
+  // prefixo OC - ver services/autorizacao-despesas-migracao.service.ts).
+  purchaseOrder: { prefix: 'AD', monthly: true, field: 'numero' },
   budget: { prefix: 'ORC', monthly: false, field: 'numero' },
   accountPayable: { prefix: 'CP', monthly: true, field: 'numero' },
   accountReceivable: { prefix: 'CR', monthly: true, field: 'numero' },

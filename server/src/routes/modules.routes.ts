@@ -987,7 +987,7 @@ function registerCrud(config: ModuleConfig) {
 
           const novaOrdem = await tx.purchaseOrder.create({
             data: {
-              numero: ordemSequencia?.value || `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+              numero: ordemSequencia?.value || `AD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
               procurementId: updatedPedido.id,
               quotationId: cotacao.id,
               fornecedorId: updatedPedido.fornecedorId,
@@ -1017,7 +1017,7 @@ function registerCrud(config: ModuleConfig) {
         const [ordem, updated] = await prisma.$transaction(async (tx) => {
           const novaOrdem = await tx.purchaseOrder.create({
             data: {
-              numero: ordemSequencia?.value || `OC-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+              numero: ordemSequencia?.value || `AD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
               procurementId: pedido.id,
               fornecedorId: pedido.fornecedorId,
               fornecedor: pedido.fornecedor || 'Fornecedor',
@@ -1355,7 +1355,7 @@ function registerCrud(config: ModuleConfig) {
         if (!ordem) {
           return res.status(400).json({
             error: 'BAD_REQUEST',
-            message: 'A Ordem de Compra fica disponivel depois de a factura ser validada.',
+            message: 'A Autorização de Despesas fica disponível depois de a factura ser validada.',
           });
         }
         return res.status(200).json({ ordem: await montarDocumentoOrdemCompra(ordem) });

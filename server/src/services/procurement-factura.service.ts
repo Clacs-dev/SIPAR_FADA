@@ -139,9 +139,9 @@ export async function montarFacturaDaOrdem(ordem: any, user: { id?: string; name
   const descricaoItens = itens.map((item) => item.descricao).filter(Boolean).join(', ');
   const descricao = [titulo, descricaoItens && descricaoItens !== titulo ? descricaoItens : '']
     .filter(Boolean).join(' - ')
-    || `Factura referente a Ordem de Compra ${ordem.numero || ordem.id}`;
+    || `Factura referente a Autorização de Despesas ${ordem.numero || ordem.id}`;
 
-  const comentarioValidacao = `Validada automaticamente na confirmacao de rececao da Ordem de Compra ${ordem.numero || ''}`.trim();
+  const comentarioValidacao = `Validada automaticamente na confirmacao de rececao da Autorização de Despesas ${ordem.numero || ''}`.trim();
 
   const data = {
     origem: 'procurement',
@@ -193,7 +193,7 @@ export async function montarFacturaDaOrdem(ordem: any, user: { id?: string; name
 
   return {
     comentarioValidacao,
-    historicoCriacao: `Gerada a partir da Ordem de Compra ${ordem.numero || ''} (Pedido ${pedido?.numero || '-'})`,
+    historicoCriacao: `Gerada a partir da Autorização de Despesas ${ordem.numero || ''} (Pedido ${pedido?.numero || '-'})`,
     columns: {
       fornecedor: nomeFornecedor,
       nif: data.fornecedor_nif || null,
@@ -251,10 +251,9 @@ export async function garantirOrdemCompraDaFactura(facturaId: string, user: { id
     ? itensFactura
     : [{ descricao: factura.descricao || 'Fornecimento conforme factura', quantidade: 1, preco_unitario: factura.valor || 0, iva: 0, total: factura.valor || 0 }];
 
-  // Sequência própria (prefixo AD) - este documento é a "Autorização de
-  // Despesas", não uma Ordem de Compra real do Procurement.
+  // Mesma sequencia (AD) de todas as Autorizacoes de Despesas.
   const { SequenceService } = await import('./sequence.service');
-  const sequencia = await SequenceService.next('despesaAutorizada');
+  const sequencia = await SequenceService.next('purchaseOrder');
 
   return prisma.$transaction(async (tx) => {
     const ordem = await tx.purchaseOrder.create({

@@ -323,7 +323,7 @@ export function FacturaDetails({
   const origemAnexoLabel: Record<string, string> = {
     cotacao: 'Cotação',
     pedido: 'Pedido de compra',
-    ordem_compra: 'Ordem de compra',
+    ordem_compra: 'Autorização de Despesas',
   };
 
   const handleValidate = () => {
@@ -480,7 +480,7 @@ export function FacturaDetails({
               Eliminar
             </Button>
           )}
-          {/* Ordem de Compra: a do Procurement de origem, ou - factura normal -
+          {/* Autorização de Despesas: a do Procurement de origem, ou - factura normal -
               "Autorização de Despesas" emitida quando a factura e validada. */}
           {(factura.purchase_order_id || ['validado', 'aprovado', 'submetido_ao_banco', 'pago'].includes(factura.status)) && (
             <Button
@@ -490,7 +490,7 @@ export function FacturaDetails({
               ).catch((err) => toast.error(err?.message || 'Erro ao abrir o documento'))}
             >
               <ShoppingCart className="mr-2 h-4 w-4" />
-              {factura.origem === 'procurement' ? 'Ordem de Compra' : 'Ver A. Despesa'}
+              Ver Autorização de Despesas
             </Button>
           )}
           <Button variant="outline" onClick={() => gerarPDFFactura(factura)}>
@@ -599,7 +599,7 @@ export function FacturaDetails({
                   {factura.numero_ordem && (
                     <div>
                       <p className="text-sm text-muted-foreground">
-                        {factura.origem === 'procurement' ? 'Ordem de Compra vinculada (Procurement)' : 'Ver A. Despesa'}
+                        {factura.origem === 'procurement' ? 'Autorização de Despesas (Procurement)' : 'Ver Autorização de Despesas'}
                       </p>
                       <p className="font-medium" style={{ color: 'var(--tone-info)' }}>{factura.numero_ordem}</p>
                     </div>

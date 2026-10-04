@@ -1,5 +1,5 @@
 /**
- * Dialog de Detalhes da Ordem de Compra
+ * Dialog de Detalhes da Autorização de Despesas
  * Visível APENAS para departamento de Compras
  */
 
@@ -142,10 +142,10 @@ export function OrdemCompraDetailsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Detalhes da Ordem de Compra
+            Detalhes da Autorização de Despesas
           </DialogTitle>
           <DialogDescription>
-            Informações completas da ordem de compra
+            Informações completas da autorização de despesas
           </DialogDescription>
         </DialogHeader>
 
@@ -320,7 +320,7 @@ export function OrdemCompraDetailsDialog({
                       disabled={submitting}
                     >
                       <XCircle className="mr-2 h-4 w-4" />
-                      Cancelar Ordem de Compra
+                      Cancelar Autorização de Despesas
                     </Button>
                   </div>
                 )}
@@ -332,10 +332,10 @@ export function OrdemCompraDetailsDialog({
               <div className="border rounded-lg p-4 bg-tone-danger-soft space-y-4">
                 <h5 className="font-semibold text-tone-danger flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" />
-                  Cancelar Ordem de Compra
+                  Cancelar Autorização de Despesas
                 </h5>
                 <p className="text-sm text-tone-danger">
-                  Tem certeza que deseja cancelar esta ordem de compra? Esta ação não pode ser desfeita.
+                  Tem certeza que deseja cancelar esta autorização de despesas? Esta ação não pode ser desfeita.
                 </p>
                 <div className="flex gap-2">
                   <Button 

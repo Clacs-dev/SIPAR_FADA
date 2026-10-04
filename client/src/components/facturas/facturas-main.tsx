@@ -24,6 +24,7 @@ import { OrdensPagamentoInterna } from "./ordens-pagamento-interna";
 import { MapaActividades } from "../shared/mapa-actividades";
 import { MapaImpostos } from "../shared/mapa-impostos";
 import { useMyPermissions } from "../../hooks/use-my-permissions";
+import { MODULO_DO_SEPARADOR, SEPARADORES_PAGAMENTO } from "../auth/separadores-pagamento";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { DepartmentFilter } from "../common/department-filter";
@@ -42,10 +43,19 @@ interface FacturasMainProps {
 
 export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: FacturasMainProps = {}) {
   const { user, accessToken } = useAuth();
-  const { pode } = useMyPermissions();
+  const { pode, carregado: permissoesCarregadas } = useMyPermissions();
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
+  // Cada separador so aparece se o role tiver a permissao correspondente
+  // (Roles e Permissoes -> "Gestão de Pagamento — separadores").
+  const ver = (tab: string) => pode(MODULO_DO_SEPARADOR[tab] || tab, 'read_all');
+  const separadoresVisiveis = SEPARADORES_PAGAMENTO.filter((s) => ver(s.tab));
+  useEffect(() => {
+    if (!permissoesCarregadas || separadoresVisiveis.length === 0) return;
+    if (!ver(activeTab)) setActiveTab(separadoresVisiveis[0].tab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissoesCarregadas, activeTab, separadoresVisiveis.length]);
   const [filters, setFilters] = useState<FacturaFilters>({});
   const [departmentFilter, setDepartmentFilter] = useState('all');
   const [facturas, setFacturas] = useState<Factura[]>([]);
@@ -926,52 +936,78 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       {!loading && !error && (
         <>
           {/* Tabs - Com filtros avançados para Admin, Compras, Financeiro e Gabinetes Executivos */}
-          {(isCompras || user?.department === 'Compras' || isFinanceiro || isGabineteExecutivo || isDsgTecnico || pode('invoices', 'read_all')) ? (
+          {!isExterno && !permissoesCarregadas ? (
+            <p className="text-center py-10 text-muted-foreground">A carregar...</p>
+          ) : !isExterno && separadoresVisiveis.length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
+                O seu perfil não tem nenhum separador da Gestão de Pagamento atribuído. Contacte o Administrador do Sistema.
+              </CardContent>
+            </Card>
+          ) : !isExterno ? (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
-                <TabsTrigger value="dashboard">
-                  <LayoutGrid className="mr-2 h-4 w-4" />
-                  Dashboard
-                </TabsTrigger>
-                <TabsTrigger value="todas">
-                  <List className="mr-2 h-4 w-4" />
-                  Todas ({facturas.length})
-                </TabsTrigger>
-                <TabsTrigger value="pendentes">
-                  <Clock className="mr-2 h-4 w-4" />
-                  Pendentes ({facturas.filter(f => f.status === 'pendente').length})
-                </TabsTrigger>
-                <TabsTrigger value="validados">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Aprovados-DSG ({facturas.filter(f => f.status === 'validado').length})
-                </TabsTrigger>
-                <TabsTrigger value="aprovadas">
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Autorização de Despesas ({facturas.filter(f => f.status === 'aprovado').length})
-                </TabsTrigger>
-                <TabsTrigger value="ordens_pagamento">
-                  <FileSignature className="mr-2 h-4 w-4" />
-                  Ordens de Pagamento Fornecedor ({facturas.filter(f => !!f.numero_ordem_pagamento).length})
-                </TabsTrigger>
-                <TabsTrigger value="ordens_pagamento_interna">
-                  <FileSignature className="mr-2 h-4 w-4" />
-                  Ordens de Pagamento Interna
-                </TabsTrigger>
-                <TabsTrigger value="submetido_banco">
-                  <FileText className="mr-2 h-4 w-4" />
-                  Submetido ao Banco ({facturas.filter(f => f.status === 'submetido_ao_banco').length})
-                </TabsTrigger>
-                <TabsTrigger value="pagamentos">
-                  <DollarSign className="mr-2 h-4 w-4" />
-                  Pagos ({facturas.filter(f => f.status === 'pago').length})
-                </TabsTrigger>
-                {pode('invoices', 'read_all') && (
+                {ver('dashboard') && (
+                  <TabsTrigger value="dashboard">
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    Dashboard
+                  </TabsTrigger>
+                )}
+                {ver('todas') && (
+                  <TabsTrigger value="todas">
+                    <List className="mr-2 h-4 w-4" />
+                    Todas ({facturas.length})
+                  </TabsTrigger>
+                )}
+                {ver('pendentes') && (
+                  <TabsTrigger value="pendentes">
+                    <Clock className="mr-2 h-4 w-4" />
+                    Pendentes ({facturas.filter(f => f.status === 'pendente').length})
+                  </TabsTrigger>
+                )}
+                {ver('validados') && (
+                  <TabsTrigger value="validados">
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Aprovados-DSG ({facturas.filter(f => f.status === 'validado').length})
+                  </TabsTrigger>
+                )}
+                {ver('aprovadas') && (
+                  <TabsTrigger value="aprovadas">
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Autorização de Despesas ({facturas.filter(f => f.status === 'aprovado').length})
+                  </TabsTrigger>
+                )}
+                {ver('ordens_pagamento') && (
+                  <TabsTrigger value="ordens_pagamento">
+                    <FileSignature className="mr-2 h-4 w-4" />
+                    Ordens de Pagamento Fornecedor ({facturas.filter(f => !!f.numero_ordem_pagamento).length})
+                  </TabsTrigger>
+                )}
+                {ver('ordens_pagamento_interna') && (
+                  <TabsTrigger value="ordens_pagamento_interna">
+                    <FileSignature className="mr-2 h-4 w-4" />
+                    Ordens de Pagamento Interna
+                  </TabsTrigger>
+                )}
+                {ver('submetido_banco') && (
+                  <TabsTrigger value="submetido_banco">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Submetido ao Banco ({facturas.filter(f => f.status === 'submetido_ao_banco').length})
+                  </TabsTrigger>
+                )}
+                {ver('pagamentos') && (
+                  <TabsTrigger value="pagamentos">
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    Pagos ({facturas.filter(f => f.status === 'pago').length})
+                  </TabsTrigger>
+                )}
+                {ver('mapa_impostos') && (
                   <TabsTrigger value="mapa_impostos">
                     <FileText className="mr-2 h-4 w-4" />
                     Mapa de Impostos
                   </TabsTrigger>
                 )}
-                {pode('activity_map', 'read_all') && (
+                {ver('mapa_actividades') && (
                   <TabsTrigger value="mapa_actividades">
                     <ClipboardList className="mr-2 h-4 w-4" />
                     Mapa de Actividades
@@ -980,7 +1016,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
               </TabsList>
 
             {/* Mapa de Impostos - clicar numa linha abre a factura */}
-            {pode('invoices', 'read_all') && (
+            {ver('mapa_impostos') && (
               <TabsContent value="mapa_impostos">
                 <MapaImpostos
                   contexto="financeiro"
@@ -996,7 +1032,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
             )}
 
             {/* Mapa de Actividades (DSG) */}
-            {pode('activity_map', 'read_all') && (
+            {ver('mapa_actividades') && (
               <TabsContent value="mapa_actividades">
                 <MapaActividades contexto="financeiro" />
               </TabsContent>

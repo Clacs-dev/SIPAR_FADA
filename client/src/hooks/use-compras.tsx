@@ -51,11 +51,11 @@ export function useCompras() {
   const createOrdemCompra = useCallback(async (data: Partial<OrdemCompra>): Promise<OrdemCompra | null> => {
     try {
       const response = await apiClient.post<{ ordem_compra: OrdemCompra }>('/compras/ordem-compra', data);
-      toast.success('Ordem de compra criada com sucesso!');
+      toast.success('Autorização de Despesas criada com sucesso!');
       setOrdensCompra(prev => [response.ordem_compra, ...prev]);
       return response.ordem_compra;
     } catch (err: any) {
-      toast.error('Erro ao criar ordem de compra');
+      toast.error('Erro ao criar autorização de despesas');
       return null;
     }
   }, []);

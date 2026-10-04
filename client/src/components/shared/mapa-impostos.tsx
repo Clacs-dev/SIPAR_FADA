@@ -6,7 +6,7 @@
  * documento: Valor Bruto, Valor IVA (Cativo), Valor Retenção, Valor Final a
  * Pagar. Fonte única de dados: GET /facturas - cobre tanto as facturas
  * criadas directamente em Financeiro/Gestão de Pagamento como as geradas
- * automaticamente a partir de Ordens de Compra do módulo Compras (ver
+ * automaticamente a partir de Autorizações de Despesas do módulo Compras (ver
  * server/src/services/procurement-factura.service.ts), por isso o mesmo
  * componente serve de "Mapa de Impostos" nos dois módulos (ver
  * client/src/components/facturas/facturas-main.tsx e
@@ -217,7 +217,7 @@ export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImp
           </h1>
           <p className="text-muted-foreground">
             {contexto === 'compras'
-              ? 'IVA e Retenção na Fonte aplicados às facturas geradas a partir das Ordens de Compra'
+              ? 'IVA e Retenção na Fonte aplicados às facturas geradas a partir das Autorizações de Despesas'
               : 'IVA e Retenção na Fonte aplicados a todas as facturas (Financeiro e Compras)'}
           </p>
         </div>

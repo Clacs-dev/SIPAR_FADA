@@ -1020,7 +1020,7 @@ export class ModuleRoutesHelper {
         const { garantirOrdemCompraDaFactura } = await import('../services/procurement-factura.service');
         await garantirOrdemCompraDaFactura(req.params.id, user)
           .then(async () => { updated = await delegateFor(config).findUnique({ where: { id: req.params.id } }); })
-          .catch((error) => logger.error(`Falha ao emitir Ordem de Compra da factura ${req.params.id}:`, error));
+          .catch((error) => logger.error(`Falha ao emitir Autorização de Despesas da factura ${req.params.id}:`, error));
       }
       // Assinatura automática do DSG na Autorização de Despesas, no mesmo
       // momento em que valida a factura - sem passo de assinatura à parte.
