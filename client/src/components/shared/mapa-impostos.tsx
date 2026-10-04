@@ -64,7 +64,7 @@ const STATUS_LABELS: Record<string, string> = {
   registada: 'Registada',
   pendente: 'Pendente',
   validado: 'Aprovado-DSG',
-  aprovado: 'Despesas Aprovadas',
+  aprovado: 'Autorização de Despesas',
   submetido_ao_banco: 'Submetido ao Banco',
   pago: 'Pago',
   rejeitado: 'Rejeitado',

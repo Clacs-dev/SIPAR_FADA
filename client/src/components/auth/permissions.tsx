@@ -399,6 +399,12 @@ export function getMenuItems(
         show: true
       },
       {
+        id: 'mapa-actividades',
+        label: 'Mapa de Actividades',
+        icon: 'ClipboardList',
+        show: true
+      },
+      {
         id: 'messages',
         label: 'Mensagens',
         icon: 'MessageSquare',
@@ -440,6 +446,12 @@ export function getMenuItems(
         id: 'mapa-impostos',
         label: 'Mapa de Impostos',
         icon: 'FileBarChart',
+        show: true
+      },
+      {
+        id: 'mapa-actividades',
+        label: 'Mapa de Actividades',
+        icon: 'ClipboardList',
         show: true
       },
       {
@@ -508,6 +520,12 @@ export function getMenuItems(
         id: 'mapa-impostos',
         label: 'Mapa de Impostos',
         icon: 'FileBarChart',
+        show: true
+      },
+      {
+        id: 'mapa-actividades',
+        label: 'Mapa de Actividades',
+        icon: 'ClipboardList',
         show: true
       },
       {
@@ -638,6 +656,12 @@ export function getMenuItems(
         id: 'mapa-impostos',
         label: 'Mapa de Impostos',
         icon: 'FileBarChart',
+        show: true
+      },
+      {
+        id: 'mapa-actividades',
+        label: 'Mapa de Actividades',
+        icon: 'ClipboardList',
         show: true
       },
       {
@@ -797,6 +821,8 @@ const MENU_ITEM_LICENSE_MODULE: Record<string, string | string[]> = {
   'minhas-facturas': 'invoices',
   // Mapa de Impostos cruza dados de Facturas e Compras - visível se qualquer um dos dois estiver licenciado.
   'mapa-impostos': ['invoices', 'finance'],
+  // Mapa de Actividades (DSG) - tambem cruza Facturas e Compras.
+  'mapa-actividades': ['invoices', 'finance'],
   'internal-meetings': 'internal_meetings',
   'meeting-rooms': 'internal_meetings',
   messages: 'messages',

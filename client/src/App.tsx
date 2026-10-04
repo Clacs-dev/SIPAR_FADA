@@ -30,6 +30,7 @@ import { Comunicacoes } from "./components/management/comunicacoes";
 import { Compras } from "./components/management/compras";
 import { Facturas } from "./components/management/facturas";
 import { MapaImpostos } from "./components/shared/mapa-impostos";
+import { MapaActividades } from "./components/shared/mapa-actividades";
 import { MeetingRoomsAdmin } from "./components/meeting-rooms/meeting-rooms-admin";
 import { IntegrationsConfig } from "./components/admin/integrations-config";
 import { DepartmentsAdmin } from "./components/admin/departments-admin";
@@ -345,6 +346,9 @@ function AppContent() {
             }}
           />
         );
+
+      case "mapa-actividades":
+        return <MapaActividades />;
 
       case "minhas-facturas":
         // Rota específica para utilizadores externos

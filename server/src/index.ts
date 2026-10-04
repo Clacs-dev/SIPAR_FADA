@@ -42,6 +42,7 @@ import internalPaymentOrdersRoutes from './routes/internal-payment-orders.routes
 import licenseRoutes from './routes/license.routes';
 import meetingIntegrationsRoutes from './routes/meeting-integrations.routes';
 import nifRoutes from './routes/nif.routes';
+import mapaActividadesRoutes from './routes/mapa-actividades.routes';
 import { licenseService } from './services/license.service';
 import { SettingsService } from './services/settings.service';
 
@@ -157,6 +158,7 @@ const registerRoutes = (prefix: string) => {
   app.use(`${prefix}/internal-payment-orders`, internalPaymentOrdersRoutes);
   app.use(`${prefix}/meeting-integrations`, meetingIntegrationsRoutes);
   app.use(`${prefix}/nif`, nifRoutes);
+  app.use(`${prefix}/mapa-actividades`, mapaActividadesRoutes);
   app.use(`${prefix}/phase4`, phase4Routes);
   app.use(`${prefix}/compras-avancadas`, phase4Routes);
   app.use(`${prefix}/orcamentos`, phase4Routes);

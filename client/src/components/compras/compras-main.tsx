@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import {
   Package, Plus, Eye, FileText, Clock,
   CheckCircle2, XCircle, TrendingUp, AlertCircle,
-  DollarSign, Building2, ShoppingBag, Calendar, Send
+  DollarSign, Building2, ShoppingBag, Calendar, Send, ClipboardList
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
@@ -22,6 +22,7 @@ import { visualizarOrdemCompra } from "../../utils/pdf-generator";
 import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
+import { MapaActividades } from "../shared/mapa-actividades";
 import { useClientPagination } from "../../hooks/use-client-pagination";
 import { PaginationBar } from "../common/pagination-bar";
 import type { PedidoCompra, StatusPedidoCompra } from "./types";
@@ -262,8 +263,17 @@ export function ComprasMain() {
           <TabsTrigger value="concluidos">
             Concluídos ({pedidos.filter(p => p.status === "concluido").length})
           </TabsTrigger>
+          <TabsTrigger value="mapa-actividades">
+            <ClipboardList className="mr-2 h-4 w-4" />
+            Mapa de Actividades
+          </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="mapa-actividades" className="mt-6">
+          <MapaActividades contexto="compras" />
+        </TabsContent>
+
+        {activeTab !== "mapa-actividades" && (
         <TabsContent value={activeTab} className="space-y-4 mt-6">
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
@@ -395,6 +405,7 @@ export function ComprasMain() {
           ))}
           <PaginationBar pagination={pedidosPag.pagination} onPageChange={pedidosPag.setPage} />
         </TabsContent>
+        )}
       </Tabs>
 
       {/* Dialog de Formulário */}

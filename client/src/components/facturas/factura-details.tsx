@@ -180,7 +180,7 @@ export function FacturaDetails({
       validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
       em_validacao: { label: 'Em Aprovação-DSG', color: 'var(--tone-info)' },
       aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
-      aprovado: { label: 'Despesas Aprovadas', color: 'var(--tone-success)' },
+      aprovado: { label: 'Autorização de Despesas', color: 'var(--tone-success)' },
       rejeitada: { label: 'Rejeitada', color: 'var(--tone-danger)' },
       rejeitado: { label: 'Rejeitado', color: 'var(--tone-danger)' },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
