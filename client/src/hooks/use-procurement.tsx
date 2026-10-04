@@ -34,6 +34,9 @@ interface UseProcurementReturn {
   
   // Cotações de Fornecedores
   submitCotacao: (pedidoId: string, cotacao: Partial<CotacaoFornecedor>) => Promise<boolean>;
+  editarCotacao: (pedidoId: string, cotacaoId: string, dados: Partial<CotacaoFornecedor>) => Promise<boolean>;
+  anularCotacao: (pedidoId: string, cotacaoId: string, motivo?: string) => Promise<boolean>;
+  eliminarCotacao: (pedidoId: string, cotacaoId: string) => Promise<boolean>;
   fetchCotacoes: (pedidoId: string) => Promise<CotacaoFornecedor[]>;
   
   // Análise e Aprovação
@@ -128,7 +131,7 @@ export function useProcurement(): UseProcurementReturn {
       setPedidos(prev => prev.map(p => p.id === id ? response.pedido : p));
       return response.pedido;
     } catch (err: any) {
-      toast.error('Erro ao atualizar pedido');
+      toast.error(err?.message || 'Erro ao atualizar pedido');
       return null;
     }
   }, []);
@@ -140,7 +143,7 @@ export function useProcurement(): UseProcurementReturn {
       setPedidos(prev => prev.filter(p => p.id !== id));
       return true;
     } catch (err: any) {
-      toast.error('Erro ao excluir pedido');
+      toast.error(err?.message || 'Erro ao excluir pedido');
       return false;
     }
   }, []);
@@ -154,7 +157,7 @@ export function useProcurement(): UseProcurementReturn {
       setPedidos(prev => prev.map(p => p.id === id ? response.pedido : p));
       return true;
     } catch (err: any) {
-      toast.error('Erro ao publicar pedido');
+      toast.error(err?.message || 'Erro ao publicar pedido');
       return false;
     }
   }, []);
@@ -166,7 +169,7 @@ export function useProcurement(): UseProcurementReturn {
       setPedidos(prev => prev.map(p => p.id === id ? response.pedido : p));
       return true;
     } catch (err: any) {
-      toast.error('Erro ao cancelar pedido');
+      toast.error(err?.message || 'Erro ao cancelar pedido');
       return false;
     }
   }, []);
@@ -182,8 +185,46 @@ export function useProcurement(): UseProcurementReturn {
       return true;
     } catch (err: any) {
  console.error(' [submitCotacao] Erro ao submeter cotação:', err);
-      const errorMessage = err?.response?.data?.error || err?.message || 'Erro ao submeter cotação';
+      const errorMessage = err?.message || 'Erro ao submeter cotação';
       toast.error(errorMessage);
+      return false;
+    }
+  }, [fetchPedidos]);
+
+  // Editar / anular / eliminar uma cotacao (o servidor so aceita enquanto
+  // ninguem actuou sobre ela - e, para update_own/delete_own, so as proprias).
+  const editarCotacao = useCallback(async (pedidoId: string, cotacaoId: string, dados: Partial<CotacaoFornecedor>): Promise<boolean> => {
+    try {
+      await apiClient.put(`/procurement/pedidos/${pedidoId}/cotacoes/${cotacaoId}`, dados);
+      toast.success('Cotação actualizada');
+      await fetchPedidos();
+      return true;
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao actualizar cotação');
+      return false;
+    }
+  }, [fetchPedidos]);
+
+  const anularCotacao = useCallback(async (pedidoId: string, cotacaoId: string, motivo?: string): Promise<boolean> => {
+    try {
+      await apiClient.post(`/procurement/pedidos/${pedidoId}/cotacoes/${cotacaoId}/anular`, { motivo });
+      toast.success('Cotação anulada');
+      await fetchPedidos();
+      return true;
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao anular cotação');
+      return false;
+    }
+  }, [fetchPedidos]);
+
+  const eliminarCotacao = useCallback(async (pedidoId: string, cotacaoId: string): Promise<boolean> => {
+    try {
+      await apiClient.delete(`/procurement/pedidos/${pedidoId}/cotacoes/${cotacaoId}`);
+      toast.success('Cotação eliminada');
+      await fetchPedidos();
+      return true;
+    } catch (err: any) {
+      toast.error(err?.message || 'Erro ao eliminar cotação');
       return false;
     }
   }, [fetchPedidos]);
@@ -325,6 +366,9 @@ export function useProcurement(): UseProcurementReturn {
     publicarPedido,
     cancelarPedido,
     submitCotacao,
+    editarCotacao,
+    anularCotacao,
+    eliminarCotacao,
     fetchCotacoes,
     analisarCotacoes,
     aprovarCotacao,

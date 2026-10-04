@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getUserPermissions } from '../utils/permissions';
 import rateLimit from 'express-rate-limit';
 import { AuthController } from '../controllers/auth.controller';
 import { requireAuth, requireSystemAdmin } from '../middlewares/auth';
@@ -30,6 +31,17 @@ router.post('/reset-demo-users', requireAuth as any, requireSystemAdmin as any, 
 
 // Rotas protegidas
 router.get('/me', requireAuth as any, AuthController.me as any);
+// Permissoes RBAC efectivas do utilizador autenticado: [{ module, actions }].
+// Usado pelo cliente so para mostrar/esconder menus e botoes - o servidor
+// continua a validar cada accao.
+router.get('/me/permissions', requireAuth as any, async (req: any, res: any, next: any) => {
+  try {
+    const p = await getUserPermissions(req.user.role, req.user.department, undefined);
+    return res.status(200).json({ role: req.user.role, permissions: p.permissions });
+  } catch (error) {
+    next(error);
+  }
+});
 // Auto-edicao de perfil (nome, telefone, morada, organizacao, e-mail, password).
 // Aceita PUT (convencao REST usada no resto da API) e POST (mesma acao).
 router.put('/me', requireAuth as any, authLimiter, AuthController.updateProfile as any);

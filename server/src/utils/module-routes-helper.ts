@@ -1,4 +1,5 @@
 import { Response, NextFunction } from 'express';
+import { facturaSemAccao, MENSAGEM_SEM_ACCAO, nivelDeAcesso } from './proprio-sem-accao';
 import { AuthenticatedRequest } from '../middlewares/auth';
 import prisma from '../config/database';
 import { auditService } from '../services/audit.service';
@@ -584,6 +585,45 @@ async function validateNotApproved(req: AuthenticatedRequest, res: Response, res
   return true;
 }
 
+/**
+ * Autorizacao de editar/anular/eliminar com a regra "documento proprio sem
+ * accao" (ver utils/proprio-sem-accao.ts). Devolve true se pode continuar;
+ * caso contrario ja respondeu (403) e regista a tentativa.
+ */
+async function autorizarAlteracao(
+  req: AuthenticatedRequest,
+  res: Response,
+  config: ModuleConfig,
+  existing: any,
+  acaoTotal: string,
+  acaoPropria: string,
+  condicaoExtra: boolean = true,
+): Promise<'total' | 'proprio' | false> {
+  const acesso = await nivelDeAcesso(req, config.permissionModule, acaoTotal, acaoPropria);
+  if (acesso === 'total') return 'total';
+  if (acesso === null) {
+    await validatePermission(req, res, config.permissionModule, acaoTotal);
+    return false;
+  }
+  const user = req.user!;
+  const ok = condicaoExtra
+    && config.model === 'factura'
+    && existing.createdById === user.id
+    && facturaSemAccao(existing);
+  if (!ok) {
+    await auditService.logAction('unauthorized_access_attempt', 'warning', {
+      module: config.permissionModule, action: acaoPropria, attemptedResource: req.originalUrl, motivo: 'documento_de_outro_ou_ja_com_accao',
+    }, { userId: user.id, userEmail: user.email, userRole: user.role, ipAddress: req.ip || 'unknown', resourceId: existing.id, success: false });
+    res.status(403).json({ error: 'FORBIDDEN', message: MENSAGEM_SEM_ACCAO });
+    return false;
+  }
+  return 'proprio';
+}
+
+// Campos que so o fluxo de decisao (validar/aprovar/pagar/ordem de pagamento)
+// pode escrever - nunca aceites numa edicao feita ao abrigo de update_own.
+const CAMPOS_DE_DECISAO = /^(status|validad|aprovad|rejeitad|ordem_pagamento|numero_ordem_pagamento|paid|pago|assinatura|mapa_actividades|submetido)/;
+
 export class ModuleRoutesHelper {
   static async create(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
@@ -774,13 +814,19 @@ export class ModuleRoutesHelper {
 
   static async update(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
-      const allowed = await validatePermission(req, res, config.permissionModule, config.updateAction);
-      if (!allowed) return;
-
+      if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Utilizador nao autenticado' });
       const user = req.user!;
       const existing = await delegateFor(config).findUnique({ where: { id: req.params.id } });
       if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
+      }
+
+      const acesso = await autorizarAlteracao(req, res, config, existing, config.updateAction, permissions.ACTIONS.UPDATE_OWN);
+      if (!acesso) return;
+      if (acesso === 'proprio') {
+        for (const campo of Object.keys(req.body || {})) {
+          if (CAMPOS_DE_DECISAO.test(campo)) delete req.body[campo];
+        }
       }
 
       const active = await validateNotApproved(req, res, existing, config);
@@ -834,14 +880,15 @@ export class ModuleRoutesHelper {
 
   static async delete(req: AuthenticatedRequest, res: Response, next: NextFunction, config: ModuleConfig) {
     try {
-      const allowed = await validatePermission(req, res, config.permissionModule, config.deleteAction);
-      if (!allowed) return;
-
+      if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Utilizador nao autenticado' });
       const user = req.user!;
       const existing = await delegateFor(config).findUnique({ where: { id: req.params.id } });
       if (!existing || existing.deletedAt) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
       }
+
+      const acesso = await autorizarAlteracao(req, res, config, existing, config.deleteAction, permissions.ACTIONS.DELETE_OWN);
+      if (!acesso) return;
 
       const active = await validateNotApproved(req, res, existing, config);
       if (!active) return;
@@ -886,14 +933,19 @@ export class ModuleRoutesHelper {
         : nextStatus === STATUS.REJEITADO || nextStatus === 'cancelada'
           ? config.rejectAction
           : config.updateAction;
-      const allowed = await validatePermission(req, res, config.permissionModule, action);
-      if (!allowed) return;
-
+      if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Utilizador nao autenticado' });
       const user = req.user!;
       const existing = await delegateFor(config).findUnique({ where: { id: req.params.id } });
       if (!existing) {
         return res.status(404).json({ error: 'NOT_FOUND', message: `${config.displayName} nao encontrado` });
       }
+
+      // Com update_own so se pode ANULAR (cancelado) o proprio documento ainda
+      // sem accao - nunca validar, aprovar, rejeitar ou pagar.
+      const acesso = await autorizarAlteracao(
+        req, res, config, existing, action, permissions.ACTIONS.UPDATE_OWN, nextStatus === STATUS.CANCELADO,
+      );
+      if (!acesso) return;
 
       if (existing.status === STATUS.APROVADO && nextStatus === STATUS.REJEITADO) {
         return res.status(400).json({ error: 'BAD_REQUEST', message: `${config.displayName} aprovado nao pode ser rejeitado` });

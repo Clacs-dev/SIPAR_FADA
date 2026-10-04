@@ -44,6 +44,7 @@ import meetingIntegrationsRoutes from './routes/meeting-integrations.routes';
 import nifRoutes from './routes/nif.routes';
 import mapaActividadesRoutes from './routes/mapa-actividades.routes';
 import { licenseService } from './services/license.service';
+import { sincronizarRbac } from './services/rbac-sync.service';
 import { SettingsService } from './services/settings.service';
 
 export const app = express();
@@ -223,6 +224,10 @@ export function startServer(port = PORT) {
   // sincrona (SettingsService.get) veria a cache vazia e cairia sempre no
   // fallback de .env ate ao primeiro refresh automatico (5 min depois).
   SettingsService.refresh().catch((error) => logger.warn('[Settings] Falha ao carregar definicoes de integracao:', error));
+
+  // Acrescenta ao RBAC o que versoes novas precisam (role DSG Tecnico,
+  // permissao do Mapa de Actividades) sem apagar ajustes do administrador.
+  sincronizarRbac().catch((error) => logger.warn('[RBAC] Falha na sincronizacao de roles/permissoes:', error));
 
   return app.listen(port, () => {
     logger.info(`Servidor Express do SIPAR20 rodando de forma estavel na porta: ${port}`);

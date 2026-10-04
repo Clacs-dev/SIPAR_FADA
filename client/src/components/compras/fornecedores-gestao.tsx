@@ -2,6 +2,8 @@
  * Gestão de Fornecedores - Interface Completa
  */
 
+import { useAuth } from "../auth/auth-context";
+import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useState, useEffect } from "react";
 import {
   Building2, Plus, Edit, Trash2, Power,
@@ -32,6 +34,17 @@ interface FornecedoresGestaoProps {
 }
 
 export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
+  const { user } = useAuth();
+  const { pode } = useMyPermissions();
+  // Botoes conforme as permissoes do role (Roles e Permissoes). Com
+  // update_own/delete_own (ex: DSG Tecnico) so o fornecedor criado pelo
+  // proprio e ainda sem cotacoes/vendas (o servidor confirma).
+  const podeCriar = pode('finance', 'create');
+  const podeGerirEstado = pode('finance', 'update');
+  const semDocumentos = (f: any) => !(f.total_cotacoes > 0) && !(f.total_vendas > 0);
+  const proprio = (f: any) => !!user && f.created_by_id === user.id && semDocumentos(f);
+  const podeEditarFornecedor = (f: any) => pode('finance', 'update') || (pode('finance', 'update_own') && proprio(f));
+  const podeExcluirFornecedor = (f: any) => pode('finance', ['delete', 'approve']) || (pode('finance', 'delete_own') && proprio(f));
   const [formOpen, setFormOpen] = useState(false);
   const [selectedFornecedor, setSelectedFornecedor] = useState<Fornecedor | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -145,13 +158,15 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
             </p>
           </div>
         </div>
-        <Button onClick={() => {
-          setSelectedFornecedor(null);
-          setFormOpen(true);
-        }}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Fornecedor
-        </Button>
+        {podeCriar && (
+          <Button onClick={() => {
+            setSelectedFornecedor(null);
+            setFormOpen(true);
+          }}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Fornecedor
+          </Button>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -294,26 +309,30 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
 
                 {/* Ações */}
                 <div className="flex flex-col gap-2">
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    style={{ color: 'var(--tone-info)' }}
-                    onClick={() => enviarCredenciais(fornecedor.id)}
-                  >
-                    <Send className="h-4 w-4 mr-1" />
-                    Enviar Credenciais
-                  </Button>
-                  
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    onClick={() => handleEdit(fornecedor)}
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    Editar
-                  </Button>
-                  
-                  {fornecedor.situacao !== "bloqueado" && (
+                  {(podeGerirEstado || podeCriar) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      style={{ color: 'var(--tone-info)' }}
+                      onClick={() => enviarCredenciais(fornecedor.id)}
+                    >
+                      <Send className="h-4 w-4 mr-1" />
+                      Enviar Credenciais
+                    </Button>
+                  )}
+
+                  {podeEditarFornecedor(fornecedor) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(fornecedor)}
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Editar
+                    </Button>
+                  )}
+
+                  {podeGerirEstado && fornecedor.situacao !== "bloqueado" && (
                     <Button 
                       size="sm" 
                       variant="outline"
@@ -324,15 +343,17 @@ export function FornecedoresGestao({ onBack }: FornecedoresGestaoProps) {
                     </Button>
                   )}
                   
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    style={{ color: 'var(--tone-danger)' }}
-                    onClick={() => handleDeleteClick(fornecedor)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Excluir
-                  </Button>
+                  {podeExcluirFornecedor(fornecedor) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      style={{ color: 'var(--tone-danger)' }}
+                      onClick={() => handleDeleteClick(fornecedor)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Excluir
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardContent>

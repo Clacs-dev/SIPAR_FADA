@@ -40,6 +40,9 @@ export const MODULES = {
   SETTINGS: 'settings',
   REPORTS: 'reports',
   ANALYTICS: 'analytics',
+  // Mapa de Actividades (DSG): read_all = ver, export = descarregar .xlsx,
+  // update = completar/corrigir linhas. Concedido explicitamente por role.
+  ACTIVITY_MAP: 'activity_map',
 } as const;
 
 export const ACTIONS = {
@@ -56,6 +59,10 @@ export const ACTIONS = {
   EXPORT: 'export',
   IMPORT: 'import',
   MANAGE: 'manage',
+  // Editar/anular e eliminar apenas os PROPRIOS registos, e so enquanto
+  // ninguem actuou sobre eles (ver utils/proprio-sem-accao.ts).
+  UPDATE_OWN: 'update_own',
+  DELETE_OWN: 'delete_own',
 } as const;
 
 /**

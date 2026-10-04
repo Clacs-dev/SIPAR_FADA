@@ -240,6 +240,7 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
 
   const [mapa, setMapa] = useState<Mapa | null>(null);
   const [podeEditar, setPodeEditar] = useState(false);
+  const [podeExportar, setPodeExportar] = useState(false);
   const [loading, setLoading] = useState(true);
   const [aDescarregar, setADescarregar] = useState(false);
   const [folha, setFolha] = useState('resumo');
@@ -261,6 +262,7 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
       if (!res.ok) throw new Error(body?.message || 'Erro ao carregar o Mapa de Actividades');
       setMapa(body.mapa);
       setPodeEditar(!!body.pode_editar);
+      setPodeExportar(!!body.pode_exportar);
     } catch (error: any) {
       console.error('Erro ao carregar o Mapa de Actividades:', error);
       toast.error(error?.message || 'Erro ao carregar o Mapa de Actividades');
@@ -344,10 +346,12 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
               </span>
             )}
           </Button>
-          <Button onClick={descarregar} disabled={aDescarregar || loading}>
-            {aDescarregar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Descarregar .xlsx{mapa && mapa.filtros_descricao.length > 0 ? ' (filtrado)' : ''}
-          </Button>
+          {podeExportar && (
+            <Button onClick={descarregar} disabled={aDescarregar || loading}>
+              {aDescarregar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              Descarregar .xlsx{mapa && mapa.filtros_descricao.length > 0 ? ' (filtrado)' : ''}
+            </Button>
+          )}
         </div>
       </div>
 

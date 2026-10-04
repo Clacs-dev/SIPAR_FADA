@@ -28,6 +28,7 @@ const MODULES = {
   SETTINGS: 'settings',
   REPORTS: 'reports',
   ANALYTICS: 'analytics',
+  ACTIVITY_MAP: 'activity_map',
 } as const;
 
 const A = {
@@ -42,12 +43,15 @@ const A = {
   EXPORT: 'export',
   IMPORT: 'import',
   MANAGE: 'manage',
+  UPDATE_OWN: 'update_own',
+  DELETE_OWN: 'delete_own',
 };
 
 // Reproduz exatamente o que os grupos estaticos concediam hoje
 // (server/src/utils/permissions.ts), menos os modulos exclusivamente
 // tecnicos que passam para o novo role admin_sistema.
 const EXECUTIVO_PERMISSIONS: PermissionSpec[] = [
+  { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
   { module: MODULES.AUDIENCES, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
   { module: MODULES.REQUESTS, actions: [A.READ_ALL, A.MANAGE, A.APPROVE, A.REJECT] },
@@ -67,6 +71,7 @@ const EXECUTIVO_PERMISSIONS: PermissionSpec[] = [
 // auditoria/email/BD/configuracoes, mais visao geral (read_all) sobre os
 // modulos de negocio para fins de supervisao/suporte.
 const ADMIN_TECNICO_PERMISSIONS: PermissionSpec[] = [
+  { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT] },
   { module: MODULES.USERS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.MANAGE] },
   { module: MODULES.DEPARTMENTS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.MANAGE] },
   { module: MODULES.ROLES, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.MANAGE] },
@@ -118,6 +123,7 @@ const ATENDENTE_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
+  { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },
   { module: MODULES.AUDIENCES, actions: [A.READ_ALL] },
   { module: MODULES.FINANCE, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
@@ -133,6 +139,7 @@ const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const COMPRAS_PERMISSIONS: PermissionSpec[] = [
+  { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },
   { module: MODULES.AUDIENCES, actions: [A.READ_ALL] },
   { module: MODULES.FINANCE, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.APPROVE, A.REJECT] },
@@ -144,6 +151,20 @@ const COMPRAS_PERMISSIONS: PermissionSpec[] = [
   { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },
   { module: MODULES.NOTIFICATIONS, actions: [A.READ_ALL] },
   { module: MODULES.REPORTS, actions: [A.READ_ALL, A.CREATE] },
+];
+
+// DSG Tecnico: submete em nome dos fornecedores (pedidos, fornecedores,
+// cotacoes, facturas/proformas) e ve o Mapa de Impostos. So edita/anula/
+// elimina os seus proprios documentos enquanto ninguem actuou sobre eles
+// (update_own/delete_own) - nunca valida, aprova, rejeita ou paga. O Mapa de
+// Actividades (activity_map) so se o Administrador do Sistema o conceder.
+// Manter igual a DSG_TECNICO_PERMISSIONS em src/services/rbac-sync.service.ts.
+const DSG_TECNICO_PERMISSIONS: PermissionSpec[] = [
+  { module: MODULES.FINANCE, actions: [A.CREATE, A.READ_ALL, A.UPDATE_OWN, A.DELETE_OWN] },
+  { module: MODULES.INVOICES, actions: [A.CREATE, A.READ_ALL, A.UPDATE_OWN, A.DELETE_OWN] },
+  { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },
+  { module: MODULES.NOTIFICATIONS, actions: [A.READ_ALL] },
+  { module: MODULES.SCHEDULE, actions: [A.READ_ALL] },
 ];
 
 const USUARIO_PERMISSIONS: PermissionSpec[] = [
@@ -208,6 +229,7 @@ const ROLE_LABELS: Record<string, string> = {
   operacoes: 'Operações',
   operacional_frota: 'Operacional de Frota',
   compras: 'Procurement / Compras',
+  dsg_tecnico: 'DSG Técnico',
   externo: 'Utilizador Externo',
   admin_sistema: 'Administrador do Sistema',
   publico: 'Submissão Pública (sem login)',
@@ -279,11 +301,12 @@ async function seedRoles() {
   for (const slug of OPERADOR_ROLES) await seedRole(slug, ATENDENTE_PERMISSIONS, true);
   for (const slug of COMPRAS_ROLES) await seedRole(slug, COMPRAS_PERMISSIONS, true);
   for (const slug of USUARIO_ROLES) await seedRole(slug, USUARIO_PERMISSIONS, true);
+  await seedRole('dsg_tecnico', DSG_TECNICO_PERMISSIONS, true);
   await seedRole('admin_sistema', ADMIN_TECNICO_PERMISSIONS, true);
   await seedRole('publico', PUBLICO_PERMISSIONS, true);
 
   const total = EXECUTIVO_ROLES.length + ATENDENTE_ROLES.length + GERENTE_ROLES.length
-    + FINANCEIRO_ROLES.length + OPERADOR_ROLES.length + COMPRAS_ROLES.length + USUARIO_ROLES.length + 2;
+    + FINANCEIRO_ROLES.length + OPERADOR_ROLES.length + COMPRAS_ROLES.length + USUARIO_ROLES.length + 3;
  console.log(`[Seed RBAC] ${total} roles sincronizados (incluindo admin_sistema).`);
 }
 

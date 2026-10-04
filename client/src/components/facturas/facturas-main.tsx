@@ -22,6 +22,8 @@ import { FacturaForm } from "./factura-form";
 import { FacturaDetails } from "./factura-details";
 import { OrdensPagamentoInterna } from "./ordens-pagamento-interna";
 import { MapaActividades } from "../shared/mapa-actividades";
+import { MapaImpostos } from "../shared/mapa-impostos";
+import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
 import { useAuth } from "../auth/auth-context";
 import { DepartmentFilter } from "../common/department-filter";
@@ -40,6 +42,7 @@ interface FacturasMainProps {
 
 export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: FacturasMainProps = {}) {
   const { user, accessToken } = useAuth();
+  const { pode } = useMyPermissions();
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -288,10 +291,12 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
 
  console.log('Enviando factura para o backend:', facturaData);
 
+      // Editar (factura seleccionada) actualiza-a; caso contrario cria uma nova.
+      const aEditar = !!selectedFactura?.id;
       const response = await fetch(
-        `${API_BASE_URL}/facturas?all=true`,
+        aEditar ? `${API_BASE_URL}/facturas/${selectedFactura!.id}` : `${API_BASE_URL}/facturas?all=true`,
         {
-          method: 'POST',
+          method: aEditar ? 'PUT' : 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
@@ -301,8 +306,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao guardar factura');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao guardar factura');
       }
 
       const data = await response.json();
@@ -764,12 +769,52 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
   // EXTERNO: Fornecedores podem submeter e visualizar suas próprias facturas
   const isExterno = userRole === 'externo';
 
+  // DSG Técnico: regista facturas/proformas em nome dos fornecedores; não valida, aprova nem paga.
+  const isDsgTecnico = userRole === 'dsg_tecnico';
+
   // Definir permissões
   const canValidate = isCompras; // Apenas Compras valida
   const canApprove = isGabineteExecutivo; // Apenas Gabinetes Executivos aprovam
   const canPay = isFinanceiro; // Apenas Financeiro marca como pago
-  const canView = isCompras || isFinanceiro || isGabineteExecutivo || isExterno; // Incluir externos
-  const canCreate = isExterno; // Fornecedores externos podem criar facturas
+  // Ver/criar seguem as permissões do role (Roles e Permissões).
+  const canView = isCompras || isFinanceiro || isGabineteExecutivo || isExterno || pode('invoices', ['read_all', 'read_own']);
+  const canCreate = isExterno || pode('invoices', 'create'); // inclui o DSG Técnico (em nome do fornecedor)
+
+  // Editar / anular / eliminar: só a própria factura e enquanto ninguém actuou
+  // sobre ela (mesma regra do servidor - utils/proprio-sem-accao.ts).
+  const facturaSemAccao = (f: Factura) =>
+    ['rascunho', 'registada', 'pendente'].includes(f.status)
+    && !(f as any).validado_at && !(f as any).aprovado_at && !(f as any).rejeitado_at
+    && !f.numero_ordem_pagamento;
+  const podeAlterarPropria = (f: Factura | null, accao: 'update' | 'delete') =>
+    !!f && !!user && f.created_by_id === user.id && facturaSemAccao(f)
+    && pode('invoices', [accao, `${accao}_own`]);
+
+  const handleAnularOuEliminar = async (accao: 'anular' | 'eliminar') => {
+    if (!accessToken || !selectedFactura) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch(
+        accao === 'anular' ? `${API_BASE_URL}/facturas/${selectedFactura.id}/cancelar` : `${API_BASE_URL}/facturas/${selectedFactura.id}`,
+        {
+          method: accao === 'anular' ? 'POST' : 'DELETE',
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || body.error || 'Operação não permitida');
+      toast.success(accao === 'anular' ? 'Factura anulada' : 'Factura eliminada');
+      const lista = await fetch(`${API_BASE_URL}/facturas?all=true`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+      if (lista.ok) setFacturas((await lista.json()).facturas || []);
+      setView('list');
+      setSelectedFactura(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Operação não permitida');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Bloquear acesso para utilizadores sem permissão
   if (!canView) {
@@ -815,6 +860,10 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
           setSelectedFactura(null);
         }}
         onEdit={() => setView('form')}
+        podeEditar={podeAlterarPropria(selectedFactura, 'update')}
+        podeEliminar={podeAlterarPropria(selectedFactura, 'delete')}
+        onAnular={() => handleAnularOuEliminar('anular')}
+        onEliminar={() => handleAnularOuEliminar('eliminar')}
         onValidate={handleValidate}
         onApprove={handleApprove}
         onReject={handleReject}
@@ -845,7 +894,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
             }
           </p>
         </div>
-        {(isFinanceiro || user?.role === 'admin' || canCreate) && (
+        {(isFinanceiro || canCreate) && (
           <Button onClick={() => setView('form')}>
             <Plus className="mr-2 h-4 w-4" />
             Nova Factura
@@ -877,7 +926,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       {!loading && !error && (
         <>
           {/* Tabs - Com filtros avançados para Admin, Compras, Financeiro e Gabinetes Executivos */}
-          {(user?.role === 'admin' || user?.role === 'compras' || user?.role === 'Compras' || user?.department === 'Compras' || isFinanceiro || isGabineteExecutivo) ? (
+          {(isCompras || user?.department === 'Compras' || isFinanceiro || isGabineteExecutivo || isDsgTecnico || pode('invoices', 'read_all')) ? (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
                 <TabsTrigger value="dashboard">
@@ -916,16 +965,42 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                   <DollarSign className="mr-2 h-4 w-4" />
                   Pagos ({facturas.filter(f => f.status === 'pago').length})
                 </TabsTrigger>
-                <TabsTrigger value="mapa_actividades">
-                  <ClipboardList className="mr-2 h-4 w-4" />
-                  Mapa de Actividades
-                </TabsTrigger>
+                {pode('invoices', 'read_all') && (
+                  <TabsTrigger value="mapa_impostos">
+                    <FileText className="mr-2 h-4 w-4" />
+                    Mapa de Impostos
+                  </TabsTrigger>
+                )}
+                {pode('activity_map', 'read_all') && (
+                  <TabsTrigger value="mapa_actividades">
+                    <ClipboardList className="mr-2 h-4 w-4" />
+                    Mapa de Actividades
+                  </TabsTrigger>
+                )}
               </TabsList>
 
+            {/* Mapa de Impostos - clicar numa linha abre a factura */}
+            {pode('invoices', 'read_all') && (
+              <TabsContent value="mapa_impostos">
+                <MapaImpostos
+                  contexto="financeiro"
+                  onOpenFactura={(facturaId) => {
+                    const alvo = facturas.find((f) => f.id === facturaId);
+                    if (alvo) {
+                      setSelectedFactura(alvo);
+                      setView('details');
+                    }
+                  }}
+                />
+              </TabsContent>
+            )}
+
             {/* Mapa de Actividades (DSG) */}
-            <TabsContent value="mapa_actividades">
-              <MapaActividades contexto="financeiro" />
-            </TabsContent>
+            {pode('activity_map', 'read_all') && (
+              <TabsContent value="mapa_actividades">
+                <MapaActividades contexto="financeiro" />
+              </TabsContent>
+            )}
 
             {/* Dashboard */}
             <TabsContent value="dashboard">

@@ -54,6 +54,8 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     fornecedor_id: factura?.fornecedor_id || '',
     numero_fornecedor: factura?.numero_fornecedor || '',
     tipo: factura?.tipo || '' as FacturaTipo | '',
+    // Factura definitiva (VFA) ou proforma (VFAP) - igual ao portal externo.
+    tipo_documento: (factura?.tipo_documento || 'factura') as 'factura' | 'factura_proforma' | 'outro',
     data_emissao: factura?.data_emissao || '',
     data_vencimento: factura?.data_vencimento || '',
     data_recebimento: factura?.data_recebimento || new Date().toISOString().split('T')[0],
@@ -518,6 +520,21 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
             </select>
             <p className="text-xs text-muted-foreground">
               Selecione se a factura é de mercadoria, serviço ou ambos
+            </p>
+          </div>
+          <div className="space-y-2 mt-4">
+            <Label htmlFor="tipo_documento">Documento *</Label>
+            <select
+              id="tipo_documento"
+              className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              value={formData.tipo_documento}
+              onChange={(e) => handleChange('tipo_documento', e.target.value)}
+            >
+              <option value="factura">Factura</option>
+              <option value="factura_proforma">Factura Proforma</option>
+            </select>
+            <p className="text-xs text-muted-foreground">
+              Facturas proforma são aceites para efeitos de cotação/aprovação prévia (VFAP no Mapa de Actividades)
             </p>
           </div>
         </CardContent>

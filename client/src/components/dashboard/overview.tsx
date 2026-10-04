@@ -23,7 +23,8 @@ import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 import { toast } from "sonner@2.0.3";
 import { apiClient } from "../../utils/api-client";
-import { getMenuItems, getExtendedProfile, filterMenuItemsByLicense } from "../auth/permissions";
+import { getMenuItems, getExtendedProfile, filterMenuItemsByLicense, filterMenuItemsByPermissions } from "../auth/permissions";
+import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useLicense } from "../../hooks/use-license";
 
 type Tone = 'accent' | 'gold' | 'success' | 'warn' | 'danger' | 'info' | 'neutral';
@@ -132,8 +133,12 @@ export function DashboardOverview({ onTabChange }: { onTabChange?: (tab: string)
   // acesso (ex: Financeiro/Compras nao trabalham com Apresentacoes/Audiencias,
   // e um utilizador comum nao gere Compras).
   const { data: licenseData } = useLicense();
+  const { permissoes } = useMyPermissions();
   const menuItems = user
-    ? filterMenuItemsByLicense(getMenuItems(user.role, user.department, user.position), licenseData?.license?.modules)
+    ? filterMenuItemsByPermissions(
+        filterMenuItemsByLicense(getMenuItems(user.role, user.department, user.position), licenseData?.license?.modules),
+        permissoes
+      )
     : [];
   const hasMenuItem = (id: string) => menuItems.some((item) => item.id === id && item.show);
   const profile = user ? getExtendedProfile(user.role, user.department, user.position) : 'user';

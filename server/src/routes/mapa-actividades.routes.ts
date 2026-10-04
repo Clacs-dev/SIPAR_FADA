@@ -40,14 +40,20 @@ async function permissoesDe(req: AuthenticatedRequest) {
   return permissions.getUserPermissions(user.role as any, user.department, undefined);
 }
 
+// Permissao propria do Mapa (modulo activity_map), concedida por role no
+// ecra "Roles e Permissoes": read_all = ver, export = descarregar, update =
+// completar/corrigir linhas. (Os roles que ja viam o mapa pela regra antiga
+// receberam-na automaticamente - ver services/rbac-sync.service.ts.)
 async function podeLer(req: AuthenticatedRequest) {
-  const p = await permissoesDe(req);
-  return permissions.hasPermission(p, 'invoices', 'read_all') || permissions.hasPermission(p, 'finance', 'read_all');
+  return permissions.hasPermission(await permissoesDe(req), permissions.MODULES.ACTIVITY_MAP, permissions.ACTIONS.READ_ALL);
+}
+
+async function podeExportar(req: AuthenticatedRequest) {
+  return permissions.hasPermission(await permissoesDe(req), permissions.MODULES.ACTIVITY_MAP, permissions.ACTIONS.EXPORT);
 }
 
 async function podeEditar(req: AuthenticatedRequest) {
-  const p = await permissoesDe(req);
-  return permissions.hasPermission(p, 'invoices', 'update') || permissions.hasPermission(p, 'finance', 'update');
+  return permissions.hasPermission(await permissoesDe(req), permissions.MODULES.ACTIVITY_MAP, permissions.ACTIONS.UPDATE);
 }
 
 function lerPeriodo(query: any) {
@@ -103,7 +109,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunct
     if (!periodo) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Periodo invalido (ano/mes)' });
     const mapa = await construirDoPedido(req, periodo);
     await auditar(req, mapa.filtros_descricao.length ? 'MAPA_ACTIVIDADES_FILTRADO' : 'MAPA_ACTIVIDADES_CONSULTADO', mapa);
-    return res.status(200).json({ mapa, pode_editar: await podeEditar(req) });
+    return res.status(200).json({ mapa, pode_editar: await podeEditar(req), pode_exportar: await podeExportar(req) });
   } catch (error) {
     next(error);
   }
@@ -111,7 +117,7 @@ router.get('/', async (req: AuthenticatedRequest, res: Response, next: NextFunct
 
 router.get('/export', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    if (!(await podeLer(req))) return negar(res);
+    if (!(await podeLer(req)) || !(await podeExportar(req))) return negar(res);
     const periodo = lerPeriodo(req.query);
     if (!periodo) return res.status(400).json({ error: 'BAD_REQUEST', message: 'Periodo invalido (ano/mes)' });
     const mapa = await construirDoPedido(req, periodo);

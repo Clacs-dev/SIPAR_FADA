@@ -7,7 +7,8 @@ import { useState, useEffect } from "react";
 import {
   Package, Plus, Eye, FileText, Clock,
   CheckCircle2, XCircle, TrendingUp, AlertCircle,
-  DollarSign, Building2, ShoppingBag, Calendar, Send, ClipboardList
+  DollarSign, Building2, ShoppingBag, Calendar, Send, ClipboardList,
+  Pencil, Ban, Trash2
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
@@ -23,9 +24,15 @@ import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
 import { MapaActividades } from "../shared/mapa-actividades";
+import { MapaImpostos } from "../shared/mapa-impostos";
+import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useClientPagination } from "../../hooks/use-client-pagination";
 import { PaginationBar } from "../common/pagination-bar";
-import type { PedidoCompra, StatusPedidoCompra } from "./types";
+import type { CotacaoFornecedor, PedidoCompra, StatusPedidoCompra } from "./types";
+import { CotacaoFormDialog } from "./cotacao-form-dialog";
+import { useAuth } from "../auth/auth-context";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Label } from "../ui/label";
 
 export function ComprasMain() {
   const [activeTab, setActiveTab] = useState("todos");
@@ -33,6 +40,39 @@ export function ComprasMain() {
   const [fornecedoresView, setFornecedoresView] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<PedidoCompra | null>(null);
+  // Pedido em edicao no PedidoFormDialog (null = novo pedido).
+  const [pedidoEmEdicao, setPedidoEmEdicao] = useState<PedidoCompra | null>(null);
+  // Registo/edicao de cotacao em nome de um fornecedor (mesmo formulario do portal).
+  const [escolherFornecedorOpen, setEscolherFornecedorOpen] = useState(false);
+  const [fornecedorEscolhido, setFornecedorEscolhido] = useState("");
+  const [cotacaoForm, setCotacaoForm] = useState<{ fornecedorId: string; fornecedorNome: string; cotacao: CotacaoFornecedor | null } | null>(null);
+  const [versaoCotacoes, setVersaoCotacoes] = useState(0);
+
+  const { user } = useAuth();
+  const { pode } = useMyPermissions();
+  // O que aparece depende das permissoes do role (Roles e Permissoes):
+  const podeMapaActividades = pode('activity_map', 'read_all');
+  const podeMapaImpostos = pode('invoices', 'read_all');             // o mapa le todas as facturas
+  const podeCriar = pode('finance', 'create');                       // novo pedido, cotacao em nome do fornecedor
+  const podeDecidir = pode('finance', 'approve');                    // analisar, aprovar, confirmar rececao
+  const podeVerFornecedores = pode('finance', ['read_all', 'create']);
+  // Documento proprio e ainda sem accao (regra do servidor, utils/proprio-sem-accao.ts).
+  const pedidoProprioSemAccao = (p: PedidoCompra) =>
+    !!user && (p as any).created_by_id === user.id
+    && (p.status === 'criado' || (p.status === 'aguardando_cotacoes' && !(p.total_cotacoes > 0)));
+  const podeEditarPedido = (p: PedidoCompra) => pedidoProprioSemAccao(p) && pode('finance', ['update', 'update_own']);
+  const podeEliminarPedido = (p: PedidoCompra) => pedidoProprioSemAccao(p) && pode('finance', ['delete', 'delete_own']);
+  const podePublicar = (p: PedidoCompra) => p.status === 'criado'
+    && (pode('finance', 'update') || (pode('finance', 'update_own') && !!user && (p as any).created_by_id === user.id));
+  const cotacaoSemAccao = (c: any) => !c.selected && (!c.status || ['recebida', 'submetida'].includes(c.status))
+    && !!selectedPedido && ['aguardando_cotacoes', 'em_cotacao'].includes(selectedPedido.status);
+  const permissoesCotacao = (c: any) => {
+    const minha = !!user && c.registado_por_id === user.id;
+    return {
+      editar: cotacaoSemAccao(c) && (pode('finance', 'update') || (pode('finance', 'update_own') && minha)),
+      eliminar: cotacaoSemAccao(c) && (pode('finance', 'delete') || (pode('finance', 'delete_own') && minha)),
+    };
+  };
 
   const {
     pedidos,
@@ -41,6 +81,13 @@ export function ComprasMain() {
     fetchPedidos,
     fetchStats,
     createPedido,
+    updatePedido,
+    deletePedido,
+    cancelarPedido,
+    submitCotacao,
+    editarCotacao,
+    anularCotacao,
+    eliminarCotacao,
     publicarPedido,
     analisarCotacoes,
     aprovarCotacao,
@@ -96,7 +143,7 @@ export function ComprasMain() {
   };
 
   const handleCreatePedido = async (data: any) => {
-    const pedido = await createPedido(data);
+    const pedido = pedidoEmEdicao ? await updatePedido(pedidoEmEdicao.id, data) : await createPedido(data);
     if (pedido) {
       setFormOpen(false);
       fetchStats();
@@ -138,6 +185,50 @@ export function ComprasMain() {
       toast.success("Receção confirmada. A factura foi enviada para Gestão de Pagamento (Validados).");
       await fetchOrdens();
     }
+  };
+
+  const handleEliminarPedido = async (p: PedidoCompra) => {
+    if (!window.confirm(`Eliminar o pedido ${p.numero}? Vai para a Lixeira.`)) return;
+    if (await deletePedido(p.id)) fetchStats();
+  };
+
+  const handleAnularPedido = async (p: PedidoCompra) => {
+    const motivo = window.prompt(`Anular o pedido ${p.numero}? Indique o motivo:`);
+    if (motivo === null) return;
+    if (await cancelarPedido(p.id, motivo)) fetchStats();
+  };
+
+  // ---- Cotacoes em nome do fornecedor (cada fornecedor so pode ter uma por pedido)
+  const fornecedoresJaCotados = new Set(
+    (selectedPedido?.cotacoes || []).filter((c: any) => c.status !== 'anulada').map((c) => c.fornecedor_id)
+  );
+  const fornecedoresDisponiveis = fornecedores.filter(
+    (f: any) => f.situacao !== 'bloqueado' && f.situacao !== 'inativo' && !fornecedoresJaCotados.has(f.id)
+  );
+
+  const abrirRegistoCotacao = () => {
+    setFornecedorEscolhido("");
+    setEscolherFornecedorOpen(true);
+  };
+  const abrirRegistoCotacaoPara = (_pedido: PedidoCompra) => abrirRegistoCotacao();
+
+  const confirmarFornecedor = () => {
+    const f: any = fornecedores.find((x: any) => x.id === fornecedorEscolhido);
+    if (!f) return;
+    setEscolherFornecedorOpen(false);
+    setCotacaoForm({ fornecedorId: f.id, fornecedorNome: f.nome || f.nome_empresa || f.email, cotacao: null });
+  };
+
+  const submeterCotacaoForm = async (data: any) => {
+    if (!selectedPedido || !cotacaoForm) return false;
+    const ok = cotacaoForm.cotacao
+      ? await editarCotacao(selectedPedido.id, cotacaoForm.cotacao.id, data)
+      : await submitCotacao(selectedPedido.id, { ...data, fornecedor_id: cotacaoForm.fornecedorId });
+    if (ok) {
+      setVersaoCotacoes((v) => v + 1);
+      fetchStats();
+    }
+    return ok;
   };
 
   // Filtrar pedidos por tab
@@ -189,14 +280,18 @@ export function ComprasMain() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setFornecedoresView(true)}>
-            <Building2 className="mr-2 h-4 w-4" />
-            Fornecedores ({fornecedores.length})
-          </Button>
-          <Button onClick={() => setFormOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Pedido
-          </Button>
+          {podeVerFornecedores && (
+            <Button variant="outline" onClick={() => setFornecedoresView(true)}>
+              <Building2 className="mr-2 h-4 w-4" />
+              Fornecedores ({fornecedores.length})
+            </Button>
+          )}
+          {podeCriar && (
+            <Button onClick={() => { setPedidoEmEdicao(null); setFormOpen(true); }}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Pedido
+            </Button>
+          )}
         </div>
       </div>
 
@@ -263,17 +358,33 @@ export function ComprasMain() {
           <TabsTrigger value="concluidos">
             Concluídos ({pedidos.filter(p => p.status === "concluido").length})
           </TabsTrigger>
-          <TabsTrigger value="mapa-actividades">
-            <ClipboardList className="mr-2 h-4 w-4" />
-            Mapa de Actividades
-          </TabsTrigger>
+          {podeMapaImpostos && (
+            <TabsTrigger value="mapa-impostos">
+              <FileText className="mr-2 h-4 w-4" />
+              Mapa de Impostos
+            </TabsTrigger>
+          )}
+          {podeMapaActividades && (
+            <TabsTrigger value="mapa-actividades">
+              <ClipboardList className="mr-2 h-4 w-4" />
+              Mapa de Actividades
+            </TabsTrigger>
+          )}
         </TabsList>
 
-        <TabsContent value="mapa-actividades" className="mt-6">
-          <MapaActividades contexto="compras" />
-        </TabsContent>
+        {podeMapaImpostos && (
+          <TabsContent value="mapa-impostos" className="mt-6">
+            <MapaImpostos contexto="compras" />
+          </TabsContent>
+        )}
 
-        {activeTab !== "mapa-actividades" && (
+        {podeMapaActividades && (
+          <TabsContent value="mapa-actividades" className="mt-6">
+            <MapaActividades contexto="compras" />
+          </TabsContent>
+        )}
+
+        {activeTab !== "mapa-actividades" && activeTab !== "mapa-impostos" && (
         <TabsContent value={activeTab} className="space-y-4 mt-6">
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
@@ -364,13 +475,37 @@ export function ComprasMain() {
                       <Eye className="h-4 w-4 mr-1" />
                       Ver Detalhes
                     </Button>
-                    {pedido.status === "criado" && (
+                    {podeEditarPedido(pedido) && (
+                      <Button size="sm" variant="outline" onClick={() => { setPedidoEmEdicao(pedido); setFormOpen(true); }}>
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Editar
+                      </Button>
+                    )}
+                    {podeEditarPedido(pedido) && (
+                      <Button size="sm" variant="outline" onClick={() => handleAnularPedido(pedido)}>
+                        <Ban className="h-4 w-4 mr-1" />
+                        Anular
+                      </Button>
+                    )}
+                    {podeEliminarPedido(pedido) && (
+                      <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50" onClick={() => handleEliminarPedido(pedido)}>
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Eliminar
+                      </Button>
+                    )}
+                    {podeCriar && ["aguardando_cotacoes", "em_cotacao"].includes(pedido.status) && (
+                      <Button size="sm" variant="outline" onClick={() => { setSelectedPedido(pedido); abrirRegistoCotacaoPara(pedido); }}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Registar Cotação
+                      </Button>
+                    )}
+                    {podePublicar(pedido) && (
                       <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-info)' }} onClick={(e) => handlePublicarPedido(pedido.id, e)}>
                         <Send className="h-4 w-4 mr-1" />
                         Publicar para Fornecedores
                       </Button>
                     )}
-                    {pedido.status === "em_cotacao" && (
+                    {podeDecidir && pedido.status === "em_cotacao" && (
                       <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-accent)' }} onClick={() => handleAnalisar(pedido.id)}>
                         <AlertCircle className="h-4 w-4 mr-1" />
                         Analisar Cotações
@@ -384,7 +519,7 @@ export function ComprasMain() {
                           Ordem de Compra ({ordem.numero})
                         </Button>
                       ))}
-                    {pedido.status === "concluido" && ordensCompra
+                    {podeDecidir && pedido.status === "concluido" && ordensCompra
                       .filter(o => o.pedido_id === pedido.id && o.status !== "recebida")
                       .map(ordem => (
                         <Button key={ordem.id} size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => handleConfirmarRececao(ordem.id)}>
@@ -392,7 +527,7 @@ export function ComprasMain() {
                           Confirmar Receção ({ordem.numero})
                         </Button>
                       ))}
-                    {pedido.status === "em_analise" && (
+                    {podeDecidir && pedido.status === "em_analise" && (
                       <Button size="sm" className="text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-success)' }} onClick={() => handleAprovar(pedido.id, pedido.cotacao_vencedora_id)}>
                         <CheckCircle2 className="h-4 w-4 mr-1" />
                         Aprovar Cotação
@@ -411,17 +546,72 @@ export function ComprasMain() {
       {/* Dialog de Formulário */}
       <PedidoFormDialog
         open={formOpen}
-        onClose={() => setFormOpen(false)}
+        onClose={() => { setFormOpen(false); setPedidoEmEdicao(null); }}
         onSubmit={handleCreatePedido}
+        pedido={pedidoEmEdicao}
       />
+
+      {/* Escolher o fornecedor em nome de quem se regista a cotacao */}
+      <Dialog open={escolherFornecedorOpen} onOpenChange={setEscolherFornecedorOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Registar cotação em nome do fornecedor</DialogTitle>
+            <DialogDescription>
+              Pedido {selectedPedido?.numero}. Cada fornecedor só pode ter uma cotação por pedido — os que já cotaram não aparecem na lista.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Fornecedor</Label>
+            <select
+              className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              value={fornecedorEscolhido}
+              onChange={(e) => setFornecedorEscolhido(e.target.value)}
+            >
+              <option value="">Seleccione o fornecedor...</option>
+              {fornecedoresDisponiveis.map((f: any) => (
+                <option key={f.id} value={f.id}>{f.nome || f.nome_empresa}{f.nif ? ` — NIF ${f.nif}` : ''}</option>
+              ))}
+            </select>
+            {fornecedoresDisponiveis.length === 0 && (
+              <p className="text-sm text-muted-foreground">Todos os fornecedores activos já têm cotação neste pedido.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEscolherFornecedorOpen(false)}>Cancelar</Button>
+            <Button onClick={confirmarFornecedor} disabled={!fornecedorEscolhido}>Continuar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedPedido && cotacaoForm && (
+        <CotacaoFormDialog
+          open={!!cotacaoForm}
+          onClose={() => setCotacaoForm(null)}
+          pedido={selectedPedido}
+          fornecedorId={cotacaoForm.fornecedorId}
+          fornecedorNome={cotacaoForm.fornecedorNome}
+          cotacao={cotacaoForm.cotacao}
+          onSubmit={submeterCotacaoForm}
+        />
+      )}
 
       {/* Dialog de Detalhes */}
       <PedidoDetailsDialog
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
         pedido={selectedPedido}
-        onAnalisar={handleAnalisar}
-        onAprovar={handleAprovar}
+        onAnalisar={podeDecidir ? handleAnalisar : undefined}
+        onAprovar={podeDecidir ? handleAprovar : undefined}
+        onRegistarCotacao={podeCriar ? abrirRegistoCotacao : undefined}
+        permissoesCotacao={permissoesCotacao}
+        onEditarCotacao={(c) => setCotacaoForm({ fornecedorId: c.fornecedor_id, fornecedorNome: c.fornecedor_nome, cotacao: c as any })}
+        onAnularCotacao={async (c) => {
+          if (selectedPedido && await anularCotacao(selectedPedido.id, c.id)) { setVersaoCotacoes((v) => v + 1); fetchStats(); }
+        }}
+        onEliminarCotacao={async (c) => {
+          if (selectedPedido && await eliminarCotacao(selectedPedido.id, c.id)) { setVersaoCotacoes((v) => v + 1); fetchStats(); }
+        }}
+        versaoCotacoes={versaoCotacoes}
       />
     </div>
   );

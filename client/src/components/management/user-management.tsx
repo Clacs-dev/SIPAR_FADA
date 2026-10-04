@@ -35,10 +35,16 @@ const LEGACY_ROLE_OPTIONS = [
   { value: 'user', label: 'Usuario comum' }
 ];
 
+// Perfis que nao correspondem a um departamento (o role nao e um slug de
+// Department). As permissoes de cada um gerem-se em "Roles e Permissoes".
+const SPECIAL_ROLE_OPTIONS = [
+  { value: 'dsg_tecnico', label: 'DSG Técnico (submete em nome dos fornecedores)' },
+];
+
 const isDepartmentRole = (departments: DepartmentLike[], role: string) => departments.some((department) => department.slug === role);
 
 const getRoleLabel = (departments: DepartmentLike[], role: string) => {
-  const legacyRole = LEGACY_ROLE_OPTIONS.find((option) => option.value === role);
+  const legacyRole = [...LEGACY_ROLE_OPTIONS, ...SPECIAL_ROLE_OPTIONS].find((option) => option.value === role);
   if (legacyRole) {
     return legacyRole.label;
   }
@@ -127,6 +133,8 @@ export function UserManagement() {
         return <Badge className="bg-tone-info-soft text-tone-info">Atendente</Badge>;
       case 'user':
         return <Badge className="bg-tone-success-soft text-tone-success">Usuário</Badge>;
+      case 'dsg_tecnico':
+        return <Badge className="bg-tone-info-soft text-tone-info">DSG Técnico</Badge>;
       default:
         return <Badge>{role || 'Sem papel'}</Badge>;
     }
@@ -401,6 +409,14 @@ export function UserManagement() {
                       <SelectGroup>
                         <SelectLabel>Papéis clássicos</SelectLabel>
                         {LEGACY_ROLE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                      <SelectGroup>
+                        <SelectLabel>Perfis especiais</SelectLabel>
+                        {SPECIAL_ROLE_OPTIONS.map((option) => (
                           <SelectItem key={option.value} value={option.value}>
                             {option.label}
                           </SelectItem>

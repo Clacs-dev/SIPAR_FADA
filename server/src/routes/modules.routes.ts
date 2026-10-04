@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
+import { autorDaCotacao, cotacaoSemAccao, fornecedorSemAccao, MENSAGEM_SEM_ACCAO, nivelDeAcesso, pedidoSemAccao, temPermissao } from '../utils/proprio-sem-accao';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
@@ -13,6 +14,7 @@ import { SequenceService } from '../services/sequence.service';
 import { HistoryService } from '../services/history.service';
 import { montarFacturaDaOrdem, montarDocumentoOrdemCompra, garantirOrdemCompraDaFactura } from '../services/procurement-factura.service';
 import logger from '../config/logger';
+import { auditService } from '../services/audit.service';
 import prisma from '../config/database';
 
 const router = Router();
@@ -167,7 +169,7 @@ function procurementToPedido(record: any, cotacoes: any[] = []) {
     departamento_solicitante: data.departamento_solicitante || data.departamento || '',
     itens: safeParse(data.itens || data.items, []),
     cotacoes,
-    total_cotacoes: cotacoes.length,
+    total_cotacoes: cotacoes.filter((c: any) => c?.status !== 'anulada').length,
     fornecedor_vencedor_id: record.fornecedorId,
     fornecedor_vencedor_nome: record.fornecedor,
     valor_aprovado: record.valor,
@@ -208,6 +210,10 @@ function cotacaoToResource(record: any) {
     fornecedor_nome: record.fornecedor,
     fornecedor_email: record.email,
     valor_total: record.valor,
+    // "anulada" = retirada (nao conta para analise/ranking); ver rotas
+    // /cotacoes/:cotacaoId (editar, anular, eliminar).
+    status: record.status,
+    selected: record.selected,
     submitted_at: record.createdAt?.toISOString?.() || record.createdAt,
     anexos: normalizeAnexos(safeParse(record.anexos, [])),
   };
@@ -483,6 +489,48 @@ function registerCrud(config: ModuleConfig) {
   });
 
   if (config.name === 'procurement') {
+    // --- Regras de acesso do Procurement -------------------------------------
+    // Decisoes (analisar/validar/aprovar cotacoes, emitir ordem, confirmar
+    // rececao) so para quem pode aprovar no Procurement (finance:approve).
+    // Roles so com update_own/delete_own (ex: DSG Tecnico) apenas submetem e
+    // so alteram os SEUS documentos enquanto ninguem actuou sobre eles.
+    const exigirDecisaoProcurement = async (req: any, res: any, next: any) => {
+      try {
+        if (await temPermissao(req, 'finance', 'approve')) return next();
+        await auditService.logAction('unauthorized_access_attempt', 'warning', { module: 'finance', action: 'approve', attemptedResource: req.originalUrl }, {
+          userId: req.user?.id, userEmail: req.user?.email, userRole: req.user?.role, ipAddress: req.ip || 'unknown', success: false,
+        });
+        return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para decidir no Procurement (analisar, validar, aprovar, emitir ordem ou confirmar rececao).' });
+      } catch (error) {
+        next(error);
+      }
+    };
+    const soProprios = async (req: any, acaoTotal: string, acaoPropria: string) =>
+      (await nivelDeAcesso(req, 'finance', acaoTotal, acaoPropria)) === 'proprio';
+    const negarSemAccao = (res: any) => res.status(403).json({ error: 'FORBIDDEN', message: MENSAGEM_SEM_ACCAO });
+    const auditarProcurement = (req: any, acao: string, resourceId: string, metadata: any = {}) =>
+      auditService.logAction(acao, 'info', metadata, {
+        userId: req.user?.id, userEmail: req.user?.email, userRole: req.user?.role, ipAddress: req.ip || 'unknown',
+        resource: 'procurement', resourceId, success: true,
+      }).catch(() => null);
+    const contagemCotacoesActivas = (pedidoId: string) =>
+      prisma.purchaseQuotation.count({ where: { procurementId: pedidoId, status: { not: 'anulada' } } });
+    // Volta o pedido a "aguardando_cotacoes" quando deixa de ter cotacoes activas.
+    const sincronizarEstadoPedido = async (pedidoId: string) => {
+      const pedido = await prisma.procurement.findUnique({ where: { id: pedidoId } });
+      if (!pedido || pedido.status !== 'em_cotacao') return;
+      if ((await contagemCotacoesActivas(pedidoId)) === 0) {
+        await prisma.procurement.update({ where: { id: pedidoId }, data: { status: 'aguardando_cotacoes' } });
+      }
+    };
+
+    const fornecedorSemDocumentos = async (fornecedorId: string) => fornecedorSemAccao({
+      cotacoes: await prisma.purchaseQuotation.count({ where: { fornecedorId } }),
+      ordens: await prisma.purchaseOrder.count({ where: { fornecedorId } }),
+      pedidos: await prisma.procurement.count({ where: { fornecedorId } }),
+      facturas: await prisma.factura.count({ where: { deletedAt: null, data: { contains: fornecedorId } } }),
+    });
+
     router.get(`${config.path}/stats`, requireAuth as any, requireLicense as any, async (_req, res, next) => {
       try {
         const [pedidos, fornecedores, ordens] = await Promise.all([
@@ -572,6 +620,10 @@ function registerCrud(config: ModuleConfig) {
       try {
         const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+        if (await soProprios(req, 'update', 'update_own')) {
+          if (existing.createdById !== (req as any).user?.id || !pedidoSemAccao(existing, await contagemCotacoesActivas(existing.id))) return negarSemAccao(res);
+          delete req.body.status;
+        }
         const data = { ...safeParse(existing.data, {}), ...req.body };
         if (req.body?.status && !PROCUREMENT_PEDIDO_STATUSES.includes(req.body.status)) {
           return res.status(400).json({
@@ -597,6 +649,12 @@ function registerCrud(config: ModuleConfig) {
     router.delete(`${config.path}/pedidos/:pedidoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const user = (req as any).user;
+        if (await soProprios(req, 'delete', 'delete_own')) {
+          const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+          if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+          if (existing.createdById !== user?.id || !pedidoSemAccao(existing, await contagemCotacoesActivas(existing.id))) return negarSemAccao(res);
+        }
+        await auditarProcurement(req, 'pedido_compra_deleted', req.params.pedidoId);
         await prisma.procurement.update({
           where: { id: req.params.pedidoId },
           data: { deletedAt: new Date(), deletedById: user?.id, deletedByName: user?.name },
@@ -622,6 +680,11 @@ function registerCrud(config: ModuleConfig) {
     // (dados antigos) continua a notificar toda a gente, por seguranca.
     router.post(`${config.path}/pedidos/:pedidoId/publicar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        if (await soProprios(req, 'update', 'update_own')) {
+          const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+          if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+          if (existing.createdById !== (req as any).user?.id || existing.status !== 'criado') return negarSemAccao(res);
+        }
         const updated = await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'aguardando_cotacoes' } });
         const pedidoData = safeParse(updated.data, {});
         const categoria = pedidoData.categoria;
@@ -652,9 +715,23 @@ function registerCrud(config: ModuleConfig) {
         next(error);
       }
     });
-    router.post(`${config.path}/pedidos/:pedidoId/cancelar`, requireAuth as any, requireLicense as any, setPedidoStatus('cancelado'));
-    router.post(`${config.path}/pedidos/:pedidoId/analisar`, requireAuth as any, requireLicense as any, setPedidoStatus('em_analise'));
-    router.post(`${config.path}/pedidos/:pedidoId/confirmar-recebimento`, requireAuth as any, requireLicense as any, setPedidoStatus('concluido'));
+    // Anular (cancelar) o pedido: com update_own so o proprio pedido ainda sem accao.
+    const podeAnularPedido = async (req: any, res: any, next: any) => {
+      try {
+        if (await soProprios(req, 'update', 'update_own')) {
+          const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+          if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+          if (existing.createdById !== req.user?.id || !pedidoSemAccao(existing, await contagemCotacoesActivas(existing.id))) return negarSemAccao(res);
+        }
+        await auditarProcurement(req, 'pedido_compra_anulado', req.params.pedidoId);
+        next();
+      } catch (error) {
+        next(error);
+      }
+    };
+    router.post(`${config.path}/pedidos/:pedidoId/cancelar`, requireAuth as any, requireLicense as any, podeAnularPedido, setPedidoStatus('cancelado'));
+    router.post(`${config.path}/pedidos/:pedidoId/analisar`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, setPedidoStatus('em_analise'));
+    router.post(`${config.path}/pedidos/:pedidoId/confirmar-recebimento`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, setPedidoStatus('concluido'));
 
     // Ordenadas por valor (mais barata primeiro) e marcadas com um ranking, para
     // sugerir a melhor oferta a quem for decidir a aprovacao.
@@ -665,7 +742,7 @@ function registerCrud(config: ModuleConfig) {
         const itensPedido = pedidoData.itens || pedidoData.items;
         const totalItensPedido = Array.isArray(itensPedido) ? itensPedido.length : 0;
 
-        const cotacoes = await prisma.purchaseQuotation.findMany({ where: { procurementId: req.params.pedidoId }, orderBy: { valor: 'asc' } });
+        const cotacoes = await prisma.purchaseQuotation.findMany({ where: { procurementId: req.params.pedidoId, status: { not: 'anulada' } }, orderBy: { valor: 'asc' } });
         const comScores = computeCotacaoScores(cotacoes.map(cotacaoToResource), totalItensPedido);
         const resources = comScores.map((cotacao, index) => ({
           ...cotacao,
@@ -687,6 +764,30 @@ function registerCrud(config: ModuleConfig) {
         const fornecedorRegisto = fornecedorId
           ? await prisma.fornecedor.findUnique({ where: { id: fornecedorId } }).catch(() => null)
           : null;
+        const user = (req as any).user;
+
+        const pedido = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+        if (!pedido || pedido.deletedAt) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+        if (!['aguardando_cotacoes', 'em_cotacao'].includes(pedido.status)) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: `O pedido esta "${pedido.status}" e ja nao aceita cotacoes.` });
+        }
+        if (!fornecedorId) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Indique o fornecedor da cotacao.' });
+        }
+        // Cada fornecedor so pode ter UMA cotacao (activa) em cada pedido -
+        // vale para o portal do fornecedor e para o registo interno em nome dele.
+        const duplicada = await prisma.purchaseQuotation.findFirst({
+          where: { procurementId: pedido.id, fornecedorId, status: { not: 'anulada' } },
+        });
+        if (duplicada) {
+          return res.status(409).json({
+            error: 'COTACAO_DUPLICADA',
+            message: `O fornecedor "${duplicada.fornecedor}" ja tem uma cotacao neste pedido. Edite ou anule a existente.`,
+            cotacao_id: duplicada.id,
+          });
+        }
+
+        const registoInterno = user?.role !== 'externo';
         const cotacao = await prisma.purchaseQuotation.create({
           data: {
             procurementId: req.params.pedidoId,
@@ -696,8 +797,18 @@ function registerCrud(config: ModuleConfig) {
             valor: numberValue(req.body.valor_total || req.body.valor),
             moeda: req.body.moeda || 'AOA',
             anexos: stringify(req.body.anexos, []),
-            data: stringify(req.body),
+            data: stringify({
+              ...req.body,
+              registado_por_id: user?.id,
+              registado_por_nome: user?.name,
+              registado_em: new Date().toISOString(),
+              // true = registada por um utilizador interno (ex: DSG Tecnico) em nome do fornecedor
+              em_nome_do_fornecedor: registoInterno,
+            }),
           }
+        });
+        await auditarProcurement(req, registoInterno ? 'cotacao_registada_em_nome_do_fornecedor' : 'cotacao_submetida', pedido.id, {
+          cotacao_id: cotacao.id, fornecedor: cotacao.fornecedor, valor: cotacao.valor,
         });
         await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'em_cotacao' } })
           .catch((error) => logger.warn(`Falha ao sincronizar status do pedido ${req.params.pedidoId} para "em_cotacao" apos nova cotacao:`, error));
@@ -707,9 +818,97 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
+    // Editar / anular / eliminar uma cotacao. Quem tem finance:update (ou
+    // delete) pode faze-lo em qualquer cotacao ainda nao analisada; com
+    // update_own/delete_own (ex: DSG Tecnico) so nas registadas por si. Em
+    // ambos os casos so enquanto o pedido esta a receber cotacoes e a cotacao
+    // nao foi seleccionada nem gerou ordem de compra.
+    const carregarCotacaoAlteravel = async (req: any, res: any, acaoTotal: string, acaoPropria: string) => {
+      const nivel = await nivelDeAcesso(req, 'finance', acaoTotal, acaoPropria);
+      if (!nivel) {
+        res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para alterar cotacoes' });
+        return null;
+      }
+      const cotacao = await prisma.purchaseQuotation.findUnique({ where: { id: req.params.cotacaoId } });
+      if (!cotacao || cotacao.procurementId !== req.params.pedidoId) {
+        res.status(404).json({ error: 'NOT_FOUND', message: 'Cotacao nao encontrada' });
+        return null;
+      }
+      const pedido = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+      const nOrdens = await prisma.purchaseOrder.count({ where: { quotationId: cotacao.id } });
+      const semAccao = cotacaoSemAccao(cotacao, pedido, nOrdens);
+      const autorOk = nivel === 'total' || autorDaCotacao(cotacao) === req.user?.id;
+      if (!semAccao || !autorOk) {
+        negarSemAccao(res);
+        return null;
+      }
+      return cotacao;
+    };
+
+    router.put(`${config.path}/pedidos/:pedidoId/cotacoes/:cotacaoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const cotacao = await carregarCotacaoAlteravel(req, res, 'update', 'update_own');
+        if (!cotacao) return;
+        const anterior = safeParse(cotacao.data, {});
+        const corpo = { ...req.body };
+        // Fornecedor, autoria e estado nao mudam numa edicao.
+        for (const campo of ['fornecedor_id', 'fornecedorId', 'status', 'selected', 'registado_por_id', 'registado_por_nome', 'registado_em', 'em_nome_do_fornecedor']) delete corpo[campo];
+        const data = { ...anterior, ...corpo, editado_por_id: (req as any).user?.id, editado_por_nome: (req as any).user?.name, editado_em: new Date().toISOString() };
+        const updated = await prisma.purchaseQuotation.update({
+          where: { id: cotacao.id },
+          data: {
+            valor: numberValue(data.valor_total ?? data.valor, cotacao.valor),
+            moeda: data.moeda || cotacao.moeda,
+            anexos: corpo.anexos !== undefined ? stringify(corpo.anexos, []) : cotacao.anexos,
+            data: stringify(data),
+          },
+        });
+        await auditarProcurement(req, 'cotacao_editada', req.params.pedidoId, { cotacao_id: cotacao.id, fornecedor: cotacao.fornecedor, valor_anterior: cotacao.valor, valor: updated.valor });
+        return res.status(200).json({ cotacao: cotacaoToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    router.post(`${config.path}/pedidos/:pedidoId/cotacoes/:cotacaoId/anular`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const cotacao = await carregarCotacaoAlteravel(req, res, 'update', 'update_own');
+        if (!cotacao) return;
+        const data = safeParse(cotacao.data, {});
+        const updated = await prisma.purchaseQuotation.update({
+          where: { id: cotacao.id },
+          data: {
+            status: 'anulada',
+            data: stringify({ ...data, anulada_por_id: (req as any).user?.id, anulada_por_nome: (req as any).user?.name, anulada_em: new Date().toISOString(), motivo_anulacao: req.body?.motivo || undefined }),
+          },
+        });
+        await sincronizarEstadoPedido(req.params.pedidoId);
+        await auditarProcurement(req, 'cotacao_anulada', req.params.pedidoId, { cotacao_id: cotacao.id, fornecedor: cotacao.fornecedor, motivo: req.body?.motivo });
+        return res.status(200).json({ cotacao: cotacaoToResource(updated) });
+      } catch (error) {
+        next(error);
+      }
+    });
+
+    router.delete(`${config.path}/pedidos/:pedidoId/cotacoes/:cotacaoId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const cotacao = await carregarCotacaoAlteravel(req, res, 'delete', 'delete_own');
+        if (!cotacao) return;
+        await prisma.purchaseQuotation.delete({ where: { id: cotacao.id } });
+        await sincronizarEstadoPedido(req.params.pedidoId);
+        await auditService.logAction('cotacao_eliminada', 'warning', { cotacao_id: cotacao.id, fornecedor: cotacao.fornecedor }, {
+          userId: (req as any).user?.id, userEmail: (req as any).user?.email, userRole: (req as any).user?.role, ipAddress: req.ip || 'unknown',
+          resource: 'procurement', resourceId: req.params.pedidoId, oldValue: cotacaoToResource(cotacao), success: true,
+        }).catch(() => null);
+        return res.status(200).json({ success: true, message: 'Cotacao eliminada' });
+      } catch (error) {
+        next(error);
+      }
+    });
+
     // Validacao (Compras): confere as cotacoes recebidas antes de seguir para aprovacao.
     // Sem isto, "aprovar" podia ser chamado directamente sem nenhuma cotacao analisada.
-    router.post(`${config.path}/pedidos/:pedidoId/validar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+    router.post(`${config.path}/pedidos/:pedidoId/validar`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, async (req, res, next) => {
       try {
         const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
@@ -721,7 +920,7 @@ function registerCrud(config: ModuleConfig) {
           });
         }
 
-        const cotacoes = await prisma.purchaseQuotation.count({ where: { procurementId: req.params.pedidoId } });
+        const cotacoes = await prisma.purchaseQuotation.count({ where: { procurementId: req.params.pedidoId, status: { not: 'anulada' } } });
         if (cotacoes === 0) {
           return res.status(400).json({ error: 'BAD_REQUEST', message: 'E necessario pelo menos uma cotacao recebida para validar o pedido' });
         }
@@ -739,7 +938,7 @@ function registerCrud(config: ModuleConfig) {
     // em_analise -> concluido) e, so nesse momento, emite automaticamente a ordem
     // de compra ligada a esta cotacao - e essa ordem, quando marcada como recebida,
     // e que gera a factura em Gestao de Pagamento como pendente de aprovacao.
-    router.post(`${config.path}/pedidos/:pedidoId/aprovar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+    router.post(`${config.path}/pedidos/:pedidoId/aprovar`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, async (req, res, next) => {
       try {
         const existing = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
@@ -756,6 +955,9 @@ function registerCrud(config: ModuleConfig) {
           : null;
         if (!cotacao) {
           return res.status(400).json({ error: 'BAD_REQUEST', message: 'cotacao_id e obrigatorio para aprovar o pedido' });
+        }
+        if (cotacao.status === 'anulada' || cotacao.procurementId !== existing.id) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Esta cotacao foi anulada ou nao pertence a este pedido.' })
         }
 
         const ordemSequencia = await SequenceService.next('purchaseOrder');
@@ -807,7 +1009,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.post(`${config.path}/pedidos/:pedidoId/emitir-ordem`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+    router.post(`${config.path}/pedidos/:pedidoId/emitir-ordem`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, async (req, res, next) => {
       try {
         const pedido = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
         if (!pedido) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
@@ -835,7 +1037,7 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
-    router.put(`${config.path}/ordens/:ordemId/status`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+    router.put(`${config.path}/ordens/:ordemId/status`, requireAuth as any, requireLicense as any, exigirDecisaoProcurement, async (req, res, next) => {
       try {
         const nextStatus = req.body.status || 'emitida';
 
@@ -1023,6 +1225,11 @@ function registerCrud(config: ModuleConfig) {
       try {
         const existing = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+        if (await soProprios(req, 'update', 'update_own')) {
+          if (existing.createdById !== (req as any).user?.id || !(await fornecedorSemDocumentos(existing.id))) return negarSemAccao(res);
+          delete req.body.status;
+          delete req.body.situacao;
+        }
         const data = { ...safeParse(existing.data, {}), ...req.body };
         const record = await prisma.fornecedor.update({
           where: { id: existing.id },
@@ -1045,6 +1252,12 @@ function registerCrud(config: ModuleConfig) {
     router.delete(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const user = (req as any).user;
+        if (await soProprios(req, 'delete', 'delete_own')) {
+          const existing = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
+          if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+          if (existing.createdById !== user?.id || !(await fornecedorSemDocumentos(existing.id))) return negarSemAccao(res);
+        }
+        await auditarProcurement(req, 'fornecedor_deleted', req.params.fornecedorId);
         await prisma.fornecedor.update({
           where: { id: req.params.fornecedorId },
           data: { deletedAt: new Date(), deletedById: user?.id, deletedByName: user?.name },
@@ -1057,6 +1270,7 @@ function registerCrud(config: ModuleConfig) {
 
     router.post(`${config.path}/fornecedores/:fornecedorId/ativar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        if (await soProprios(req, 'update', 'update_own')) return negarSemAccao(res);
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'ativo' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
       } catch (error) {
@@ -1066,6 +1280,7 @@ function registerCrud(config: ModuleConfig) {
 
     router.post(`${config.path}/fornecedores/:fornecedorId/desativar`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        if (await soProprios(req, 'update', 'update_own')) return negarSemAccao(res);
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'inativo' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
       } catch (error) {
@@ -1075,6 +1290,7 @@ function registerCrud(config: ModuleConfig) {
 
     router.post(`${config.path}/fornecedores/:fornecedorId/bloquear`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        if (await soProprios(req, 'update', 'update_own')) return negarSemAccao(res);
         const record = await prisma.fornecedor.update({ where: { id: req.params.fornecedorId }, data: { status: 'bloqueado' } });
         return res.status(200).json({ fornecedor: fornecedorToResource(record) });
       } catch (error) {

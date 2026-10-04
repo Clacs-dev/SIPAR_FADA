@@ -8,6 +8,7 @@ import {
   History,
   CheckCircle,
   XCircle,
+  Trash2,
   ArrowLeft,
   Download,
   Edit,
@@ -43,6 +44,11 @@ interface FacturaDetailsProps {
   userRole: string;
   onBack: () => void;
   onEdit: () => void;
+  /** Documento próprio ainda sem acção (ex: DSG Técnico) - ver facturas-main.tsx. */
+  podeEditar?: boolean;
+  podeEliminar?: boolean;
+  onAnular?: () => void;
+  onEliminar?: () => void;
   onValidate?: (comentario: string) => void;
   onApprove: (comentario: string) => void;
   onReject: (motivo: string) => void;
@@ -66,6 +72,10 @@ export function FacturaDetails({
   userRole,
   onBack,
   onEdit,
+  podeEditar = false,
+  podeEliminar = false,
+  onAnular,
+  onEliminar,
   onValidate,
   onApprove,
   onReject,
@@ -445,10 +455,29 @@ export function FacturaDetails({
             </Button>
           )}
 
-          {factura.status === 'registada' && userRole === 'gestor' && (
+          {podeEditar && (
             <Button variant="outline" onClick={onEdit}>
               <Edit className="mr-2 h-4 w-4" />
               Editar
+            </Button>
+          )}
+          {podeEditar && onAnular && (
+            <Button
+              variant="outline"
+              onClick={() => { if (window.confirm('Anular esta factura? Fica registada como anulada e deixa de seguir para validação.')) onAnular(); }}
+            >
+              <XCircle className="mr-2 h-4 w-4" />
+              Anular
+            </Button>
+          )}
+          {podeEliminar && onEliminar && (
+            <Button
+              variant="outline"
+              className="text-red-600 border-red-300 hover:bg-red-50"
+              onClick={() => { if (window.confirm('Eliminar esta factura? Vai para a Lixeira.')) onEliminar(); }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
             </Button>
           )}
           {/* Ordem de Compra: a do Procurement de origem, ou - factura normal -

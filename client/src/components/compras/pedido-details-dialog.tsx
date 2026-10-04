@@ -30,6 +30,10 @@ import {
   Eye,
   Award,
   BarChart3,
+  Plus,
+  Pencil,
+  Ban,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -42,6 +46,15 @@ interface PedidoDetailsDialogProps {
   pedido: PedidoCompra | null;
   onAnalisar?: (pedidoId: string) => Promise<void>;
   onAprovar?: (pedidoId: string, cotacaoId: string) => Promise<void>;
+  /** Registo de cotacao em nome de um fornecedor (ex: DSG Tecnico) - so com permissao. */
+  onRegistarCotacao?: () => void;
+  /** O que o utilizador pode fazer a cada cotacao (regra "propria e sem accao"). */
+  permissoesCotacao?: (cotacao: Cotacao) => { editar: boolean; eliminar: boolean };
+  onEditarCotacao?: (cotacao: Cotacao) => void;
+  onAnularCotacao?: (cotacao: Cotacao) => Promise<void> | void;
+  onEliminarCotacao?: (cotacao: Cotacao) => Promise<void> | void;
+  /** Muda quando as cotacoes foram alteradas fora do dialogo, para as recarregar. */
+  versaoCotacoes?: number;
 }
 
 export function PedidoDetailsDialog({
@@ -50,6 +63,12 @@ export function PedidoDetailsDialog({
   pedido,
   onAnalisar,
   onAprovar,
+  onRegistarCotacao,
+  permissoesCotacao,
+  onEditarCotacao,
+  onAnularCotacao,
+  onEliminarCotacao,
+  versaoCotacoes = 0,
 }: PedidoDetailsDialogProps) {
   const [cotacoes, setCotacoes] = useState<Cotacao[]>([]);
   const [loadingCotacoes, setLoadingCotacoes] = useState(false);
@@ -81,7 +100,7 @@ export function PedidoDetailsDialog({
  console.log(' Dialog aberto, buscando cotações...');
       fetchCotacoes();
     }
-  }, [open, pedido]);
+  }, [open, pedido, versaoCotacoes]);
 
   // Se não há pedido, não renderizar o conteúdo
   if (!pedido) {
@@ -313,6 +332,14 @@ export function PedidoDetailsDialog({
 
           {/* TAB 3: COTAÇÕES */}
           <TabsContent value="cotacoes" className="space-y-4">
+            {onRegistarCotacao && ["aguardando_cotacoes", "em_cotacao"].includes(pedido.status) && (
+              <div className="flex justify-end">
+                <Button size="sm" onClick={onRegistarCotacao}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Registar cotação em nome do fornecedor
+                </Button>
+              </div>
+            )}
             {loadingCotacoes && (
               <Card>
                 <CardContent className="pt-6 text-center">
@@ -352,6 +379,11 @@ export function PedidoDetailsDialog({
                             {cotacao.fornecedor_nome}
                           </h4>
                           <p className="text-sm text-muted-foreground">{cotacao.fornecedor_email}</p>
+                          {(cotacao as any).em_nome_do_fornecedor && (
+                            <Badge variant="outline" className="mt-1 text-xs">
+                              Registada por {(cotacao as any).registado_por_nome || "utilizador interno"} em nome do fornecedor
+                            </Badge>
+                          )}
                           {cotacao.fornecedor_telefone && (
                             <p className="text-sm text-muted-foreground">{cotacao.fornecedor_telefone}</p>
                           )}
@@ -453,6 +485,38 @@ export function PedidoDetailsDialog({
                         <p className="text-xs text-muted-foreground">
                           Submetida em: {format(new Date(cotacao.submitted_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
                         </p>
+                        {(() => {
+                          const p = permissoesCotacao?.(cotacao) || { editar: false, eliminar: false };
+                          if (!p.editar && !p.eliminar) return null;
+                          return (
+                            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                              {p.editar && onEditarCotacao && (
+                                <Button size="sm" variant="outline" onClick={() => onEditarCotacao(cotacao)}>
+                                  <Pencil className="mr-1 h-4 w-4" /> Editar
+                                </Button>
+                              )}
+                              {p.editar && onAnularCotacao && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => { if (window.confirm(`Anular a cotação de ${cotacao.fornecedor_nome}? Deixa de contar para a análise.`)) onAnularCotacao(cotacao); }}
+                                >
+                                  <Ban className="mr-1 h-4 w-4" /> Anular
+                                </Button>
+                              )}
+                              {p.eliminar && onEliminarCotacao && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600 border-red-300 hover:bg-red-50"
+                                  onClick={() => { if (window.confirm(`Eliminar a cotação de ${cotacao.fornecedor_nome}?`)) onEliminarCotacao(cotacao); }}
+                                >
+                                  <Trash2 className="mr-1 h-4 w-4" /> Eliminar
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {pedido.status === "em_analise" && onAprovar && (
                           <Button
                             size="sm"

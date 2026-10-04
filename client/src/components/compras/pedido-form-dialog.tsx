@@ -3,7 +3,7 @@
  * Sistema completo com itens detalhados
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Save, Plus, Trash2, Package } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
@@ -12,16 +12,18 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { toast } from "sonner@2.0.3";
-import type { ItemPedido, PrioridadePedido, TipoItem } from "./types";
+import type { ItemPedido, PedidoCompra, PrioridadePedido, TipoItem } from "./types";
 import { useCategorias } from "../../hooks/use-categorias";
 
 interface PedidoFormDialogProps {
   open: boolean;
   onClose: () => void;
   onSubmit: (data: any) => Promise<any>;
+  /** Pedido a editar (preenche o formulario); omitido = novo pedido. */
+  pedido?: PedidoCompra | null;
 }
 
-export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogProps) {
+export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoFormDialogProps) {
   const [loading, setLoading] = useState(false);
   const { categorias } = useCategorias();
 
@@ -48,6 +50,23 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
       observacoes: "",
     }
   ]);
+
+  // Edicao: preenche com os dados do pedido existente sempre que o dialogo abre.
+  useEffect(() => {
+    if (!open || !pedido) return;
+    setTitulo(pedido.titulo || "");
+    setDescricao(pedido.descricao || "");
+    setCategoria((pedido as any).categoria || "");
+    setDepartamento(pedido.departamento_solicitante || "");
+    setPrioridade((pedido.prioridade as PrioridadePedido) || "normal");
+    setOrcamentoEstimado(pedido.orcamento_estimado ? String(pedido.orcamento_estimado) : "");
+    setPrazoDesejado((pedido as any).prazo_entrega_desejado || "");
+    setLocalEntrega((pedido as any).local_entrega || "");
+    setObservacoes((pedido as any).observacoes || "");
+    if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
+      setItens(pedido.itens.map((item: any) => ({ ...item })));
+    }
+  }, [open, pedido]);
 
   const handleAddItem = () => {
     setItens([...itens, {
@@ -174,7 +193,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit }: PedidoFormDialogPr
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="!w-[95vw] !max-w-[95vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Novo Procurement</DialogTitle>
+          <DialogTitle>{pedido ? `Editar Procurement ${pedido.numero || ""}` : "Novo Procurement"}</DialogTitle>
           <DialogDescription>
             Preencha os campos abaixo para criar um novo pedido de compra.
           </DialogDescription>

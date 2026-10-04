@@ -36,7 +36,8 @@ import { useState } from "react";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../auth/auth-context";
-import { getMenuItems, getProfileBadge, filterMenuItemsByLicense } from "../auth/permissions";
+import { getMenuItems, getProfileBadge, filterMenuItemsByLicense, filterMenuItemsByPermissions } from "../auth/permissions";
+import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useLicense } from "../../hooks/use-license";
 import { toast } from "sonner@2.0.3";
 import { MeuPerfilDialog } from "./meu-perfil-dialog";
@@ -59,13 +60,19 @@ export function Sidebar({
 
   // Get menu items based on user role, depois esconder os que a licenca
   // activa desta instalacao nao inclui (ver filterMenuItemsByLicense).
-  const menuItems = filterMenuItemsByLicense(
-    getMenuItems(
-      user?.role || 'externo',
-      user?.department,
-      user?.position
+  const { permissoes } = useMyPermissions();
+  // ...e os que o role nao tem nas permissoes definidas pelo Administrador
+  // do Sistema (ver filterMenuItemsByPermissions).
+  const menuItems = filterMenuItemsByPermissions(
+    filterMenuItemsByLicense(
+      getMenuItems(
+        user?.role || 'externo',
+        user?.department,
+        user?.position
+      ),
+      licenseData?.license?.modules
     ),
-    licenseData?.license?.modules
+    permissoes
   );
   
   // Get badge info for the user profile

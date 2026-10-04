@@ -3,7 +3,7 @@
  * Permite responder item por item do pedido
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Send, AlertCircle, CheckCircle2, XCircle, Upload, X, FileText, Plus, Check } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
@@ -17,7 +17,7 @@ import { Checkbox } from "../ui/checkbox";
 import { Badge } from "../ui/badge";
 import { toast } from "sonner@2.0.3";
 import api from "../../services/api";
-import type { PedidoCompra, RespostaItemFornecedor } from "./types";
+import type { CotacaoFornecedor, PedidoCompra, RespostaItemFornecedor } from "./types";
 import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, calcularFiscal, classificarTipoOperacao } from "../../utils/fiscal";
 
 interface Prestacao {
@@ -31,7 +31,12 @@ interface CotacaoFormDialogProps {
   onClose: () => void;
   pedido: PedidoCompra;
   fornecedorId: string;
+  /** Devolver false/null quando o servidor recusou - o dialogo fica aberto. */
   onSubmit: (data: any) => Promise<any>;
+  /** Cotacao a editar (preenche o formulario); omitida = nova cotacao. */
+  cotacao?: CotacaoFornecedor | null;
+  /** Registo interno (ex: DSG Tecnico): nome do fornecedor em nome de quem se regista. */
+  fornecedorNome?: string;
 }
 
 export function CotacaoFormDialog({ 
@@ -39,7 +44,9 @@ export function CotacaoFormDialog({
   onClose, 
   pedido, 
   fornecedorId,
-  onSubmit 
+  onSubmit,
+  cotacao,
+  fornecedorNome,
 }: CotacaoFormDialogProps) {
   const [loading, setLoading] = useState(false);
   
@@ -67,6 +74,29 @@ export function CotacaoFormDialog({
   
   // Anexos/Documentos
   const [anexos, setAnexos] = useState<File[]>([]);
+
+  // Edicao: repoe as respostas e condicoes gravadas na cotacao.
+  useEffect(() => {
+    if (!open || !cotacao) return;
+    const gravadas = Array.isArray(cotacao.itens_resposta) ? cotacao.itens_resposta : [];
+    setRespostas(pedido.itens.map((item) => {
+      const r: any = gravadas.find((g: any) => g.item_id === item.id) || gravadas.find((g: any) => g.item_descricao === item.descricao);
+      return {
+        item_id: item.id,
+        item_descricao: item.descricao,
+        disponivel: r?.disponivel,
+        quantidade_disponivel: r?.quantidade_disponivel ?? item.quantidade,
+        preco_unitario: r?.preco_unitario,
+        iv_percentagem: r?.iv_percentagem ?? 0,
+        condicoes_pagamento: r?.condicoes_pagamento || "",
+        prazo_entrega_dias: r?.prazo_entrega_dias,
+        observacoes: r?.observacoes || "",
+      };
+    }));
+    setCondicoesGerais(cotacao.condicoes_gerais || "");
+    setPrazoValidade(cotacao.prazo_validade_cotacao || "");
+    setObservacoesGerais(cotacao.observacoes_gerais || "");
+  }, [open, cotacao, pedido]);
 
   // Condições de pagamento disponíveis
   const condicoesPagamentoDisponiveis = [
@@ -232,7 +262,8 @@ export function CotacaoFormDialog({
       condicoes_gerais: condicoesGerais.trim() || undefined,
       prazo_validade_cotacao: prazoValidade || undefined,
       observacoes_gerais: observacoesGerais.trim() || undefined,
-      anexos: anexosEnviados,
+      // Na edicao mantem os anexos ja submetidos e junta os novos.
+      anexos: [...((cotacao?.anexos as any[]) || []), ...anexosEnviados],
     };
     
  console.log(' [CotacaoForm] Dados da cotação:', {
@@ -243,8 +274,10 @@ export function CotacaoFormDialog({
     });
 
     try {
-      await onSubmit(data);
-      handleClose();
+      const resultado = await onSubmit(data);
+      setLoading(false);
+      // false/null = o servidor recusou (ex: o fornecedor ja tem cotacao neste pedido) - o dialogo fica aberto.
+      if (resultado !== false && resultado !== null) onClose();
     } catch (error) {
  console.error(" [CotacaoForm] Erro ao submeter cotação:", error);
     } finally {
@@ -294,7 +327,13 @@ export function CotacaoFormDialog({
           <DialogTitle className="flex items-center gap-2">
             <span className="text-primary font-bold">{pedido.departamento_solicitante}</span>
             <span className="text-muted-foreground font-normal">- {pedido.numero}</span>
+            {cotacao && <Badge variant="outline">Editar cotação</Badge>}
           </DialogTitle>
+          {fornecedorNome && (
+            <p className="text-sm">
+              Registo em nome do fornecedor: <strong>{fornecedorNome}</strong>
+            </p>
+          )}
           <DialogDescription>
             Preencha os dados da sua cotação para cada item solicitado. Campos com * são obrigatórios.
           </DialogDescription>
@@ -745,7 +784,7 @@ export function CotacaoFormDialog({
               </Button>
               <Button type="submit" disabled={loading || itensDisponiveis === 0}>
                 <Send className="h-4 w-4 mr-2" />
-                {loading ? "A submeter..." : "Submeter Cotação"}
+                {loading ? "A submeter..." : cotacao ? "Guardar alterações" : "Submeter Cotação"}
               </Button>
             </div>
           </div>

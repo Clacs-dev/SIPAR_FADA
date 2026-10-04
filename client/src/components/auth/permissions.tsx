@@ -8,6 +8,7 @@ export type ExtendedProfile =
   | 'atendente'         // Atendente/Secretária
   | 'financeiro'        // Responsável Financeiro
   | 'operador'          // Operador (operacional)
+  | 'dsg-tecnico'       // DSG Técnico: submete em nome dos fornecedores
   | 'user';             // Utilizador Externo
 
 export const PERMISSIONS = {
@@ -111,9 +112,9 @@ export const PERMISSIONS = {
   // Facturas (Financeiro + Compras)
   VIEW_FACTURAS: [
     'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director', 'gestao',
-    'financeiro', 'compras', 'administracao', 'externo'
+    'financeiro', 'compras', 'administracao', 'externo', 'dsg_tecnico'
   ] as UserRole[],
-  CREATE_FACTURAS: ['financeiro', 'compras', 'administracao'] as UserRole[],
+  CREATE_FACTURAS: ['financeiro', 'compras', 'administracao', 'dsg_tecnico'] as UserRole[],
   MANAGE_FACTURAS: ['gabinete_pca', 'gabinete_pce', 'financeiro', 'compras', 'gestao'] as UserRole[],
   APPROVE_FACTURAS: ['gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gestao'] as UserRole[],
   
@@ -193,6 +194,11 @@ export function getExtendedProfile(
   // Administrador do Sistema (role tecnico dedicado, separado dos executivos)
   if (role === 'admin_sistema') {
     return 'admin-tecnico';
+  }
+
+  // DSG Técnico: perfil próprio (Procurement + Gestão de Pagamento em nome dos fornecedores)
+  if (role === 'dsg_tecnico') {
+    return 'dsg-tecnico';
   }
 
   // Gabinetes Executivos e Governamentais → admin-sistema
@@ -694,6 +700,25 @@ export function getMenuItems(
   // ==========================================
   // ADMINISTRADOR DO SISTEMA (role tecnico admin_sistema)
   // ==========================================
+  // ==========================================
+  // DSG TÉCNICO
+  // ==========================================
+  // Mesmos ecrãs de Compras e Gestão de Pagamento; o que cada um mostra (e
+  // os itens abaixo) depende das permissões do role definidas pelo
+  // Administrador do Sistema - ver filterMenuItemsByPermissions.
+  if (profile === 'dsg-tecnico') {
+    return [
+      { id: 'dashboard', label: 'Dashboard', icon: 'Home', show: true },
+      { id: 'schedule', label: 'Agenda', icon: 'Calendar', show: true },
+      { id: 'compras', label: 'Procurement(DSG)', icon: 'ShoppingBag', show: true },
+      { id: 'facturas', label: 'Gestão de Pagamento', icon: 'Receipt', show: true },
+      { id: 'mapa-impostos', label: 'Mapa de Impostos', icon: 'FileBarChart', show: true },
+      { id: 'mapa-actividades', label: 'Mapa de Actividades', icon: 'ClipboardList', show: true },
+      { id: 'messages', label: 'Mensagens', icon: 'MessageSquare', show: true },
+      { id: 'push-notifications', label: 'Notificações Push', icon: 'Bell', show: true },
+    ];
+  }
+
   if (profile === 'admin-tecnico') {
     return [
       {
@@ -797,6 +822,40 @@ export function getMenuItems(
 
   // Fallback
   return [];
+}
+
+// Permissao RBAC (Roles e Permissoes, gerida pelo Administrador do Sistema)
+// necessaria para cada item de menu dos modulos financeiros: basta UMA das
+// accoes listadas. Sem ela o item nao aparece na interface. Itens sem
+// entrada aqui continuam a depender so do perfil (getMenuItems).
+export const MENU_ITEM_PERMISSION: Record<string, { module: string; actions: string[] }[]> = {
+  // (invoices:create cobre o antigo portal de cotacoes do fornecedor, que usa o id "compras")
+  compras: [{ module: 'finance', actions: ['read_all', 'create'] }, { module: 'invoices', actions: ['create'] }],
+  cotacoes: [{ module: 'finance', actions: ['create'] }, { module: 'invoices', actions: ['create'] }],
+  facturas: [{ module: 'invoices', actions: ['read_all', 'read_own'] }],
+  'minhas-facturas': [{ module: 'invoices', actions: ['create', 'read_own'] }],
+  'mapa-impostos': [{ module: 'invoices', actions: ['read_all'] }],
+  'mapa-actividades': [{ module: 'activity_map', actions: ['read_all'] }],
+};
+
+/**
+ * Esconde os itens cujo role nao tem a permissao RBAC correspondente. Enquanto
+ * as permissoes ainda carregam (null), os itens condicionados ficam escondidos
+ * - evita mostrar por um instante algo a que o utilizador nao tem acesso.
+ */
+export function filterMenuItemsByPermissions<T extends { id: string }>(
+  items: T[],
+  permissoes: { module: string; actions: string[] }[] | null | undefined
+): T[] {
+  return items.filter((item) => {
+    const requisitos = MENU_ITEM_PERMISSION[item.id];
+    if (!requisitos) return true;
+    if (!permissoes) return false;
+    return requisitos.some((r) => {
+      const mod = permissoes.find((p) => p.module === r.module);
+      return !!mod && r.actions.some((a) => mod.actions.includes(a));
+    });
+  });
 }
 
 // Chave do modulo de licenca (ver requireLicenseModule(...) em cada rota do
@@ -917,6 +976,7 @@ export function getProfileBadge(
     'risco': { label: 'Gestão de Risco', color: 'bg-orange-700' },
 
     'admin_sistema': { label: 'Administrador do Sistema', color: 'bg-slate-900' },
+    'dsg_tecnico': { label: 'DSG Técnico', color: 'bg-cyan-700' },
   };
   
   return departmentBadges[userRole] || { label: 'Utilizador', color: 'bg-gray-500' };

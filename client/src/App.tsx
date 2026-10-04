@@ -56,12 +56,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./components/ui/alert-dialog";
-import { hasPermission } from "./components/auth/permissions";
+import { hasPermission, MENU_ITEM_PERMISSION, filterMenuItemsByPermissions } from "./components/auth/permissions";
+import { useMyPermissions } from "./hooks/use-my-permissions";
 import { API_BASE_URL, getAuthHeaders } from '@/services/api';
 
 function AppContent() {
   const { user, isLoading } = useAuth();
   const { isRestricted } = useLicense();
+  const { permissoes, carregado: permissoesCarregadas } = useMyPermissions();
   // Id da factura a abrir directamente nos detalhes quando se navega para o
   // separador "facturas" a partir de uma linha do Mapa de Impostos (sidebar).
   const [facturaAlvoId, setFacturaAlvoId] = useState<string | null>(null);
@@ -112,6 +114,16 @@ function AppContent() {
  console.log(' Utilizador autenticado:', user.name, '- Role:', user.role);
 
   const renderContent = () => {
+    // Ecrãs condicionados pelas permissões do role (Roles e Permissões): sem a
+    // permissão, nem aparecem no menu nem abrem por aqui.
+    if (MENU_ITEM_PERMISSION[activeTab]) {
+      if (!permissoesCarregadas) {
+        return <div className="flex items-center justify-center py-20 text-muted-foreground">A carregar...</div>;
+      }
+      if (filterMenuItemsByPermissions([{ id: activeTab }], permissoes).length === 0) {
+        return <div>Acesso negado</div>;
+      }
+    }
     switch (activeTab) {
       case "dashboard":
         return (

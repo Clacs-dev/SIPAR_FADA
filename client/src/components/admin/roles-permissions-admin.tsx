@@ -46,8 +46,10 @@ const MODULES: { value: string; label: string; restricted?: boolean }[] = [
   { value: 'oficios', label: 'Ofícios' },
   { value: 'actas', label: 'Actas' },
   { value: 'communications', label: 'Comunicações' },
-  { value: 'facturas', label: 'Facturas & Pagamentos' },
-  { value: 'compras', label: 'Compras / Procurement' },
+  // Chaves iguais as verificadas no servidor (MODULES em server/src/utils/permissions.ts).
+  { value: 'invoices', label: 'Facturas & Pagamentos (Gestão de Pagamento, Mapa de Impostos)' },
+  { value: 'finance', label: 'Compras / Procurement (pedidos, cotações, fornecedores)' },
+  { value: 'activity_map', label: 'Mapa de Actividades (DSG)' },
   { value: 'documents', label: 'Documentos' },
   { value: 'messages', label: 'Mensagens' },
   { value: 'notifications', label: 'Notificações' },
@@ -73,6 +75,10 @@ const ACTIONS: { value: string; label: string }[] = [
   { value: 'reject', label: 'Rejeitar' },
   { value: 'manage', label: 'Gerir' },
   { value: 'export', label: 'Exportar' },
+  // Só os documentos submetidos pelo próprio utilizador e enquanto ninguém
+  // actuou sobre eles (ex: DSG Técnico).
+  { value: 'update_own', label: 'Editar/anular próprios (sem acção)' },
+  { value: 'delete_own', label: 'Eliminar próprios (sem acção)' },
 ];
 
 export function RolesPermissionsAdmin() {

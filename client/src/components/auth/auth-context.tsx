@@ -30,7 +30,8 @@ export type UserRole =
   | 'organizacao_qualidade'
   | 'compliance'
   | 'risco'
-  | 'admin_sistema';
+  | 'admin_sistema'
+  | 'dsg_tecnico';
 
 export interface User {
   id: string;
