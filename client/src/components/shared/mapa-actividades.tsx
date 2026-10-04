@@ -22,7 +22,7 @@ import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
-import { ClipboardList, Download, Filter, Info, Loader2, Pencil, RotateCcw, X } from "lucide-react";
+import { ChevronUp, ClipboardList, Download, Filter, Info, Loader2, Pencil, RotateCcw, X } from "lucide-react";
 import { API_BASE_URL, getAuthHeaders } from "@/services/api";
 import { useAuth } from "../auth/auth-context";
 import { toast } from "sonner@2.0.3";
@@ -235,6 +235,8 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
   }, [filtros]);
   const setFiltro = (campo: keyof Filtros, valor: string) => setFiltros((f) => ({ ...f, [campo]: valor }));
   const nFiltrosActivos = Object.values(filtros).filter(Boolean).length;
+  // Painel de filtros recolhido por omissao: abre/fecha no icone de filtro.
+  const [filtrosAbertos, setFiltrosAbertos] = useState(false);
 
   const [mapa, setMapa] = useState<Mapa | null>(null);
   const [podeEditar, setPodeEditar] = useState(false);
@@ -325,10 +327,28 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
               : 'Serviços, bens e imobilizados adquiridos no período — preenchido automaticamente a partir das facturas (Compras e Finanças)'}
           </p>
         </div>
-        <Button onClick={descarregar} disabled={aDescarregar || loading}>
-          {aDescarregar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-          Descarregar .xlsx{mapa && mapa.filtros_descricao.length > 0 ? ' (filtrado)' : ''}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant={filtrosAbertos || nFiltrosActivos > 0 ? 'default' : 'outline'}
+            size="icon"
+            className="relative"
+            onClick={() => setFiltrosAbertos((v) => !v)}
+            title={filtrosAbertos ? 'Fechar filtros' : 'Abrir filtros'}
+            aria-label="Filtros"
+            aria-expanded={filtrosAbertos}
+          >
+            <Filter className="h-4 w-4" />
+            {nFiltrosActivos > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] leading-[18px] text-center">
+                {nFiltrosActivos}
+              </span>
+            )}
+          </Button>
+          <Button onClick={descarregar} disabled={aDescarregar || loading}>
+            {aDescarregar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            Descarregar .xlsx{mapa && mapa.filtros_descricao.length > 0 ? ' (filtrado)' : ''}
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -365,6 +385,7 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
         </CardContent>
       </Card>
 
+      {filtrosAbertos && (
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
           <div>
@@ -376,9 +397,14 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
               Só aparecem (no ecrã e no .xlsx descarregado) as linhas que cumprem todos os filtros. Cada consulta e exportação fica registada na Auditoria com os filtros usados.
             </CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setFiltros(FILTROS_VAZIOS)} disabled={nFiltrosActivos === 0}>
-            <X className="mr-1 h-4 w-4" /> Limpar filtros
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setFiltros(FILTROS_VAZIOS)} disabled={nFiltrosActivos === 0}>
+              <X className="mr-1 h-4 w-4" /> Limpar filtros
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setFiltrosAbertos(false)} title="Fechar filtros" aria-label="Fechar filtros">
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
           <div className="space-y-2">
@@ -447,16 +473,24 @@ export function MapaActividades({ contexto }: MapaActividadesProps) {
             <Label>Pesquisar</Label>
             <Input value={filtros.pesquisa} onChange={(e) => setFiltro('pesquisa', e.target.value)} placeholder="Serviço/bem, nº documento, código do artigo, NP, observações..." />
           </div>
-          {mapa && (
-            <div className="md:col-span-3 lg:col-span-6 flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground">
-                {mapa.servicos.length + mapa.bens.length} de {mapa.total_sem_filtros} linha(s) do período
-              </span>
-              {mapa.filtros_descricao.map((d) => <Badge key={d} variant="outline">{d}</Badge>)}
-            </div>
-          )}
         </CardContent>
       </Card>
+      )}
+
+      {/* Resumo dos filtros activos - visivel mesmo com o painel fechado. */}
+      {mapa && (filtrosAbertos || mapa.filtros_descricao.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {mapa.servicos.length + mapa.bens.length} de {mapa.total_sem_filtros} linha(s) do período
+          </span>
+          {mapa.filtros_descricao.map((d) => <Badge key={d} variant="outline">{d}</Badge>)}
+          {!filtrosAbertos && nFiltrosActivos > 0 && (
+            <Button variant="link" size="sm" className="h-auto p-0" onClick={() => setFiltros(FILTROS_VAZIOS)}>
+              Limpar filtros
+            </Button>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center py-10 text-muted-foreground">
