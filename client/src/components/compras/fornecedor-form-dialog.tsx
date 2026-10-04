@@ -16,6 +16,7 @@ import type { Fornecedor } from "./types";
 import { useCategorias } from "../../hooks/use-categorias";
 import { CategoriaFormDialog } from "./categoria-form-dialog";
 import { NifLookupField } from "../shared/nif-lookup-field";
+import { formatarIban, formatarNib, validarIban, validarNib } from "../../utils/bank-format";
 
 interface Prestacao {
   id: string;
@@ -109,8 +110,8 @@ export function FornecedorFormDialog({
       setObservacoes(fornecedor.observacoes || "");
       setBancoNome(fornecedor.banco_nome || "");
       setBancoTitular(fornecedor.banco_titular || "");
-      setBancoIban(fornecedor.banco_iban || "");
-      setBancoNib(fornecedor.banco_nib || "");
+      setBancoIban(formatarIban(fornecedor.banco_iban || ""));
+      setBancoNib(formatarNib(fornecedor.banco_nib || ""));
       setBancoSwift(fornecedor.banco_swift || "");
       setBancoCidade(fornecedor.banco_cidade || "");
       setBancoPais(fornecedor.banco_pais || "Angola");
@@ -128,6 +129,12 @@ export function FornecedorFormDialog({
     
     if (!nif.trim()) {
       toast.error("NIF é obrigatório");
+      return;
+    }
+
+    const erroConta = validarIban(bancoIban) || validarNib(bancoNib);
+    if (erroConta) {
+      toast.error(erroConta);
       return;
     }
     
@@ -718,22 +725,28 @@ export function FornecedorFormDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="banco-iban">IBAN</Label>
+                <Label htmlFor="banco-iban">IBAN (25 caracteres: AO + 2 dígitos + 21 dígitos)</Label>
                 <Input
                   id="banco-iban"
                   value={bancoIban}
-                  onChange={(e) => setBancoIban(e.target.value)}
-                  placeholder="AO06 0000 0000 0000 0000 0000 0"
+                  maxLength={31}
+                  aria-invalid={!!validarIban(bancoIban)}
+                  onChange={(e) => setBancoIban(formatarIban(e.target.value))}
+                  placeholder="AO06 0055 0000 2159 9539 1019 3"
                 />
+                {validarIban(bancoIban) && <p className="text-xs text-destructive">{validarIban(bancoIban)}</p>}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="banco-nib">NIB</Label>
+                <Label htmlFor="banco-nib">NIB (21 dígitos)</Label>
                 <Input
                   id="banco-nib"
                   value={bancoNib}
-                  onChange={(e) => setBancoNib(e.target.value)}
-                  placeholder="0000 0000 0000 0000 0000 0"
+                  maxLength={26}
+                  aria-invalid={!!validarNib(bancoNib)}
+                  onChange={(e) => setBancoNib(formatarNib(e.target.value))}
+                  placeholder="0055 0000 2159 9539 1019 3"
                 />
+                {validarNib(bancoNib) && <p className="text-xs text-destructive">{validarNib(bancoNib)}</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="banco-swift">Código SWIFT/BIC</Label>

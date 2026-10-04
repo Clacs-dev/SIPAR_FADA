@@ -340,6 +340,21 @@ export function ComprasMain() {
         </div>
       )}
 
+      {/* Cotações em nome do fornecedor só se registam em pedidos publicados -
+          explica porque não aparece o botão "Registar Cotação". */}
+      {podeCriar && !loading && !pedidos.some((p) => ["aguardando_cotacoes", "em_cotacao"].includes(p.status)) && (
+        <Card style={{ borderColor: 'var(--tone-info)' }}>
+          <CardContent className="py-4 text-sm flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: 'var(--tone-info)' }} />
+            <span>
+              Não há nenhum pedido a receber cotações neste momento. Para registar cotações em nome dos fornecedores,
+              crie um pedido em <strong>Novo Pedido</strong> e use <strong>Publicar para Fornecedores</strong> — o botão
+              <strong> Registar Cotação</strong> aparece nos pedidos "Aguardando Cotações" e "Em Cotação".
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

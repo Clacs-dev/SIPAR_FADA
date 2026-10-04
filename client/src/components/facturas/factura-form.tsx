@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { formatarIban, formatarNib, validarIban, validarNib } from "../../utils/bank-format";
 import { Receipt, Upload, X, Save, Plus, Trash2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
@@ -207,21 +208,32 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       toast.error('Indique o IBAN ou o NIB da conta.');
       return;
     }
+    const erroConta = validarIban(novaContaBancaria.banco_iban) || validarNib(novaContaBancaria.banco_nib);
+    if (erroConta) {
+      toast.error(erroConta);
+      return;
+    }
     setSavingContaBancaria(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}`, {
+      // Rota propria das coordenadas bancarias: so altera esses campos e
+      // permite a quem regista facturas em nome do fornecedor (ex: DSG
+      // Tecnico) preenche-las quando o fornecedor ainda nao tem nenhuma.
+      const response = await fetch(`${API_BASE_URL}/procurement/fornecedores/${formData.fornecedor_id}/dados-bancarios`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify(novaContaBancaria),
       });
-      if (!response.ok) throw new Error('Erro ao guardar a conta bancária');
+      if (!response.ok) {
+        const corpo = await response.json().catch(() => ({}));
+        throw new Error(corpo.message || 'Erro ao guardar a conta bancária');
+      }
       await recarregarDadosBancarios();
       setAddContaBancariaOpen(false);
       setNovaContaBancaria({ banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola' });
       toast.success('Conta bancária guardada.');
     } catch (err) {
  console.error('Erro ao guardar conta bancária do fornecedor:', err);
-      toast.error('Erro ao guardar a conta bancária do fornecedor.');
+      toast.error(err instanceof Error ? err.message : 'Erro ao guardar a conta bancária do fornecedor.');
     } finally {
       setSavingContaBancaria(false);
     }
@@ -477,8 +489,30 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     <div className="grid gap-2 md:grid-cols-2">
                       <Input placeholder="Banco" value={novaContaBancaria.banco_nome} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_nome: e.target.value })} />
                       <Input placeholder="Titular da conta" value={novaContaBancaria.banco_titular} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_titular: e.target.value })} />
-                      <Input placeholder="IBAN" value={novaContaBancaria.banco_iban} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_iban: e.target.value })} />
-                      <Input placeholder="NIB" value={novaContaBancaria.banco_nib} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_nib: e.target.value })} />
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="IBAN — AO06 0055 0000 2159 9539 1019 3"
+                          value={novaContaBancaria.banco_iban}
+                          maxLength={31}
+                          aria-invalid={!!validarIban(novaContaBancaria.banco_iban)}
+                          onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_iban: formatarIban(e.target.value) })}
+                        />
+                        {validarIban(novaContaBancaria.banco_iban) && (
+                          <p className="text-xs text-destructive">{validarIban(novaContaBancaria.banco_iban)}</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="NIB — 21 dígitos"
+                          value={novaContaBancaria.banco_nib}
+                          maxLength={26}
+                          aria-invalid={!!validarNib(novaContaBancaria.banco_nib)}
+                          onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_nib: formatarNib(e.target.value) })}
+                        />
+                        {validarNib(novaContaBancaria.banco_nib) && (
+                          <p className="text-xs text-destructive">{validarNib(novaContaBancaria.banco_nib)}</p>
+                        )}
+                      </div>
                       <Input placeholder="SWIFT/BIC" value={novaContaBancaria.banco_swift} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_swift: e.target.value })} />
                       <Input placeholder="Cidade" value={novaContaBancaria.banco_cidade} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_cidade: e.target.value })} />
                     </div>
@@ -486,7 +520,12 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                       <Button type="button" size="sm" variant="outline" onClick={() => setAddContaBancariaOpen(false)} disabled={savingContaBancaria}>
                         Cancelar
                       </Button>
-                      <Button type="button" size="sm" onClick={handleSalvarContaBancaria} disabled={savingContaBancaria}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSalvarContaBancaria}
+                        disabled={savingContaBancaria || !!validarIban(novaContaBancaria.banco_iban) || !!validarNib(novaContaBancaria.banco_nib)}
+                      >
                         {savingContaBancaria ? 'A guardar...' : 'Guardar conta'}
                       </Button>
                     </div>

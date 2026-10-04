@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
+import { erroCoordenadas } from '../utils/bank-format';
 import { autorDaCotacao, cotacaoSemAccao, fornecedorSemAccao, MENSAGEM_SEM_ACCAO, nivelDeAcesso, pedidoSemAccao, temPermissao } from '../utils/proprio-sem-accao';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
@@ -1149,6 +1150,8 @@ function registerCrud(config: ModuleConfig) {
 
     router.post(`${config.path}/fornecedores`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        const erroConta = erroCoordenadas(req.body);
+        if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
         const record = await prisma.fornecedor.create({
           data: {
             id: crypto.randomUUID(),
@@ -1221,10 +1224,66 @@ function registerCrud(config: ModuleConfig) {
       }
     });
 
+    // Coordenadas bancarias do fornecedor (usadas ao registar uma factura em
+    // nome dele). So mexe nos campos bancarios. Quem pode editar fornecedores
+    // (finance:update) altera sempre; quem so submete em nome do fornecedor
+    // (ex: DSG Tecnico) so pode PREENCHER quando o fornecedor ainda nao tem
+    // nenhuma - trocar o IBAN de um fornecedor existente fica reservado.
+    router.put(`${config.path}/fornecedores/:fornecedorId/dados-bancarios`, requireAuth as any, requireLicense as any, async (req, res, next) => {
+      try {
+        const existing = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
+        if (!existing || existing.deletedAt) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+
+        const podeAlterar = await temPermissao(req as any, 'finance', 'update');
+        const podeSubmeter = podeAlterar
+          || await temPermissao(req as any, 'finance', 'create')
+          || await temPermissao(req as any, 'finance', 'update_own')
+          || await temPermissao(req as any, 'invoices', 'create');
+        if (!podeSubmeter) return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para registar dados bancarios de fornecedores' });
+
+        const actuais = await resolveFornecedorBankInfo({}, { fornecedor_id: existing.id }).catch(() => null);
+        const jaTem = !!(actuais?.banco_iban || actuais?.banco_nib);
+        if (jaTem && !podeAlterar) {
+          return res.status(403).json({
+            error: 'FORBIDDEN',
+            message: 'Este fornecedor ja tem coordenadas bancarias. So quem gere fornecedores (Compras) as pode alterar.',
+          });
+        }
+
+        const campos = ['banco_nome', 'banco_titular', 'banco_iban', 'banco_nib', 'banco_swift', 'banco_cidade', 'banco_pais'];
+        const novos: Record<string, string> = {};
+        for (const c of campos) {
+          const v = typeof req.body?.[c] === 'string' ? req.body[c].trim() : '';
+          if (v) novos[c] = v.slice(0, 120);
+        }
+        if (!novos.banco_iban && !novos.banco_nib) {
+          return res.status(400).json({ error: 'BAD_REQUEST', message: 'Indique o IBAN ou o NIB da conta.' });
+        }
+        const erroConta = erroCoordenadas(novos);
+        if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
+
+        const data = { ...safeParse(existing.data, {}), ...novos };
+        const record = await prisma.fornecedor.update({ where: { id: existing.id }, data: { data: stringify(data) } });
+        await auditService.logAction(jaTem ? 'fornecedor_dados_bancarios_alterados' : 'fornecedor_dados_bancarios_adicionados', 'info', {
+          fornecedor: existing.nome, banco_nome: novos.banco_nome, banco_iban: novos.banco_iban, banco_nib: novos.banco_nib,
+        }, {
+          userId: (req as any).user?.id, userEmail: (req as any).user?.email, userRole: (req as any).user?.role,
+          ipAddress: req.ip || 'unknown', resource: 'fornecedor', resourceId: existing.id,
+          oldValue: actuais || undefined, success: true,
+        }).catch(() => null);
+        const dados = await resolveFornecedorBankInfo({}, { fornecedor_id: record.id }).catch(() => null);
+        return res.status(200).json({ dados_bancarios: dados });
+      } catch (error) {
+        next(error);
+      }
+    });
+
     router.put(`${config.path}/fornecedores/:fornecedorId`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
         const existing = await prisma.fornecedor.findUnique({ where: { id: req.params.fornecedorId } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Fornecedor nao encontrado' });
+        const erroConta = erroCoordenadas(req.body);
+        if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
         if (await soProprios(req, 'update', 'update_own')) {
           if (existing.createdById !== (req as any).user?.id || !(await fornecedorSemDocumentos(existing.id))) return negarSemAccao(res);
           delete req.body.status;

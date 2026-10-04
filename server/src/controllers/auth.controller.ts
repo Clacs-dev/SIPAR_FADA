@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { validarIban, validarNib } from '../utils/bank-format';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -490,6 +491,8 @@ export class AuthController {
       }
 
       const { bankName, bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry, signatureImage } = req.body;
+      const erroConta = validarIban(bankIban) || validarNib(bankNib);
+      if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
 
       const updateData: Record<string, any> = {
         bankName: bankName?.trim() || null,
@@ -555,6 +558,8 @@ export class AuthController {
       if (!bankIban?.trim() && !bankNib?.trim()) {
         return res.status(400).json({ error: 'BAD_REQUEST', message: 'Indique o IBAN ou o NIB da conta' });
       }
+      const erroConta = validarIban(bankIban) || validarNib(bankNib);
+      if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
 
       const dbUser = await prisma.user.findUnique({ where: { id: req.user.id } });
       if (!dbUser) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
