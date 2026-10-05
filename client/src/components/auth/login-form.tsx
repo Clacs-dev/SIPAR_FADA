@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { getFriendlyErrorMessage } from '@/services/api';
 import { ClipboardList, CalendarClock, Zap, Settings, Eye, EyeOff } from 'lucide-react';
 import { ServerUrlDialog } from './server-url-dialog';
+import { PERMITIR_ENDERECO_SERVIDOR } from '@/services/api';
 
 export function LoginForm() {
   const [email, setEmail] = useState('');
@@ -311,23 +312,28 @@ export function LoginForm() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={() => setShowServerUrl(true)}
-        title="Configurar endereço do servidor"
-        aria-label="Configurar endereço do servidor"
-        className="fixed bottom-4 left-4 flex items-center justify-center rounded-full transition-opacity hover:opacity-100"
-        style={{
-          width: '36px',
-          height: '36px',
-          backgroundColor: 'var(--login-border)',
-          color: 'var(--login-text-secondary)',
-          opacity: 0.55,
-        }}
-      >
-        <Settings className="h-4 w-4" />
-      </button>
-      <ServerUrlDialog open={showServerUrl} onOpenChange={setShowServerUrl} />
+      {/* Configurar o endereco do servidor: so com VITE_PERMITIR_ENDERECO_SERVIDOR=true (na web usa-se sempre o VITE_API_URL). */}
+      {PERMITIR_ENDERECO_SERVIDOR && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowServerUrl(true)}
+            title="Configurar endereço do servidor"
+            aria-label="Configurar endereço do servidor"
+            className="fixed bottom-4 left-4 flex items-center justify-center rounded-full transition-opacity hover:opacity-100"
+            style={{
+              width: '36px',
+              height: '36px',
+              backgroundColor: 'var(--login-border)',
+              color: 'var(--login-text-secondary)',
+              opacity: 0.55,
+            }}
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+          <ServerUrlDialog open={showServerUrl} onOpenChange={setShowServerUrl} />
+        </>
+      )}
     </div>
   );
 }

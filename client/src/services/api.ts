@@ -9,7 +9,22 @@ import { toast } from 'sonner';
 const API_BASE_URL_STORAGE_KEY = 'sipar_api_base_url_override';
 export const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api/v1';
 
+// Na versao web (Vercel) o endereco vem sempre do VITE_API_URL do build: o
+// icone de configuracao fica escondido e qualquer endereco guardado antes no
+// browser e ignorado (e apagado). Para voltar a permitir a alteracao manual
+// (ex: versao desktop/instalacao local), definir VITE_PERMITIR_ENDERECO_SERVIDOR=true.
+export const PERMITIR_ENDERECO_SERVIDOR = import.meta.env.VITE_PERMITIR_ENDERECO_SERVIDOR === 'true';
+
+if (!PERMITIR_ENDERECO_SERVIDOR) {
+  try {
+    localStorage.removeItem(API_BASE_URL_STORAGE_KEY);
+  } catch {
+    // localStorage indisponivel (ex: modo privado) - nada a limpar
+  }
+}
+
 function readStoredApiBaseUrl(): string | null {
+  if (!PERMITIR_ENDERECO_SERVIDOR) return null;
   try {
     const stored = localStorage.getItem(API_BASE_URL_STORAGE_KEY);
     return stored && stored.trim() ? stored.trim() : null;
