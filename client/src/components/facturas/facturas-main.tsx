@@ -908,12 +908,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
             }
           </p>
         </div>
-        {canCreate && (
-          <Button onClick={() => setView('form')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Nova Factura
-          </Button>
-        )}
+        {/* "Nova Factura" passou para o Procurement (junto de Fornecedores e
+            Novo Pedido). Aqui o formulario continua a servir para editar. */}
       </div>
 
       {/* Loading */}

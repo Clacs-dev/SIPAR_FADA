@@ -8,7 +8,7 @@ import {
   Package, Plus, Eye, FileText, Clock,
   CheckCircle2, XCircle, TrendingUp, AlertCircle,
   DollarSign, Building2, ShoppingBag, Calendar, Send, ClipboardList,
-  Pencil, Ban, Trash2
+  Pencil, Ban, Trash2, Receipt
 } from "lucide-react";
 import { Card, CardContent } from "../ui/card";
 import { Button } from "../ui/button";
@@ -24,6 +24,9 @@ import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
 import { MapaActividades } from "../shared/mapa-actividades";
+import { FacturaForm } from "../facturas/factura-form";
+import type { Factura, Fornecedor as FornecedorFactura } from "../facturas/types";
+import { API_BASE_URL, getAuthHeaders } from "@/services/api";
 import { MapaImpostos } from "../shared/mapa-impostos";
 import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useClientPagination } from "../../hooks/use-client-pagination";
@@ -38,6 +41,10 @@ export function ComprasMain() {
   const [activeTab, setActiveTab] = useState("todos");
   const [formOpen, setFormOpen] = useState(false);
   const [fornecedoresView, setFornecedoresView] = useState(false);
+  // Registo de factura/proforma (antes em Gestao de Pagamento): mesmo
+  // formulario; a factura segue depois o fluxo normal da Gestao de Pagamento.
+  const [novaFacturaView, setNovaFacturaView] = useState(false);
+  const [aGravarFactura, setAGravarFactura] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedPedido, setSelectedPedido] = useState<PedidoCompra | null>(null);
   // Pedido em edicao no PedidoFormDialog (null = novo pedido).
@@ -56,6 +63,7 @@ export function ComprasMain() {
   const podeCriar = pode('finance', 'create');                       // novo pedido, cotacao em nome do fornecedor
   const podeDecidir = pode('finance', 'approve');                    // analisar, aprovar, confirmar rececao
   const podeVerFornecedores = pode('finance', ['read_all', 'create']);
+  const podeCriarFactura = pode('invoices', 'create');                // Nova Factura
   // Documento proprio e ainda sem accao (regra do servidor, utils/proprio-sem-accao.ts).
   const pedidoSemAccao = (p: PedidoCompra) =>
     p.status === 'criado' || (p.status === 'aguardando_cotacoes' && !(p.total_cotacoes > 0));
@@ -264,6 +272,48 @@ export function ComprasMain() {
   const pedidosPag = useClientPagination(pedidosFiltrados);
   useEffect(() => { pedidosPag.setPage(1); }, [activeTab]);
 
+  // Nova Factura: mesmo formulario e mesmo registo (POST /facturas) que a
+  // Gestao de Pagamento usava; a factura fica "Pendente" e aparece la.
+  if (novaFacturaView) {
+    const fornecedoresFactura: FornecedorFactura[] = fornecedores
+      .filter((f: any) => f.situacao !== 'bloqueado')
+      .map((f: any) => ({
+        id: f.id,
+        nome: f.nome,
+        nif: f.nif || '',
+        email: f.email || '',
+        telefone: f.telefone || '',
+        morada: f.endereco || [f.cidade, f.provincia].filter(Boolean).join(', ') || '',
+      }));
+    const gravarFactura = async (dados: Partial<Factura>) => {
+      if (aGravarFactura) return;
+      setAGravarFactura(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/facturas`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify(dados),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.message || body.error || 'Erro ao registar a factura');
+        const numero = body.factura?.numero || body.data?.numero || '';
+        toast.success(`Factura ${numero} registada. Segue o processo em Gestão de Pagamento (Pendentes).`);
+        setNovaFacturaView(false);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Erro ao registar a factura');
+      } finally {
+        setAGravarFactura(false);
+      }
+    };
+    return (
+      <FacturaForm
+        fornecedores={fornecedoresFactura}
+        onSave={gravarFactura}
+        onCancel={() => setNovaFacturaView(false)}
+      />
+    );
+  }
+
   // Se está na view de fornecedores, mostrar apenas isso
   if (fornecedoresView) {
     return <FornecedoresGestao onBack={() => setFornecedoresView(false)} />;
@@ -287,6 +337,12 @@ export function ComprasMain() {
             <Button variant="outline" onClick={() => setFornecedoresView(true)}>
               <Building2 className="mr-2 h-4 w-4" />
               Fornecedores ({fornecedores.length})
+            </Button>
+          )}
+          {podeCriarFactura && (
+            <Button variant="outline" onClick={() => setNovaFacturaView(true)}>
+              <Receipt className="mr-2 h-4 w-4" />
+              Nova Factura
             </Button>
           )}
           {podeCriar && (
