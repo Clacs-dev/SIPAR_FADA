@@ -15,6 +15,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { Download, ExternalLink, FileWarning, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./dialog";
 import { Button } from "./button";
+import { urlPublica } from "@/services/api";
 
 export interface PreviewRequest {
   url?: string;
@@ -40,7 +41,9 @@ function subscrever(listener: Listener) {
 /** Abre a pre-visualizacao de um documento (URL do servidor ou blob local). */
 export function previewDocument(request: PreviewRequest) {
   if (!request.url && !request.blob) return;
-  emitir(request);
+  // Ficheiros do servidor gravados com http:// seriam bloqueados numa pagina
+  // https ("Failed to fetch"): pede-os sempre pelo endereco publico (https).
+  emitir(request.url ? { ...request, url: urlPublica(request.url) } : request);
 }
 
 /** Pre-visualiza um PDF gerado com jsPDF em vez de o descarregar directamente. */
@@ -127,7 +130,13 @@ export function DocumentPreviewHost() {
       try {
         let conteudo = request.blob;
         if (!conteudo && request.url) {
-          const resposta = await fetch(request.url);
+          let resposta: Response;
+          try {
+            resposta = await fetch(request.url, { cache: "no-store" });
+          } catch {
+            throw new Error("Não foi possível ligar ao servidor para ler o ficheiro. Verifique a ligação e tente de novo.");
+          }
+          if (resposta.status === 404) throw new Error("O ficheiro já não existe no servidor.");
           if (!resposta.ok) throw new Error(`O servidor respondeu ${resposta.status}`);
           conteudo = await resposta.blob();
         }
