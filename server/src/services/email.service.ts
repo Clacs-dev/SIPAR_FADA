@@ -1,5 +1,5 @@
 import logger from '../config/logger';
-import nodemailer from 'nodemailer';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { SettingsService } from './settings.service';
 
 export interface EmailOptions {
@@ -13,7 +13,7 @@ export interface EmailOptions {
  * Serviço de e-mail integrado para notificações transacionais
  */
 export class EmailService {
-  private static transporter: nodemailer.Transporter | null = null;
+  private static transporter: Transporter | null = null;
 
   /** Chamar depois de gravar definicoes novas de email, para a proxima chamada reconstruir o transporter. */
   static resetTransporter() {

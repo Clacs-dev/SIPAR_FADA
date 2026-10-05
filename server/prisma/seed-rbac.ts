@@ -214,7 +214,7 @@ const PUBLICO_PERMISSIONS: PermissionSpec[] = [
 // atual de getUserPermissions() em server/src/utils/permissions.ts.
 const EXECUTIVO_ROLES = [
   'gabinete_pca', 'gabinete_pce', 'gabinete_administrador', 'gabinete_director',
-  'gabinete_ministro', 'gabinete_secretario_estado_1', 'gabinete_secretario_estado_2',
+  'gabinete_ministro', 'gabinete_secretario_estado_1', 'gabinete_secretario_estado_2', // gitleaks:allow ("secretario" e nome de role, nao um segredo)
   'gabinete_vice_governador_1', 'gabinete_vice_governador_2',
   'administracao', 'gestao', 'tecnologia_informacao',
 ];

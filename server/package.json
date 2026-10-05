@@ -4,7 +4,7 @@
   "description": "Backend Express para o projeto SIPAR20",
   "main": "dist/index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "npm run build && node --test \"dist/tests/*.test.js\"",
@@ -26,10 +26,10 @@
     "helmet": "^7.1.0",
     "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.0",
-    "multer": "^1.4.5-lts.1",
+    "morgan": "^1.12.1",
+    "multer": "^2.4.0",
     "node-machine-id": "^1.1.12",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.15",
     "undici": "^7.30.0",
     "web-push": "^3.6.7",
     "winston": "^3.12.0",
@@ -46,10 +46,15 @@
     "@types/nodemailer": "^8.0.0",
     "prisma": "^5.10.2",
     "ts-node": "^10.9.2",
-    "ts-node-dev": "^2.0.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "tsx": "^4.20.0"
   },
   "engines": {
     "node": ">=20.18.1"
+  },
+  "overrides": {
+    "qs": "^6.16.0",
+    "uuid": "^11.1.1",
+    "brace-expansion@1": "^1.1.21"
   }
 }
