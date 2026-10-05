@@ -57,7 +57,22 @@ export const MODULES = {
   PAGAMENTOS_ORDENS_INTERNA: 'pagamentos_ordens_interna',
   PAGAMENTOS_SUBMETIDO_BANCO: 'pagamentos_submetido_banco',
   PAGAMENTOS_PAGOS: 'pagamentos_pagos',
+  // Passos do fluxo da factura (accao "approve" = pode executar o passo):
+  //   Aprovar-DSG (validar) | Autorizar Despesas (autorizar/rejeitar) |
+  //   Pagamento (gerar Ordem de Pagamento, submeter ao banco, marcar pago).
+  PAGAMENTOS_ACCAO_APROVAR_DSG: 'pagamentos_accao_aprovar_dsg',
+  PAGAMENTOS_ACCAO_AUTORIZAR: 'pagamentos_accao_autorizar',
+  PAGAMENTOS_ACCAO_PAGAR: 'pagamentos_accao_pagar',
 } as const;
+
+/** Modulo de permissao exigido para cada mudanca de estado da factura. */
+export const PASSO_DA_FACTURA: Record<string, string[]> = {
+  validado: [MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG],
+  aprovado: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  rejeitado: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR, MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG],
+  submetido_ao_banco: [MODULES.PAGAMENTOS_ACCAO_PAGAR],
+  pago: [MODULES.PAGAMENTOS_ACCAO_PAGAR],
+};
 
 /** Separadores da Gestao de Pagamento + Mapa de Impostos (modulos so de visualizacao). */
 export const MODULOS_SEPARADORES_PAGAMENTO = [

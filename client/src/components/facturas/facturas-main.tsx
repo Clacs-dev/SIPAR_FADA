@@ -783,15 +783,11 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
   const isDsgTecnico = userRole === 'dsg_tecnico';
 
   // Definir permissões
-  // Compras, gabinetes executivos e Financeiro mantêm o fluxo fixo de sempre
-  // (validar / autorizar / pagar). Qualquer outro role (ex: DSG Técnico)
-  // segue a matriz de Roles e Permissões: "Facturas & Pagamentos -> Aprovar"
-  // dá o Aprovar-DSG e a Autorização de Despesas.
-  const papelDeFluxoFixo = isCompras || isGabineteExecutivo || isFinanceiro;
-  const aprovaPelaMatriz = !papelDeFluxoFixo && pode('invoices', 'approve');
-  const canValidate = isCompras || aprovaPelaMatriz;
-  const canApprove = isGabineteExecutivo || aprovaPelaMatriz;
-  const canPay = isFinanceiro; // Apenas Financeiro marca como pago
+  // Cada passo do fluxo segue a matriz de Roles e Permissões
+  // ("Gestão de Pagamento — acções no fluxo da factura"), para qualquer role.
+  const canValidate = pode('pagamentos_accao_aprovar_dsg', 'approve'); // Aprovar-DSG
+  const canApprove = pode('pagamentos_accao_autorizar', 'approve');    // Autorizar / Rejeitar
+  const canPay = pode('pagamentos_accao_pagar', 'approve');            // OP, banco, pago
   // Ver/criar seguem as permissões do role (Roles e Permissões).
   const canView = isCompras || isFinanceiro || isGabineteExecutivo || isExterno || pode('invoices', ['read_all', 'read_own']);
   const canCreate = isExterno || pode('invoices', 'create'); // inclui o DSG Técnico (em nome do fornecedor)
@@ -912,7 +908,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
             }
           </p>
         </div>
-        {(isFinanceiro || canCreate) && (
+        {canCreate && (
           <Button onClick={() => setView('form')}>
             <Plus className="mr-2 h-4 w-4" />
             Nova Factura

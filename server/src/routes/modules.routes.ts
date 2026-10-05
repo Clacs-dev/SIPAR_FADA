@@ -1426,6 +1426,10 @@ function registerCrud(config: ModuleConfig) {
     // Gera (ou actualiza) os dados da Ordem de Pagamento associada a uma factura aprovada.
     router.post(`${config.path}/:id/ordem-pagamento`, requireAuth as any, requireLicense as any, async (req, res, next) => {
       try {
+        // Passo "Pagamento" da matriz de Roles e Permissoes.
+        if (!(await temPermissao(req as any, 'pagamentos_accao_pagar', 'approve'))) {
+          return res.status(403).json({ error: 'FORBIDDEN', message: 'O seu perfil nao tem permissao para gerar a Ordem de Pagamento (ver Roles e Permissoes).' });
+        }
         const existing = await prisma.factura.findUnique({ where: { id: req.params.id } });
         if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Factura nao encontrada' });
         if (existing.status !== 'aprovado' && !existing.numeroOrdemPagamento) {

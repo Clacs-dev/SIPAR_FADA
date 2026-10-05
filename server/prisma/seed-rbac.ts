@@ -57,10 +57,16 @@ const SEPARADORES_PAGAMENTO = [
 ];
 const VER_SEPARADORES_PAGAMENTO: PermissionSpec[] = SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: ['read_all'] }));
 
+// Passos do fluxo da factura (accao approve = pode executar o passo).
+const PASSO_APROVAR_DSG: PermissionSpec = { module: 'pagamentos_accao_aprovar_dsg', actions: ['approve'] };
+const PASSO_AUTORIZAR: PermissionSpec = { module: 'pagamentos_accao_autorizar', actions: ['approve'] };
+const PASSO_PAGAR: PermissionSpec = { module: 'pagamentos_accao_pagar', actions: ['approve'] };
+
 // Reproduz exatamente o que os grupos estaticos concediam hoje
 // (server/src/utils/permissions.ts), menos os modulos exclusivamente
 // tecnicos que passam para o novo role admin_sistema.
 const EXECUTIVO_PERMISSIONS: PermissionSpec[] = [
+  PASSO_AUTORIZAR,
   ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.CREATE, A.READ_ALL, A.UPDATE, A.DELETE, A.APPROVE, A.REJECT] },
@@ -135,6 +141,7 @@ const ATENDENTE_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
+  PASSO_PAGAR,
   ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },
@@ -152,6 +159,7 @@ const FINANCEIRO_PERMISSIONS: PermissionSpec[] = [
 ];
 
 const COMPRAS_PERMISSIONS: PermissionSpec[] = [
+  PASSO_APROVAR_DSG,
   ...VER_SEPARADORES_PAGAMENTO,
   { module: MODULES.ACTIVITY_MAP, actions: [A.READ_ALL, A.EXPORT, A.UPDATE] },
   { module: MODULES.PRESENTATIONS, actions: [A.READ_ALL] },

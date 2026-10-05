@@ -942,13 +942,25 @@ export class ModuleRoutesHelper {
 
       // Com update_own so se pode ANULAR (cancelado) o proprio documento ainda
       // sem accao - nunca validar, aprovar, rejeitar ou pagar.
-      // "Aprovar" na matriz (Roles e Permissoes) tambem cobre o Aprovar-DSG
-      // (validado) - quem pode aprovar/autorizar pode validar o passo anterior.
-      const aprovaPorPermissao = nextStatus === 'validado'
-        && permissions.hasPermission(await permissions.getUserPermissions(user.role as any, user.department, undefined), config.permissionModule, config.approveAction);
-      const acesso = aprovaPorPermissao || await autorizarAlteracao(
-        req, res, config, existing, action, permissions.ACTIONS.UPDATE_OWN, nextStatus === STATUS.CANCELADO,
-      );
+      // Factura: cada passo do fluxo (Aprovar-DSG, Autorizar/Rejeitar, Pagamento)
+      // e uma permissao propria na matriz de Roles e Permissoes - so quem a
+      // tem executa esse passo, seja qual for o role.
+      const passos = config.model === 'factura' ? permissions.PASSO_DA_FACTURA[nextStatus] : undefined;
+      let acesso: any;
+      if (passos) {
+        const perms = await permissions.getUserPermissions(user.role as any, user.department, undefined);
+        acesso = passos.some((modulo) => permissions.hasPermission(perms, modulo, permissions.ACTIONS.APPROVE));
+        if (!acesso) {
+          await auditService.logAction('unauthorized_access_attempt', 'warning', {
+            module: passos.join('|'), action: 'approve', attemptedResource: req.originalUrl, passo: nextStatus,
+          }, { userId: user.id, userEmail: user.email, userRole: user.role, ipAddress: req.ip || 'unknown', resourceId: existing.id, success: false });
+          return res.status(403).json({ error: 'FORBIDDEN', message: 'O seu perfil nao tem permissao para este passo da factura (ver Roles e Permissoes).' });
+        }
+      } else {
+        acesso = await autorizarAlteracao(
+          req, res, config, existing, action, permissions.ACTIONS.UPDATE_OWN, nextStatus === STATUS.CANCELADO,
+        );
+      }
       if (!acesso) return;
 
       if (existing.status === STATUS.APROVADO && nextStatus === STATUS.REJEITADO) {

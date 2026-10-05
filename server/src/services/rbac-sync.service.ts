@@ -31,6 +31,20 @@ export const DSG_TECNICO_PERMISSIONS: { module: string; actions: string[] }[] = 
 
 const MARCADOR_ACTIVITY_MAP = 'rbac.migracao.activity_map.v1';
 const MARCADOR_SEPARADORES = 'rbac.migracao.separadores_pagamento.v1';
+const MARCADOR_ACCOES = 'rbac.migracao.accoes_factura.v1';
+
+// Quem fazia cada passo antes de passar a ser controlado pela matriz
+// (antes estava fixo no ecra: Compras valida, gabinetes autorizam,
+// Financeiro paga).
+const PASSOS_POR_ROLE: Record<string, string[]> = {
+  compras: [MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG],
+  gabinete_pca: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  gabinete_pce: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  gabinete_administrador: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  gabinete_director: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  gestao: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
+  financeiro: [MODULES.PAGAMENTOS_ACCAO_PAGAR],
+};
 const ROLES_SEM_MAPA = new Set(['dsg_tecnico', 'externo', 'publico']);
 
 async function garantirPermissao(roleId: string, module: string, action: string) {
@@ -100,6 +114,31 @@ async function migrarSeparadoresPagamento() {
   return concedidos;
 }
 
+/**
+ * Os passos do fluxo da factura passaram a ser permissoes da matriz. Uma
+ * unica vez, concede-os a quem ja os executava (PASSOS_POR_ROLE) e, a
+ * outros roles a quem o administrador ja tinha dado "Facturas -> Aprovar",
+ * o Aprovar-DSG e a Autorizacao (o que esse "Aprovar" passou a significar).
+ */
+async function migrarAccoesFactura() {
+  const feito = await prisma.systemSetting.findUnique({ where: { key: MARCADOR_ACCOES } });
+  if (feito) return 0;
+  const roles = await prisma.role.findMany({ where: { deletedAt: null }, include: { permissoes: true } });
+  let concedidos = 0;
+  for (const role of roles) {
+    let passos = PASSOS_POR_ROLE[role.slug];
+    if (!passos && !['externo', 'publico', 'admin_sistema'].includes(role.slug)
+      && role.permissoes.some((p) => p.module === MODULES.INVOICES && p.action === A.APPROVE)) {
+      passos = [MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG, MODULES.PAGAMENTOS_ACCAO_AUTORIZAR];
+    }
+    if (!passos) continue;
+    for (const module of passos) await garantirPermissao(role.id, module, A.APPROVE);
+    concedidos += 1;
+  }
+  await prisma.systemSetting.create({ data: { key: MARCADOR_ACCOES, value: new Date().toISOString(), updatedByName: 'sistema' } });
+  return concedidos;
+}
+
 export async function sincronizarRbac() {
   const criado = await garantirRoleDsgTecnico();
   if (criado) logger.info('[RBAC] Role "dsg_tecnico" (DSG Técnico) criado com as permissões por omissão.');
@@ -107,4 +146,6 @@ export async function sincronizarRbac() {
   if (n > 0) logger.info(`[RBAC] Permissão do Mapa de Actividades concedida a ${n} role(s) que já tinham acesso.`);
   const s = await migrarSeparadoresPagamento();
   if (s > 0) logger.info(`[RBAC] Separadores da Gestão de Pagamento e Mapa de Impostos concedidos a ${s} role(s) que já os viam.`);
+  const a = await migrarAccoesFactura();
+  if (a > 0) logger.info(`[RBAC] Passos do fluxo da factura (Aprovar-DSG, Autorizar, Pagamento) concedidos a ${a} role(s).`);
 }

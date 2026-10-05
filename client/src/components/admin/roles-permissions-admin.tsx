@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { SEPARADORES_PAGAMENTO } from "../auth/separadores-pagamento";
+import { ACCOES_PAGAMENTO, SEPARADORES_PAGAMENTO } from "../auth/separadores-pagamento";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -59,6 +59,13 @@ const MODULES: { value: string; label: string; restricted?: boolean; actions?: s
     label: s.module === 'tax_map' ? 'Mapa de Impostos (menu, Procurement e Gestão de Pagamento)' : s.label,
     actions: ['read_all'],
     grupo: i === 0 ? 'Gestão de Pagamento — separadores visíveis (Ler = ver o separador)' : undefined,
+  })),
+  // Passos do fluxo da factura: so quem tem "Aprovar" executa o passo.
+  ...ACCOES_PAGAMENTO.map((a, i) => ({
+    value: a.module,
+    label: a.label,
+    actions: ['approve'],
+    grupo: i === 0 ? 'Gestão de Pagamento — acções no fluxo da factura (Aprovar = pode executar)' : undefined,
   })),
   { value: 'documents', label: 'Documentos' },
   { value: 'messages', label: 'Mensagens' },
