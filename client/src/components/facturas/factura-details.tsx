@@ -32,6 +32,7 @@ import { Textarea } from "../ui/textarea";
 import { Input } from "../ui/input";
 import { Factura, HistoricoFactura } from "./types";
 import { useAuth } from "../auth/auth-context";
+import { urlPublica } from '@/services/api';
 import { API_BASE_URL } from '@/services/api';
 import { gerarPDFOrdemPagamento, gerarPDFFactura, urlParaDataUrl, visualizarOrdemCompra } from "../../utils/pdf-generator";
 import { previewDocument, previewPdf } from "../ui/document-preview";
@@ -870,7 +871,7 @@ export function FacturaDetails({
                 ) : (
                   <div className="space-y-2">
                     {factura.anexos.filter(anexo => anexo !== null && anexo !== undefined).map((anexo, index) => {
-                      const url = anexo?.url || anexo?.signedUrl;
+                      const url = urlPublica(anexo?.url || anexo?.signedUrl);
                       const hasUrl = !!url;
                       
                       return (

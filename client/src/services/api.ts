@@ -35,6 +35,27 @@ function readStoredApiBaseUrl(): string | null {
 
 export let API_BASE_URL = readStoredApiBaseUrl() || DEFAULT_API_BASE_URL;
 
+/**
+ * Ficheiros do proprio servidor (assinaturas, anexos) gravados com http://
+ * (antes de o servidor confiar no proxy HTTPS) seriam bloqueados pelo browser
+ * numa pagina https. Para o mesmo servidor da API, usa https.
+ */
+export function urlPublica(url: string | null | undefined): string {
+  if (!url) return '';
+  try {
+    if (typeof window === 'undefined' || window.location.protocol !== 'https:' || !url.startsWith('http://')) return url;
+    const alvo = new URL(url);
+    const api = new URL(API_BASE_URL, window.location.href);
+    if (alvo.host === api.host) {
+      alvo.protocol = 'https:';
+      return alvo.toString();
+    }
+  } catch {
+    // URL invalido: devolve como esta
+  }
+  return url;
+}
+
 /** Devolve o valor guardado manualmente, ou null se a app estiver a usar o endereco de build. */
 export function getApiBaseUrlOverride(): string | null {
   return readStoredApiBaseUrl();

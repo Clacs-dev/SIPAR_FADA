@@ -1,12 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { Separator } from "../ui/separator";
-import { Loader2, Save, PenTool } from "lucide-react";
+import { Loader2, Save, PenTool, Upload } from "lucide-react";
 import { toast } from "sonner@2.0.3";
-import { API_BASE_URL } from '@/services/api';
+import { API_BASE_URL, urlPublica } from '@/services/api';
 import { useAuth } from "../auth/auth-context";
 
 interface MeuPerfilDialogProps {
@@ -31,6 +31,8 @@ export function MeuPerfilDialog({ open, onOpenChange }: MeuPerfilDialogProps) {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const [uploadingSignature, setUploadingSignature] = useState(false);
+  const inputAssinaturaRef = useRef<HTMLInputElement>(null);
+  const [assinaturaFalhou, setAssinaturaFalhou] = useState(false);
 
   const resetFromUser = () => {
     setName(user?.name || '');
@@ -188,21 +190,52 @@ export function MeuPerfilDialog({ open, onOpenChange }: MeuPerfilDialogProps) {
               Esta imagem é usada automaticamente sempre que assinar uma Ordem de Pagamento ou outro documento.
               Formatos aceites: PNG, JPG, WEBP ou GIF (até 10 MB) — de preferência PNG com fundo transparente.
             </p>
-            {user?.signatureImage && (
+            {user?.signatureImage ? (
               <div className="border rounded-lg p-2 bg-muted/40">
-                <img src={user.signatureImage} alt="Assinatura actual" className="h-16 object-contain" />
+                {assinaturaFalhou ? (
+                  <p className="text-xs" style={{ color: 'var(--tone-warn)' }}>
+                    Não foi possível mostrar a assinatura guardada. Carregue-a de novo.
+                  </p>
+                ) : (
+                  <img
+                    src={urlPublica(user.signatureImage)}
+                    alt="Assinatura actual"
+                    className="h-16 object-contain"
+                    onError={() => setAssinaturaFalhou(true)}
+                  />
+                )}
               </div>
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--tone-warn)' }}>
+                Ainda não tem assinatura carregada — é obrigatória para aprovar ou autorizar documentos.
+              </p>
             )}
-            <Input
+            {/* Seletor nativo escondido; o botao abre-o (o "Escolher ficheiro"
+                do browser ficava invisivel com o estilo do campo). */}
+            <input
+              ref={inputAssinaturaRef}
               type="file"
               accept="image/png,image/jpeg,image/webp,image/gif"
-              disabled={uploadingSignature}
+              className="hidden"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) handleUploadSignature(file);
+                if (file) {
+                  setAssinaturaFalhou(false);
+                  handleUploadSignature(file);
+                }
                 e.target.value = '';
               }}
             />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              disabled={uploadingSignature}
+              onClick={() => inputAssinaturaRef.current?.click()}
+            >
+              <Upload className="mr-2 h-4 w-4" />
+              {user?.signatureImage ? 'Substituir assinatura' : 'Carregar assinatura'}
+            </Button>
             {uploadingSignature && (
               <p className="text-xs text-muted-foreground flex items-center gap-2">
                 <Loader2 className="h-3 w-3 animate-spin" /> A carregar assinatura...

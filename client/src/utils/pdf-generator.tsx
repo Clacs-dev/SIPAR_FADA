@@ -13,6 +13,7 @@ import autoTable from 'jspdf-autotable';
 import { FADA_LOGO_DATA_URI } from '../assets/fada-logo';
 import { previewPdf } from '../components/ui/document-preview';
 import { apiClient } from './api-client';
+import { urlPublica } from '../services/api';
 
 // Tipos para autoTable
 interface AutoTableOptions {
@@ -403,13 +404,34 @@ export function gerarPDFFactura(factura: any): void {
  * necessário para embutir a imagem no PDF via jsPDF.addImage().
  */
 export async function urlParaDataUrl(url: string): Promise<string> {
-  const response = await fetch(url);
+  const response = await fetch(urlPublica(url));
   const blob = await response.blob();
-  return new Promise((resolve, reject) => {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
+  });
+  // O jsPDF so inclui PNG/JPEG: SVG, WEBP ou GIF sao convertidos para PNG.
+  if (/^data:image\/(png|jpe?g)/i.test(dataUrl)) return dataUrl;
+  return converterParaPng(dataUrl);
+}
+
+/** Desenha a imagem num canvas e devolve-a em PNG (fundo transparente). */
+function converterParaPng(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || 600;
+      canvas.height = img.naturalHeight || 200;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas indisponivel'));
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Imagem de assinatura invalida'));
+    img.src = dataUrl;
   });
 }
 
@@ -881,7 +903,16 @@ export async function visualizarOrdemCompra(alvo: { ordemId?: string; facturaId?
   const response = alvo.ordemId
     ? await apiClient.get<{ ordem: OrdemCompraDocumento }>(`/procurement/ordens/${alvo.ordemId}/documento`)
     : await apiClient.post<{ ordem: OrdemCompraDocumento }>(`/facturas/${alvo.facturaId}/ordem-compra`, {});
-  const doc = gerarPDFOrdemCompra(response.ordem);
+  // Assinaturas (DSG/PCA) em data URL PNG - o jsPDF nao carrega URLs remotos.
+  const assinaturas = await Promise.all((response.ordem.assinaturas || []).map(async (a) => {
+    if (!a.assinatura_url || a.assinatura_url.startsWith('data:image/png') || a.assinatura_url.startsWith('data:image/jp')) return a;
+    try {
+      return { ...a, assinatura_url: await urlParaDataUrl(a.assinatura_url) };
+    } catch {
+      return { ...a, assinatura_url: undefined };
+    }
+  }));
+  const doc = gerarPDFOrdemCompra({ ...response.ordem, assinaturas });
   previewPdf(doc, `Autorizacao_Despesas_${response.ordem.numero.replace(/[\/\s]/g, '-')}.pdf`);
   return response.ordem;
 }
