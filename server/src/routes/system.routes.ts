@@ -18,7 +18,6 @@ router.use(requireLicenseModule('settings'));
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
 const LOGS_DIR = path.join(__dirname, '../../logs');
 const MIGRATIONS_DIR = path.join(__dirname, '../../prisma/migrations');
-const DB_FILE = path.join(__dirname, '../../prisma/dev.db');
 
 type HealthStatus = 'healthy' | 'warning' | 'degraded' | 'critical' | 'offline';
 
@@ -143,12 +142,8 @@ router.get('/diagnostics', requireAuth as any, requireSystemAdmin as any, async 
       prisma.pushSubscription.count(),
     ]);
 
-    let dbFileSizeBytes: number | null = null;
-    try {
-      dbFileSizeBytes = fs.statSync(DB_FILE).size;
-    } catch {
-      dbFileSizeBytes = null;
-    }
+    // Ficheiro SQLite ou, em PostgreSQL, pg_database_size().
+    const dbFileSizeBytes: number | null = await BackupService.tamanhoBaseDados();
 
     let migrations: string[] = [];
     try {
