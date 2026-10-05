@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { 
+import {
   Receipt,
   Plus,
   LayoutGrid,
@@ -11,7 +11,10 @@ import {
   Filter,
   FileSignature,
   Paperclip,
-  ClipboardList
+  ClipboardList,
+  Pencil,
+  Ban,
+  Trash2
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
@@ -21,8 +24,6 @@ import { FacturasDashboard } from "./facturas-dashboard";
 import { FacturaForm } from "./factura-form";
 import { FacturaDetails } from "./factura-details";
 import { OrdensPagamentoInterna } from "./ordens-pagamento-interna";
-import { MapaActividades } from "../shared/mapa-actividades";
-import { MapaImpostos } from "../shared/mapa-impostos";
 import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { MODULO_DO_SEPARADOR, SEPARADORES_PAGAMENTO } from "../auth/separadores-pagamento";
 import { Factura, FacturaFilters, FacturaStats, Fornecedor } from "./types";
@@ -132,6 +133,44 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       telefone: f.telefone || '',
       morada: f.endereco || [f.cidade, f.provincia].filter(Boolean).join(', ') || '',
     }));
+
+  // Accoes rapidas no cartao da lista: Editar / Anular / Eliminar para as
+  // facturas ainda sem accao que o utilizador pode alterar (mesma regra dos
+  // detalhes e do servidor). Nao abrem os detalhes ao clicar.
+  const renderAccoesRapidas = (factura: Factura) => {
+    const podeEditar = podeAlterarPropria(factura, 'update');
+    const podeEliminar = podeAlterarPropria(factura, 'delete');
+    if (!podeEditar && !podeEliminar) return null;
+    const parar = (e: React.MouseEvent) => e.stopPropagation();
+    return (
+      <div className="flex flex-wrap justify-end gap-1.5 mt-3" onClick={parar}>
+        {podeEditar && (
+          <Button size="sm" variant="outline" onClick={() => { setSelectedFactura(factura); setView('form'); }}>
+            <Pencil className="mr-1 h-3.5 w-3.5" /> Editar
+          </Button>
+        )}
+        {podeEditar && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { if (window.confirm(`Anular a factura ${factura.numero}? Fica registada como anulada e deixa de seguir para aprovação.`)) handleAnularOuEliminar('anular', factura); }}
+          >
+            <Ban className="mr-1 h-3.5 w-3.5" /> Anular
+          </Button>
+        )}
+        {podeEliminar && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-red-600 border-red-300 hover:bg-red-50"
+            onClick={() => { if (window.confirm(`Eliminar a factura ${factura.numero}? Vai para a Lixeira.`)) handleAnularOuEliminar('eliminar', factura); }}
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5" /> Eliminar
+          </Button>
+        )}
+      </div>
+    );
+  };
 
   // Helper functions
   // Indicador de anexos igual em todos os separadores (o detalhe, aberto a
@@ -804,13 +843,13 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     !!f && !!user && facturaSemAccao(f)
     && (pode('invoices', accao) || (f.created_by_id === user.id && pode('invoices', `${accao}_own`)));
 
-  const handleAnularOuEliminar = async (accao: 'anular' | 'eliminar') => {
-    if (!accessToken || !selectedFactura) return;
+  const handleAnularOuEliminar = async (accao: 'anular' | 'eliminar', alvo: Factura | null = selectedFactura) => {
+    if (!accessToken || !alvo) return;
     try {
       setLoading(true);
       setError(null);
       const res = await fetch(
-        accao === 'anular' ? `${API_BASE_URL}/facturas/${selectedFactura.id}/cancelar` : `${API_BASE_URL}/facturas/${selectedFactura.id}`,
+        accao === 'anular' ? `${API_BASE_URL}/facturas/${alvo.id}/cancelar` : `${API_BASE_URL}/facturas/${alvo.id}`,
         {
           method: accao === 'anular' ? 'POST' : 'DELETE',
           headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -1001,42 +1040,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     Pagos ({facturas.filter(f => f.status === 'pago').length})
                   </TabsTrigger>
                 )}
-                {ver('mapa_impostos') && (
-                  <TabsTrigger value="mapa_impostos">
-                    <FileText className="mr-2 h-4 w-4" />
-                    Mapa de Impostos
-                  </TabsTrigger>
-                )}
-                {ver('mapa_actividades') && (
-                  <TabsTrigger value="mapa_actividades">
-                    <ClipboardList className="mr-2 h-4 w-4" />
-                    Mapa de Actividades
-                  </TabsTrigger>
-                )}
               </TabsList>
-
-            {/* Mapa de Impostos - clicar numa linha abre a factura */}
-            {ver('mapa_impostos') && (
-              <TabsContent value="mapa_impostos">
-                <MapaImpostos
-                  contexto="financeiro"
-                  onOpenFactura={(facturaId) => {
-                    const alvo = facturas.find((f) => f.id === facturaId);
-                    if (alvo) {
-                      setSelectedFactura(alvo);
-                      setView('details');
-                    }
-                  }}
-                />
-              </TabsContent>
-            )}
-
-            {/* Mapa de Actividades (DSG) */}
-            {ver('mapa_actividades') && (
-              <TabsContent value="mapa_actividades">
-                <MapaActividades contexto="financeiro" />
-              </TabsContent>
-            )}
+              {/* Mapa de Impostos e Mapa de Actividades: so no menu lateral. */}
 
             {/* Dashboard */}
             <TabsContent value="dashboard">
@@ -1134,6 +1139,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                             <p className="text-xs text-muted-foreground">
                               {factura.itens?.length || 0} item(ns)
                             </p>
+                            {renderAccoesRapidas(factura)}
                           </div>
                         </div>
                       </CardHeader>
@@ -1490,6 +1496,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                             <p className="text-xs text-muted-foreground">
                               {factura.itens?.length || 0} item(ns)
                             </p>
+                            {renderAccoesRapidas(factura)}
                           </div>
                         </div>
                       </CardHeader>

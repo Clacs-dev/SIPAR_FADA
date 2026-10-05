@@ -23,9 +23,9 @@ export const SEPARADORES_PAGAMENTO: SeparadorPagamento[] = [
   { tab: 'ordens_pagamento_interna', module: 'pagamentos_ordens_interna', label: 'Ordens de Pagamento Interna' },
   { tab: 'submetido_banco', module: 'pagamentos_submetido_banco', label: 'Submetido ao Banco' },
   { tab: 'pagamentos', module: 'pagamentos_pagos', label: 'Pagos' },
-  { tab: 'mapa_impostos', module: 'tax_map', label: 'Mapa de Impostos' },
-  { tab: 'mapa_actividades', module: 'activity_map', label: 'Mapa de Actividades' },
 ];
+// Mapa de Impostos (tax_map) e Mapa de Actividades (activity_map) ficam so no
+// menu lateral - deixaram de ser separadores da Gestao de Pagamento/Procurement.
 
 export const MODULO_DO_SEPARADOR: Record<string, string> = Object.fromEntries(
   SEPARADORES_PAGAMENTO.map((s) => [s.tab, s.module])

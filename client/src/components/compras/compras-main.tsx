@@ -23,11 +23,9 @@ import { visualizarOrdemCompra } from "../../utils/pdf-generator";
 import { PedidoFormDialog } from "./pedido-form-dialog";
 import { PedidoDetailsDialog } from "./pedido-details-dialog";
 import { FornecedoresGestao } from "./fornecedores-gestao";
-import { MapaActividades } from "../shared/mapa-actividades";
 import { FacturaForm } from "../facturas/factura-form";
 import type { Factura, Fornecedor as FornecedorFactura } from "../facturas/types";
 import { API_BASE_URL, getAuthHeaders } from "@/services/api";
-import { MapaImpostos } from "../shared/mapa-impostos";
 import { useMyPermissions } from "../../hooks/use-my-permissions";
 import { useClientPagination } from "../../hooks/use-client-pagination";
 import { PaginationBar } from "../common/pagination-bar";
@@ -58,8 +56,6 @@ export function ComprasMain() {
   const { user } = useAuth();
   const { pode } = useMyPermissions();
   // O que aparece depende das permissoes do role (Roles e Permissoes):
-  const podeMapaActividades = pode('activity_map', 'read_all');
-  const podeMapaImpostos = pode('tax_map', 'read_all');              // Roles e Permissões -> Mapa de Impostos
   const podeCriar = pode('finance', 'create');                       // novo pedido, cotacao em nome do fornecedor
   const podeDecidir = pode('finance', 'approve');                    // analisar, aprovar, confirmar rececao
   const podeVerFornecedores = pode('finance', ['read_all', 'create']);
@@ -432,33 +428,9 @@ export function ComprasMain() {
           <TabsTrigger value="concluidos">
             Concluídos ({pedidos.filter(p => p.status === "concluido").length})
           </TabsTrigger>
-          {podeMapaImpostos && (
-            <TabsTrigger value="mapa-impostos">
-              <FileText className="mr-2 h-4 w-4" />
-              Mapa de Impostos
-            </TabsTrigger>
-          )}
-          {podeMapaActividades && (
-            <TabsTrigger value="mapa-actividades">
-              <ClipboardList className="mr-2 h-4 w-4" />
-              Mapa de Actividades
-            </TabsTrigger>
-          )}
         </TabsList>
+        {/* Mapa de Impostos e Mapa de Actividades: so no menu lateral. */}
 
-        {podeMapaImpostos && (
-          <TabsContent value="mapa-impostos" className="mt-6">
-            <MapaImpostos contexto="compras" />
-          </TabsContent>
-        )}
-
-        {podeMapaActividades && (
-          <TabsContent value="mapa-actividades" className="mt-6">
-            <MapaActividades contexto="compras" />
-          </TabsContent>
-        )}
-
-        {activeTab !== "mapa-actividades" && activeTab !== "mapa-impostos" && (
         <TabsContent value={activeTab} className="space-y-4 mt-6">
           {loading && <p className="text-center text-muted-foreground">A carregar...</p>}
           
@@ -614,7 +586,6 @@ export function ComprasMain() {
           ))}
           <PaginationBar pagination={pedidosPag.pagination} onPageChange={pedidosPag.setPage} />
         </TabsContent>
-        )}
       </Tabs>
 
       {/* Dialog de Formulário */}

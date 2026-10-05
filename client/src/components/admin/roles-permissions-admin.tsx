@@ -54,11 +54,12 @@ const MODULES: { value: string; label: string; restricted?: boolean; actions?: s
   // controlados por esta linha - tem a sua propria seccao mais abaixo.
   { value: 'invoices', label: 'Facturas & Pagamentos (ver, criar, editar — aprovar/autorizar: ver «acções no fluxo da factura»)' },
   { value: 'finance', label: 'Compras / Procurement (pedidos, cotações, fornecedores)' },
-  { value: 'activity_map', label: 'Mapa de Actividades (DSG)' },
+  { value: 'activity_map', label: 'Mapa de Actividades (DSG) — menu lateral' },
+  { value: 'tax_map', label: 'Mapa de Impostos — menu lateral (Ler = ver)', actions: ['read_all'] },
   // Cada separador da Gestao de Pagamento: sem "Ler (todos)" o separador nao aparece.
-  ...SEPARADORES_PAGAMENTO.filter((s) => s.module !== 'activity_map').map((s, i) => ({
+  ...SEPARADORES_PAGAMENTO.map((s, i) => ({
     value: s.module,
-    label: s.module === 'tax_map' ? 'Mapa de Impostos (menu, Procurement e Gestão de Pagamento)' : s.label,
+    label: s.label,
     actions: ['read_all'],
     grupo: i === 0 ? 'Gestão de Pagamento — separadores visíveis (Ler = ver o separador)' : undefined,
   })),
