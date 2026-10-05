@@ -49,6 +49,17 @@ import { migrarNumeracaoAutorizacaoDespesas } from './services/autorizacao-despe
 import { SettingsService } from './services/settings.service';
 
 export const app = express();
+
+// O servidor corre atras do proxy HTTPS do alojamento: sem isto, req.protocol
+// era "http" e os enderecos dos ficheiros carregados (assinaturas, anexos)
+// ficavam http:// - bloqueados pelo browser numa pagina HTTPS -, e req.ip era
+// sempre o IP do proxy (limite de pedidos e Auditoria a tratar todos os
+// utilizadores como um so). TRUST_PROXY permite ajustar o numero de proxies
+// (por omissao 1); TRUST_PROXY=0 desliga.
+const trustProxy = process.env.TRUST_PROXY ?? '1';
+if (trustProxy !== '0' && trustProxy !== 'false') {
+  app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+}
 const PORT = Number(process.env.PORT || 5000);
 
 function parseAllowedOrigins() {

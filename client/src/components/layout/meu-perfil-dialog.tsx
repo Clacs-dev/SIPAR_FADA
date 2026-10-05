@@ -110,6 +110,14 @@ export function MeuPerfilDialog({ open, onOpenChange }: MeuPerfilDialogProps) {
   };
 
   const handleUploadSignature = async (file: File) => {
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+      toast.error('Formato não suportado. Use uma imagem PNG, JPG, WEBP ou GIF.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('A imagem tem mais de 10 MB.');
+      return;
+    }
     setUploadingSignature(true);
     try {
       // Upload e associacao ao perfil num unico pedido multipart (evita dois
@@ -178,6 +186,7 @@ export function MeuPerfilDialog({ open, onOpenChange }: MeuPerfilDialogProps) {
             </Label>
             <p className="text-xs text-muted-foreground">
               Esta imagem é usada automaticamente sempre que assinar uma Ordem de Pagamento ou outro documento.
+              Formatos aceites: PNG, JPG, WEBP ou GIF (até 10 MB) — de preferência PNG com fundo transparente.
             </p>
             {user?.signatureImage && (
               <div className="border rounded-lg p-2 bg-muted/40">
@@ -186,7 +195,7 @@ export function MeuPerfilDialog({ open, onOpenChange }: MeuPerfilDialogProps) {
             )}
             <Input
               type="file"
-              accept="image/*"
+              accept="image/png,image/jpeg,image/webp,image/gif"
               disabled={uploadingSignature}
               onChange={(e) => {
                 const file = e.target.files?.[0];
