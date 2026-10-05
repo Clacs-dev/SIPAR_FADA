@@ -269,7 +269,21 @@ export async function resolveFornecedorBankInfo(record: any, data: any): Promise
  * assinatura automática (fica por assinar manualmente mais tarde, se vier a
  * existir esse fluxo).
  */
-async function assinarAutorizacaoDespesasAutomaticamente(purchaseOrderId: string | null | undefined, papel: 'dsg' | 'pca', user: { id: string; name: string }) {
+/**
+ * Regra: aprovar (Aprovar-DSG) e autorizar uma despesa assinam a Autorizacao
+ * de Despesas com a assinatura digitalizada de quem decide - sem assinatura
+ * carregada (Meu Perfil) a decisao nao pode ser tomada.
+ */
+export const MENSAGEM_SEM_ASSINATURA =
+  'Para aprovar ou autorizar e preciso ter a assinatura digitalizada carregada em Meu Perfil: a Autorizacao de Despesas e assinada automaticamente nesse momento.';
+
+export async function temAssinaturaDigitalizada(userId: string | undefined | null): Promise<boolean> {
+  if (!userId) return false;
+  const u = await prisma.user.findUnique({ where: { id: userId }, select: { signatureImage: true } });
+  return !!u?.signatureImage;
+}
+
+export async function assinarAutorizacaoDespesasAutomaticamente(purchaseOrderId: string | null | undefined, papel: 'dsg' | 'pca', user: { id: string; name: string }) {
   if (!purchaseOrderId) return;
   try {
     const signerUser = await prisma.user.findUnique({ where: { id: user.id } });
@@ -962,6 +976,11 @@ export class ModuleRoutesHelper {
         );
       }
       if (!acesso) return;
+
+      if (config.model === 'factura' && (nextStatus === 'validado' || nextStatus === STATUS.APROVADO)
+        && !(await temAssinaturaDigitalizada(user.id))) {
+        return res.status(400).json({ error: 'ASSINATURA_EM_FALTA', message: MENSAGEM_SEM_ASSINATURA });
+      }
 
       if (existing.status === STATUS.APROVADO && nextStatus === STATUS.REJEITADO) {
         return res.status(400).json({ error: 'BAD_REQUEST', message: `${config.displayName} aprovado nao pode ser rejeitado` });

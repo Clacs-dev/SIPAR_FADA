@@ -4,7 +4,7 @@ import { autorDaCotacao, cotacaoSemAccao, fornecedorSemAccao, MENSAGEM_SEM_ACCAO
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { ModuleRoutesHelper, ModuleConfig, STATUS, resolveFornecedorBankInfo, recordToResource, normalizeAnexos } from '../utils/module-routes-helper';
+import { ModuleRoutesHelper, ModuleConfig, STATUS, resolveFornecedorBankInfo, recordToResource, normalizeAnexos, assinarAutorizacaoDespesasAutomaticamente, temAssinaturaDigitalizada, MENSAGEM_SEM_ASSINATURA } from '../utils/module-routes-helper';
 import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
 import { requireLicenseModule } from '../middlewares/license';
 import { MeetingLinkService } from '../services/meeting-link.service';
@@ -1064,6 +1064,13 @@ function registerCrud(config: ModuleConfig) {
         const user = (req as any).user;
         const dadosRececao = { status: nextStatus, recebidoEm: new Date(), recebidoPorId: user?.id, recebidoPorNome: user?.name };
 
+        // Confirmar a rececao aprova a factura gerada pela DSG (entra como
+        // "Aprovado-DSG") - por isso exige e aplica a assinatura de quem confirma
+        // na Autorizacao de Despesas, como o botao Aprovar-DSG.
+        if (!facturaExistente && !(await temAssinaturaDigitalizada(user?.id))) {
+          return res.status(400).json({ error: 'ASSINATURA_EM_FALTA', message: MENSAGEM_SEM_ASSINATURA });
+        }
+
         if (!facturaExistente) {
           // Fornecedor, NIF/contactos, itens com preco e IVA da cotacao aprovada,
           // totais, validacao, historico, dados bancarios e todos os anexos do
@@ -1092,6 +1099,8 @@ function registerCrud(config: ModuleConfig) {
           await HistoryService.record({ module: 'factura', resourceId: factura.id, action: 'created', statusTo: 'pendente', user, comment: historicoCriacao })
             .then(() => HistoryService.record({ module: 'factura', resourceId: factura.id, action: 'status_changed', statusFrom: 'pendente', statusTo: 'validado', user, comment: comentarioValidacao }))
             .catch((error) => logger.warn(`Falha ao registar historico da factura ${factura.id}:`, error));
+
+          await assinarAutorizacaoDespesasAutomaticamente(ordem.id, 'dsg', { id: user.id, name: user.name });
 
           return res.status(200).json({ ordem: ordemToResource(ordem), factura: facturaToResource(factura) });
         }
