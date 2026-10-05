@@ -942,7 +942,11 @@ export class ModuleRoutesHelper {
 
       // Com update_own so se pode ANULAR (cancelado) o proprio documento ainda
       // sem accao - nunca validar, aprovar, rejeitar ou pagar.
-      const acesso = await autorizarAlteracao(
+      // "Aprovar" na matriz (Roles e Permissoes) tambem cobre o Aprovar-DSG
+      // (validado) - quem pode aprovar/autorizar pode validar o passo anterior.
+      const aprovaPorPermissao = nextStatus === 'validado'
+        && permissions.hasPermission(await permissions.getUserPermissions(user.role as any, user.department, undefined), config.permissionModule, config.approveAction);
+      const acesso = aprovaPorPermissao || await autorizarAlteracao(
         req, res, config, existing, action, permissions.ACTIONS.UPDATE_OWN, nextStatus === STATUS.CANCELADO,
       );
       if (!acesso) return;

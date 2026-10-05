@@ -57,11 +57,14 @@ export function ComprasMain() {
   const podeDecidir = pode('finance', 'approve');                    // analisar, aprovar, confirmar rececao
   const podeVerFornecedores = pode('finance', ['read_all', 'create']);
   // Documento proprio e ainda sem accao (regra do servidor, utils/proprio-sem-accao.ts).
-  const pedidoProprioSemAccao = (p: PedidoCompra) =>
-    !!user && (p as any).created_by_id === user.id
-    && (p.status === 'criado' || (p.status === 'aguardando_cotacoes' && !(p.total_cotacoes > 0)));
-  const podeEditarPedido = (p: PedidoCompra) => pedidoProprioSemAccao(p) && pode('finance', ['update', 'update_own']);
-  const podeEliminarPedido = (p: PedidoCompra) => pedidoProprioSemAccao(p) && pode('finance', ['delete', 'delete_own']);
+  const pedidoSemAccao = (p: PedidoCompra) =>
+    p.status === 'criado' || (p.status === 'aguardando_cotacoes' && !(p.total_cotacoes > 0));
+  const eMeu = (p: PedidoCompra) => !!user && (p as any).created_by_id === user.id;
+  // "Editar"/"Eliminar" na matriz: qualquer pedido ainda sem acção; "... próprios": só os seus.
+  const podeEditarPedido = (p: PedidoCompra) => pedidoSemAccao(p)
+    && (pode('finance', 'update') || (eMeu(p) && pode('finance', 'update_own')));
+  const podeEliminarPedido = (p: PedidoCompra) => pedidoSemAccao(p)
+    && (pode('finance', 'delete') || (eMeu(p) && pode('finance', 'delete_own')));
   const podePublicar = (p: PedidoCompra) => p.status === 'criado'
     && (pode('finance', 'update') || (pode('finance', 'update_own') && !!user && (p as any).created_by_id === user.id));
   const cotacaoSemAccao = (c: any) => !c.selected && (!c.status || ['recebida', 'submetida'].includes(c.status))

@@ -783,8 +783,14 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
   const isDsgTecnico = userRole === 'dsg_tecnico';
 
   // Definir permissões
-  const canValidate = isCompras; // Apenas Compras valida
-  const canApprove = isGabineteExecutivo; // Apenas Gabinetes Executivos aprovam
+  // Compras, gabinetes executivos e Financeiro mantêm o fluxo fixo de sempre
+  // (validar / autorizar / pagar). Qualquer outro role (ex: DSG Técnico)
+  // segue a matriz de Roles e Permissões: "Facturas & Pagamentos -> Aprovar"
+  // dá o Aprovar-DSG e a Autorização de Despesas.
+  const papelDeFluxoFixo = isCompras || isGabineteExecutivo || isFinanceiro;
+  const aprovaPelaMatriz = !papelDeFluxoFixo && pode('invoices', 'approve');
+  const canValidate = isCompras || aprovaPelaMatriz;
+  const canApprove = isGabineteExecutivo || aprovaPelaMatriz;
   const canPay = isFinanceiro; // Apenas Financeiro marca como pago
   // Ver/criar seguem as permissões do role (Roles e Permissões).
   const canView = isCompras || isFinanceiro || isGabineteExecutivo || isExterno || pode('invoices', ['read_all', 'read_own']);
@@ -796,9 +802,11 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     ['rascunho', 'registada', 'pendente'].includes(f.status)
     && !(f as any).validado_at && !(f as any).aprovado_at && !(f as any).rejeitado_at
     && !f.numero_ordem_pagamento;
+  // Com "Editar"/"Eliminar" na matriz: qualquer factura ainda sem acção;
+  // com "Editar/Eliminar próprios": só as suas.
   const podeAlterarPropria = (f: Factura | null, accao: 'update' | 'delete') =>
-    !!f && !!user && f.created_by_id === user.id && facturaSemAccao(f)
-    && pode('invoices', [accao, `${accao}_own`]);
+    !!f && !!user && facturaSemAccao(f)
+    && (pode('invoices', accao) || (f.created_by_id === user.id && pode('invoices', `${accao}_own`)));
 
   const handleAnularOuEliminar = async (accao: 'anular' | 'eliminar') => {
     if (!accessToken || !selectedFactura) return;
