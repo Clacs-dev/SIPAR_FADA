@@ -8,6 +8,7 @@ import {
   History,
   CheckCircle,
   XCircle,
+  Info,
   Trash2,
   ArrowLeft,
   Download,
@@ -402,7 +403,7 @@ export function FacturaDetails({
               style={{ backgroundColor: 'var(--tone-accent)' }}
               onClick={() => setShowValidateForm(true)}
               disabled={factura.status !== 'pendente'}
-              title={factura.status !== 'pendente' ? `Status atual: ${factura.status}. Necessário: pendente` : 'Aprovar-DSG factura'}
+              title={factura.status !== 'pendente' ? 'Só para facturas «Pendente»' : 'Aprovar-DSG factura'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Aprovar-DSG
@@ -416,7 +417,7 @@ export function FacturaDetails({
               style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowApproveForm(true)}
               disabled={factura.status !== 'validado'}
-              title={factura.status !== 'validado' ? `Status atual: ${factura.status}. Necessário: validado` : 'Autorizar despesas'}
+              title={factura.status !== 'validado' ? 'Disponível depois do Aprovar-DSG (a factura tem de estar «Aprovado-DSG»)' : 'Autorizar despesas'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Autorizar Despesas
@@ -517,6 +518,75 @@ export function FacturaDetails({
       </div>
 
       {/* Alerta de Vencimento */}
+      {/* Processo completo da factura: todos os passos, onde a factura esta,
+          quem executa cada passo (permissao da matriz de Roles e Permissoes) e
+          se este utilizador o pode fazer - explica porque um botao esta inactivo. */}
+      {(() => {
+        const etapas = [
+          { estados: ['rascunho', 'registada', 'pendente'], titulo: 'Pendente', accao: 'Aprovar-DSG (aprovar a factura pendente)', permissao: 'Aprovar factura pendente (Aprovar-DSG)', pode: !!canValidate },
+          { estados: ['validado'], titulo: 'Aprovado-DSG', accao: 'Autorizar a despesa (ou rejeitar)', permissao: 'Autorizar despesa', pode: canApprove },
+          { estados: ['aprovado'], titulo: 'Autorização de Despesas', accao: 'Gerar a Ordem de Pagamento, recolher as assinaturas do Presidente e do Administrador e submeter ao banco', permissao: 'Pagamento', pode: canPay },
+          { estados: ['submetido_ao_banco'], titulo: 'Submetido ao Banco', accao: 'Marcar como pago (com comprovativo)', permissao: 'Pagamento', pode: canPay },
+          { estados: ['pago'], titulo: 'Pago', accao: '', permissao: '', pode: false },
+        ];
+        if (['rejeitado', 'cancelado', 'arquivado'].includes(factura.status)) {
+          const rotulo = factura.status === 'rejeitado' ? 'rejeitada' : factura.status === 'cancelado' ? 'anulada' : 'arquivada';
+          return (
+            <Card style={{ borderColor: 'var(--tone-danger)' }}>
+              <CardContent className="py-3 text-sm flex items-center gap-2">
+                <Info className="h-4 w-4 shrink-0" style={{ color: 'var(--tone-danger)' }} />
+                <span>Esta factura foi <strong>{rotulo}</strong> e saiu do processo de pagamento.</span>
+              </CardContent>
+            </Card>
+          );
+        }
+        const actual = etapas.findIndex((e) => e.estados.includes(factura.status));
+        if (actual < 0) return null;
+        const etapa = etapas[actual];
+        return (
+          <Card>
+            <CardContent className="py-4 space-y-3">
+              <p className="text-sm font-semibold">Processo da factura</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {etapas.map((e, i) => {
+                  const feito = i < actual;
+                  const corrente = i === actual;
+                  return (
+                    <div key={e.titulo} className="flex items-center gap-1.5">
+                      <span
+                        className="text-xs px-2.5 py-1 rounded-full border"
+                        style={{
+                          backgroundColor: corrente ? 'var(--tone-info)' : feito ? 'var(--tone-success-soft)' : 'transparent',
+                          color: corrente ? '#fff' : feito ? 'var(--tone-success)' : 'var(--muted-foreground)',
+                          borderColor: corrente ? 'var(--tone-info)' : feito ? 'var(--tone-success)' : 'var(--border)',
+                          fontWeight: corrente ? 600 : 400,
+                        }}
+                      >
+                        {feito ? '✓ ' : ''}{i + 1}. {e.titulo}
+                      </span>
+                      {i < etapas.length - 1 && <span className="text-muted-foreground text-xs">›</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {etapa.accao ? (
+                <div className="text-sm flex items-start gap-2">
+                  <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: etapa.pode ? 'var(--tone-success)' : 'var(--tone-info)' }} />
+                  <span>
+                    <strong>Passo seguinte:</strong> {etapa.accao}.{' '}
+                    {etapa.pode
+                      ? 'O seu perfil pode executar este passo.'
+                      : <>Só quem tem a permissão <strong>«{etapa.permissao}»</strong> (Roles e Permissões → Gestão de Pagamento — acções no fluxo da factura) o pode fazer; os botões dos passos seguintes ficam inactivos até lá.</>}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-sm" style={{ color: 'var(--tone-success)' }}>Processo concluído: a factura está paga.</p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {isVencida && (
         <Card style={{ borderColor: 'var(--tone-danger)', backgroundColor: 'var(--tone-danger-soft)' }}>
           <CardContent className="pt-6">

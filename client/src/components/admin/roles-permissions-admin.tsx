@@ -50,7 +50,9 @@ const MODULES: { value: string; label: string; restricted?: boolean; actions?: s
   { value: 'actas', label: 'Actas' },
   { value: 'communications', label: 'Comunicações' },
   // Chaves iguais as verificadas no servidor (MODULES em server/src/utils/permissions.ts).
-  { value: 'invoices', label: 'Facturas & Pagamentos (Gestão de Pagamento, Mapa de Impostos)' },
+  // Os passos do fluxo da factura (Aprovar-DSG, Autorizar, Pagamento) NAO sao
+  // controlados por esta linha - tem a sua propria seccao mais abaixo.
+  { value: 'invoices', label: 'Facturas & Pagamentos (ver, criar, editar — aprovar/autorizar: ver «acções no fluxo da factura»)' },
   { value: 'finance', label: 'Compras / Procurement (pedidos, cotações, fornecedores)' },
   { value: 'activity_map', label: 'Mapa de Actividades (DSG)' },
   // Cada separador da Gestao de Pagamento: sem "Ler (todos)" o separador nao aparece.
