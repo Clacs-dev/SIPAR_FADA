@@ -106,6 +106,21 @@ export function FacturaDetails({
 
   const podeGerirOrdemPagamento = canApprove || canPay;
   const assinaturas = factura.ordem_pagamento?.assinaturas || [];
+  // Regras: Aprovar-DSG e Autorizar assinam a Autorizacao de Despesas com a
+  // assinatura de quem decide (sem assinatura nao se aprova); so se submete ao
+  // banco com a Ordem de Pagamento assinada pelo Presidente E pelo
+  // Administrador; so se marca como pago depois de submetida ao banco.
+  const temAssinatura = !!user?.signatureImage;
+  const AVISO_SEM_ASSINATURA = 'Carregue a sua assinatura em Meu Perfil: a Autorização de Despesas é assinada automaticamente ao aprovar/autorizar.';
+  const assinaturasEmFaltaOP = PAPEIS_ASSINATURA.filter((p) => !assinaturas.some((a) => a.papel === p.papel)).map((p) => p.label);
+  const opAssinadaPorAmbos = !!factura.numero_ordem_pagamento && assinaturasEmFaltaOP.length === 0;
+  const motivoBancoInactivo = factura.status !== 'aprovado'
+    ? 'Disponível depois da Autorização de Despesas'
+    : !factura.numero_ordem_pagamento
+      ? 'Gere primeiro a Ordem de Pagamento'
+      : assinaturasEmFaltaOP.length
+        ? `Falta a assinatura da Ordem de Pagamento: ${assinaturasEmFaltaOP.join(' e ')}`
+        : 'Submeter ao banco';
   const meuPapel = PAPEIS_ASSINATURA.find((p) => p.role === userRole);
   const jaAssineiComoMeuPapel = meuPapel ? assinaturas.some((a) => a.papel === meuPapel.papel) : false;
 
@@ -402,8 +417,8 @@ export function FacturaDetails({
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-accent)' }}
               onClick={() => setShowValidateForm(true)}
-              disabled={factura.status !== 'pendente'}
-              title={factura.status !== 'pendente' ? 'Só para facturas «Pendente»' : 'Aprovar-DSG factura'}
+              disabled={factura.status !== 'pendente' || !temAssinatura}
+              title={factura.status !== 'pendente' ? 'Só para facturas «Pendente»' : !temAssinatura ? AVISO_SEM_ASSINATURA : 'Aprovar-DSG factura (assina a Autorização de Despesas)'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Aprovar-DSG
@@ -416,8 +431,8 @@ export function FacturaDetails({
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowApproveForm(true)}
-              disabled={factura.status !== 'validado'}
-              title={factura.status !== 'validado' ? 'Disponível depois do Aprovar-DSG (a factura tem de estar «Aprovado-DSG»)' : 'Autorizar despesas'}
+              disabled={factura.status !== 'validado' || !temAssinatura}
+              title={factura.status !== 'validado' ? 'Disponível depois do Aprovar-DSG (a factura tem de estar «Aprovado-DSG»)' : !temAssinatura ? AVISO_SEM_ASSINATURA : 'Autorizar despesas (assina a Autorização de Despesas)'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Autorizar Despesas
@@ -430,12 +445,8 @@ export function FacturaDetails({
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-success)' }}
               onClick={() => setShowPayForm(true)}
-              disabled={factura.status !== 'aprovado' && factura.status !== 'submetido_ao_banco'}
-              title={
-                factura.status !== 'aprovado' && factura.status !== 'submetido_ao_banco' 
-                  ? `Status atual: ${factura.status}. Necessário: aprovado ou submetido_ao_banco` 
-                  : 'Marcar como pago'
-              }
+              disabled={factura.status !== 'submetido_ao_banco'}
+              title={factura.status !== 'submetido_ao_banco' ? 'Disponível depois de submeter ao banco' : 'Marcar como pago'}
             >
               <DollarSign className="mr-2 h-4 w-4" />
               Marcar como Pago
@@ -448,8 +459,8 @@ export function FacturaDetails({
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-gold)' }}
               onClick={() => setShowSubmitBancoForm(true)}
-              disabled={factura.status !== 'aprovado'}
-              title={factura.status !== 'aprovado' ? `Status atual: ${factura.status}. Necessário: aprovado` : 'Submeter ao banco'}
+              disabled={factura.status !== 'aprovado' || !opAssinadaPorAmbos}
+              title={motivoBancoInactivo}
             >
               <Building className="mr-2 h-4 w-4" />
               Submeter ao Banco
@@ -570,6 +581,18 @@ export function FacturaDetails({
                 })}
               </div>
               {etapa.accao ? (
+                <>
+                {etapa.pode && (factura.status === 'pendente' || factura.status === 'validado') && !temAssinatura && (
+                  <p className="text-sm" style={{ color: 'var(--tone-warn)' }}>{AVISO_SEM_ASSINATURA}</p>
+                )}
+                {factura.status === 'aprovado' && factura.numero_ordem_pagamento && (
+                  <p className="text-sm">
+                    Ordem de Pagamento:{' '}
+                    {assinaturasEmFaltaOP.length
+                      ? <span style={{ color: 'var(--tone-warn)' }}>falta a assinatura de {assinaturasEmFaltaOP.join(' e ')} — só depois pode ser submetida ao banco.</span>
+                      : <span style={{ color: 'var(--tone-success)' }}>assinada pelo Presidente e pelo Administrador.</span>}
+                  </p>
+                )}
                 <div className="text-sm flex items-start gap-2">
                   <Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: etapa.pode ? 'var(--tone-success)' : 'var(--tone-info)' }} />
                   <span>
@@ -579,6 +602,7 @@ export function FacturaDetails({
                       : <>Só quem tem a permissão <strong>«{etapa.permissao}»</strong> (Roles e Permissões → Gestão de Pagamento — acções no fluxo da factura) o pode fazer; os botões dos passos seguintes ficam inactivos até lá.</>}
                   </span>
                 </div>
+                </>
               ) : (
                 <p className="text-sm" style={{ color: 'var(--tone-success)' }}>Processo concluído: a factura está paga.</p>
               )}
@@ -934,10 +958,13 @@ export function FacturaDetails({
             <CardContent className="space-y-3">
               {/* Aprovar-DSG */}
               {canValidate && factura.status === 'pendente' && !showValidateForm && (
-                <Button className="w-full" onClick={() => setShowValidateForm(true)}>
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  Aprovar-DSG Factura
-                </Button>
+                <>
+                  <Button className="w-full" onClick={() => setShowValidateForm(true)} disabled={!temAssinatura} title={!temAssinatura ? AVISO_SEM_ASSINATURA : undefined}>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Aprovar-DSG Factura
+                  </Button>
+                  {!temAssinatura && <p className="text-xs" style={{ color: 'var(--tone-warn)' }}>{AVISO_SEM_ASSINATURA}</p>}
+                </>
               )}
 
               {showValidateForm && (
@@ -960,8 +987,11 @@ export function FacturaDetails({
               )}
 
               {/* Autorizar Despesas */}
+              {canApprove && factura.status === 'validado' && !showApproveForm && !temAssinatura && (
+                <p className="text-xs" style={{ color: 'var(--tone-warn)' }}>{AVISO_SEM_ASSINATURA}</p>
+              )}
               {canApprove && factura.status === 'validado' && !showApproveForm && (
-                <Button className="w-full" onClick={() => setShowApproveForm(true)}>
+                <Button className="w-full" onClick={() => setShowApproveForm(true)} disabled={!temAssinatura} title={!temAssinatura ? AVISO_SEM_ASSINATURA : undefined}>
                   <CheckCircle className="mr-2 h-4 w-4" />
                   Autorizar Despesas
                 </Button>
@@ -1075,8 +1105,13 @@ export function FacturaDetails({
               )}
 
               {/* Submeter ao Banco */}
+              {canPay && factura.status === 'aprovado' && factura.numero_ordem_pagamento && !showSubmitBancoForm && !opAssinadaPorAmbos && (
+                <p className="text-xs rounded-lg p-2" style={{ color: 'var(--tone-warn)', backgroundColor: 'var(--tone-warn-soft)', border: '1px solid var(--tone-warn)' }}>
+                  {motivoBancoInactivo}. A Ordem de Pagamento tem de estar assinada pelo Presidente e pelo Administrador antes de ir ao banco.
+                </p>
+              )}
               {canPay && factura.status === 'aprovado' && factura.numero_ordem_pagamento && !showSubmitBancoForm && (
-                <Button className="w-full text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-gold)' }} onClick={() => setShowSubmitBancoForm(true)}>
+                <Button className="w-full text-white hover:opacity-90" style={{ backgroundColor: 'var(--tone-gold)' }} onClick={() => setShowSubmitBancoForm(true)} disabled={!opAssinadaPorAmbos} title={motivoBancoInactivo}>
                   <Upload className="mr-2 h-4 w-4" />
                   Submeter ao Banco
                 </Button>

@@ -380,8 +380,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao validar factura');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao validar factura');
       }
 
       const data = await response.json();
@@ -441,8 +441,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao aprovar factura');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao aprovar factura');
       }
 
       const data = await response.json();
@@ -500,8 +500,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao rejeitar factura');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao rejeitar factura');
       }
 
       const data = await response.json();
@@ -593,8 +593,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao registar pagamento');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao registar pagamento');
       }
 
       const data = await response.json();
@@ -646,7 +646,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
         }
       );
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || errorData.error || 'Erro ao gerar Ordem de Pagamento');
       }
       const data = await response.json();
@@ -678,7 +678,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
         }
       );
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || errorData.error || 'Erro ao assinar Ordem de Pagamento');
       }
       const data = await response.json();
@@ -722,8 +722,8 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Erro ao submeter factura ao banco');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao submeter factura ao banco');
       }
 
       const data = await response.json();
