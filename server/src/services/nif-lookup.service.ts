@@ -134,9 +134,18 @@ export async function consultarNif(nifBruto: string): Promise<ResultadoConsultaN
     } catch (error) {
       if (tentativa < 2) continue;
       logger.warn('Falha na consulta de NIF à AGT (não bloqueante, o utilizador pode preencher manualmente):', error);
-      return { encontrado: false, mensagem: 'Não foi possível consultar a AGT neste momento. Pode continuar manualmente.' };
+      return { encontrado: false, mensagem: `Não foi possível consultar a AGT a partir do servidor (${motivoTecnico(error)}). Pode continuar manualmente` };
     }
   }
+}
+
+/** Motivo curto da falha de rede (ex: ECONNRESET, timeout, certificado) para o utilizador/suporte. */
+function motivoTecnico(error: any): string {
+  const causa = error?.cause || error;
+  const codigo = causa?.code || error?.code || error?.name || '';
+  if (codigo === 'TimeoutError' || codigo === 'UND_ERR_CONNECT_TIMEOUT' || codigo === 'ABORT_ERR') return 'sem resposta do portal - tempo esgotado';
+  if (/CERT|SIGNATURE|SELF_SIGNED/i.test(codigo)) return `certificado ${codigo}`;
+  return codigo || causa?.message || 'erro de rede';
 }
 
 async function consultarNifUmaVez(nif: string): Promise<ResultadoConsultaNif> {

@@ -32,9 +32,12 @@ export async function consultarNif(numero: string, accessToken?: string | null):
     const resposta = await fetch(`${API_BASE_URL}/nif/${encodeURIComponent(limpo)}`, {
       headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
     });
-    if (!resposta.ok) return { encontrado: false, mensagem: 'Não foi possível consultar a AGT neste momento.' };
+    if (!resposta.ok) {
+      const corpo = await resposta.json().catch(() => ({}));
+      return { encontrado: false, mensagem: corpo.message || `Não foi possível consultar a AGT (o servidor do SIPAR respondeu ${resposta.status})` };
+    }
     return await resposta.json();
   } catch {
-    return { encontrado: false, mensagem: 'Não foi possível consultar a AGT neste momento.' };
+    return { encontrado: false, mensagem: 'Sem ligação ao servidor do SIPAR para consultar a AGT' };
   }
 }
