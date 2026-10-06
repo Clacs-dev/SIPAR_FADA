@@ -128,7 +128,26 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     uploadFiles,
     removeFile,
     formatFileSize,
+    setInitialFiles,
   } = useFileUpload('make-8b82752b-facturas');
+
+  // Ao editar, os anexos ja gravados entram na lista - sem isto a lista
+  // comecava vazia e gravar a edicao enviava "anexos: []", apagando os
+  // documentos da factura.
+  const anexosOriginais = (factura?.anexos || []) as any[];
+  useEffect(() => {
+    if (!factura?.id) return;
+    setInitialFiles(anexosOriginais
+      .filter((a) => a && (a.url || a.id))
+      .map((a, i) => ({
+        id: a.id || `anexo-${i}`,
+        name: a.nome || a.name || 'Documento',
+        size: a.tamanho ?? a.size ?? 0,
+        url: a.url || '',
+        tipo: a.tipo || a.type || '',
+      })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [factura?.id]);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -272,8 +291,10 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
  console.log(' Upload em curso?', uploading);
     
     // Criar array de anexos corretamente
-    const anexos = files.length > 0 
+    const anexos = files.length > 0
       ? files.map(f => {
+          const original = anexosOriginais.find((a) => a?.id === f.id);
+          if (original) return original; // anexo ja existente: mantem-se como estava
  console.log(' Processando ficheiro:', { id: f.id, nome: f.name, url: f.url, tamanho: f.size });
           return {
             id: f.id,
@@ -325,6 +346,12 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   };
 
   const handleRemove = async (fileId: string) => {
+    // Anexo ja gravado na factura: sai so da lista (o ficheiro nao e apagado
+    // do servidor - se a edicao for cancelada, a factura continua com ele).
+    if (anexosOriginais.some((a) => a?.id === fileId)) {
+      setInitialFiles(files.filter((f) => f.id !== fileId));
+      return;
+    }
     try {
       await removeFile(fileId);
     } catch (err) {
