@@ -7,11 +7,40 @@
  */
 
 import { useEffect, useState } from "react";
-import { Search, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Search, Loader2, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { useAuth } from "../auth/auth-context";
 import { consultarNif, type DadosNif } from "../../utils/nif-lookup";
+
+const PORTAL_AGT = 'https://portaldocontribuinte.minfin.gov.ao/consultar-nif-do-contribuinte';
+
+/**
+ * Abre a consulta de NIF no Portal do Contribuinte (AGT) numa nova aba. O
+ * portal nao aceita o NIF no endereco, por isso o NIF e copiado para a area
+ * de transferencia - basta colar (Ctrl+V) e clicar em Consultar.
+ */
+export function LinkPortalAgt({ nif }: { nif?: string }) {
+  const [copiado, setCopiado] = useState(false);
+  return (
+    <a
+      href={PORTAL_AGT}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 font-medium text-primary underline underline-offset-2"
+      onClick={() => {
+        const limpo = (nif || '').trim();
+        if (limpo && navigator.clipboard) {
+          navigator.clipboard.writeText(limpo).then(() => setCopiado(true)).catch(() => undefined);
+        }
+      }}
+    >
+      Clique aqui para pesquisar no Portal da AGT
+      <ExternalLink className="h-3 w-3" />
+      {copiado && <span className="font-normal no-underline text-muted-foreground">(NIF copiado — cole com Ctrl+V)</span>}
+    </a>
+  );
+}
 
 interface NifLookupFieldProps {
   value: string;
@@ -67,6 +96,11 @@ export function NifLookupField({ value, onChange, onEncontrado, placeholder, id 
         <p className={`text-xs flex items-center gap-1 ${resultado.ok ? 'text-tone-success' : 'text-muted-foreground'}`}>
           {resultado.ok ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}
           {resultado.ok ? `Encontrado: ${resultado.mensagem}` : `${resultado.mensagem} — pode preencher manualmente.`}
+        </p>
+      )}
+      {resultado && !resultado.ok && (
+        <p className="text-xs">
+          <LinkPortalAgt nif={value} />
         </p>
       )}
     </div>
@@ -144,6 +178,7 @@ export function DadosAgtDoNif({ nif }: { nif?: string | null }) {
     return (
       <p className="text-xs text-muted-foreground flex items-center gap-1">
         <AlertTriangle className="h-3 w-3" /> AGT: {estado.mensagem}
+        <span className="ml-1"><LinkPortalAgt nif={nif} /></span>
       </p>
     );
   }
