@@ -14,7 +14,8 @@ import { TAXAS_IVA_PRODUTOS, TAXA_RETENCAO_SERVICOS, LIMIAR_RETENCAO_SERVICOS, c
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL } from "@/services/api";
-import { NifLookupField } from "../shared/nif-lookup-field";
+import { NifLookupField, DadosAgtDoNif } from "../shared/nif-lookup-field";
+import type { DadosNif } from "../../utils/nif-lookup";
 
 interface DadosBancariosFornecedor {
   banco_nome?: string | null;
@@ -51,6 +52,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const [fornecedorNaoListado, setFornecedorNaoListado] = useState(false);
   const [nifAdHoc, setNifAdHoc] = useState('');
   const [nomeAdHoc, setNomeAdHoc] = useState('');
+  const [dadosAgtAdHoc, setDadosAgtAdHoc] = useState<DadosNif | null>(null);
   const [formData, setFormData] = useState({
     fornecedor_id: factura?.fornecedor_id || '',
     numero_fornecedor: factura?.numero_fornecedor || '',
@@ -325,6 +327,9 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       // guardado na factura.
       fornecedor_id: fornecedorNaoListado ? undefined : formData.fornecedor_id,
       nif: fornecedorSelecionado.nif || undefined,
+      // Dados devolvidos pela AGT para o fornecedor ad-hoc (tipo, estado,
+      // inadimplente, regime de IVA, residencia) - ficam registados na factura.
+      ...(fornecedorNaoListado && dadosAgtAdHoc && dadosAgtAdHoc.nif === nifAdHoc ? { fornecedor_agt: dadosAgtAdHoc } : {}),
       valor: totals.total,
       itens,
       subtotal: totals.subtotal,
@@ -418,6 +423,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     onEncontrado={(dados) => {
                       setNifAdHoc(dados.nif);
                       setNomeAdHoc(dados.nome);
+                      setDadosAgtAdHoc(dados);
                     }}
                   />
                 </div>
@@ -447,6 +453,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     </option>
                   ))}
                 </select>
+                <DadosAgtDoNif nif={fornecedores.find((f) => f.id === formData.fornecedor_id)?.nif} />
               </div>
             )}
 

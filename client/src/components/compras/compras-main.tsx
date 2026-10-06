@@ -31,6 +31,7 @@ import { useClientPagination } from "../../hooks/use-client-pagination";
 import { PaginationBar } from "../common/pagination-bar";
 import type { CotacaoFornecedor, PedidoCompra, StatusPedidoCompra } from "./types";
 import { CotacaoFormDialog } from "./cotacao-form-dialog";
+import { DadosAgtDoNif } from "../shared/nif-lookup-field";
 import { useAuth } from "../auth/auth-context";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Label } from "../ui/label";
@@ -617,6 +618,7 @@ export function ComprasMain() {
                 <option key={f.id} value={f.id}>{f.nome || f.nome_empresa}{f.nif ? ` — NIF ${f.nif}` : ''}</option>
               ))}
             </select>
+            <DadosAgtDoNif nif={(fornecedoresDisponiveis.find((f: any) => f.id === fornecedorEscolhido) as any)?.nif} />
             {fornecedoresDisponiveis.length === 0 && (
               <p className="text-sm text-muted-foreground">Todos os fornecedores activos já têm cotação neste pedido.</p>
             )}

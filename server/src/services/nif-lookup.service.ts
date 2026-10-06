@@ -1,3 +1,4 @@
+import tls from 'tls';
 import { Agent, fetch } from 'undici';
 import logger from '../config/logger';
 
@@ -31,16 +32,48 @@ const ENDPOINT_AJAX = `${BASE_URL}/consultar-headNifId-do-contribuinte`;
 const TIMEOUT_MS = 15000;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
-// Alguns ambientes (incluindo, por vezes, o próprio portal da AGT) falham a
-// verificação da cadeia de certificado TLS ("unable to verify the first
-// certificate") mesmo sendo o site legítimo - problema conhecido em
-// infraestrutura .gov.ao, e reproduzido neste projecto atrás de um proxy que
-// intercepta HTTPS. Por omissão a verificação fica ligada (seguro); só é
-// desligada, e só para este pedido especifico (nunca globalmente), quando
-// AGT_TLS_INSECURE=true estiver definido no ambiente do servidor.
+// O portal da AGT envia o certificado intermedio errado ("DigiCert SHA2
+// Secure Server CA") em vez do que emitiu o seu certificado ("DigiCert Global
+// G2 TLS RSA SHA256 2020 CA1"). Os browsers e o curl vao buscar o intermedio
+// em falta (AIA); o Node nao, e falhava sempre com "unable to verify the
+// first certificate" - tambem em producao. Juntamos esse intermedio publico
+// (descarregado de cacerts.digicert.com, valido ate 2031-03-29, emitido pela
+// raiz DigiCert Global Root G2 ja confiada pelo Node) as raizes do Node: a
+// verificacao TLS continua completa, so a cadeia fica completa.
+const DIGICERT_GLOBAL_G2_TLS_RSA_SHA256_2020_CA1 = `-----BEGIN CERTIFICATE-----
+MIIEyDCCA7CgAwIBAgIQDPW9BitWAvR6uFAsI8zwZjANBgkqhkiG9w0BAQsFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
+MjAeFw0yMTAzMzAwMDAwMDBaFw0zMTAzMjkyMzU5NTlaMFkxCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxMzAxBgNVBAMTKkRpZ2lDZXJ0IEdsb2Jh
+bCBHMiBUTFMgUlNBIFNIQTI1NiAyMDIwIENBMTCCASIwDQYJKoZIhvcNAQEBBQAD
+ggEPADCCAQoCggEBAMz3EGJPprtjb+2QUlbFbSd7ehJWivH0+dbn4Y+9lavyYEEV
+cNsSAPonCrVXOFt9slGTcZUOakGUWzUb+nv6u8W+JDD+Vu/E832X4xT1FE3LpxDy
+FuqrIvAxIhFhaZAmunjZlx/jfWardUSVc8is/+9dCopZQ+GssjoP80j812s3wWPc
+3kbW20X+fSP9kOhRBx5Ro1/tSUZUfyyIxfQTnJcVPAPooTncaQwywa8WV0yUR0J8
+osicfebUTVSvQpmowQTCd5zWSOTOEeAqgJnwQ3DPP3Zr0UxJqyRewg2C/Uaoq2yT
+zGJSQnWS+Jr6Xl6ysGHlHx+5fwmY6D36g39HaaECAwEAAaOCAYIwggF+MBIGA1Ud
+EwEB/wQIMAYBAf8CAQAwHQYDVR0OBBYEFHSFgMBmx9833s+9KTeqAx2+7c0XMB8G
+A1UdIwQYMBaAFE4iVCAYlebjbuYP+vq5Eu0GF485MA4GA1UdDwEB/wQEAwIBhjAd
+BgNVHSUEFjAUBggrBgEFBQcDAQYIKwYBBQUHAwIwdgYIKwYBBQUHAQEEajBoMCQG
+CCsGAQUFBzABhhhodHRwOi8vb2NzcC5kaWdpY2VydC5jb20wQAYIKwYBBQUHMAKG
+NGh0dHA6Ly9jYWNlcnRzLmRpZ2ljZXJ0LmNvbS9EaWdpQ2VydEdsb2JhbFJvb3RH
+Mi5jcnQwQgYDVR0fBDswOTA3oDWgM4YxaHR0cDovL2NybDMuZGlnaWNlcnQuY29t
+L0RpZ2lDZXJ0R2xvYmFsUm9vdEcyLmNybDA9BgNVHSAENjA0MAsGCWCGSAGG/WwC
+ATAHBgVngQwBATAIBgZngQwBAgEwCAYGZ4EMAQICMAgGBmeBDAECAzANBgkqhkiG
+9w0BAQsFAAOCAQEAkPFwyyiXaZd8dP3A+iZ7U6utzWX9upwGnIrXWkOH7U1MVl+t
+wcW1BSAuWdH/SvWgKtiwla3JLko716f2b4gp/DA/JIS7w7d7kwcsr4drdjPtAFVS
+slme5LnQ89/nD/7d+MS5EHKBCQRfz5eeLjJ1js+aWNJXMX43AYGyZm0pGrFmCW3R
+bpD0ufovARTFXFZkAdl9h6g4U5+LXUZtXMYnhIHUfoyMo5tS58aI7Dd8KvvwVVo4
+chDYABPPTHPbqjc1qCmBaZx2vN4Ye5DUys/vZwP9BFohFrH/6j/f3IL16/RZkiMN
+JCqVJUzKoZHm1Lesh3Sz8W2jmdv51b2EQJ8HmA==
+-----END CERTIFICATE-----`;
+
+// AGT_TLS_INSECURE=true continua a existir apenas para ambientes atras de um
+// proxy que intercepta HTTPS (desliga a verificacao so para este pedido).
 const dispatcher = process.env.AGT_TLS_INSECURE === 'true'
   ? new Agent({ connect: { rejectUnauthorized: false } })
-  : undefined;
+  : new Agent({ connect: { ca: [...tls.rootCertificates, DIGICERT_GLOBAL_G2_TLS_RSA_SHA256_2020_CA1] } });
 
 export interface DadosNif {
   nif: string;
@@ -58,13 +91,13 @@ export interface ResultadoConsultaNif {
   mensagem?: string;
 }
 
-async function obterSessaoEViewState(): Promise<{ cookies: string; viewState: string } | null> {
+async function obterSessaoEViewState(): Promise<{ cookies: string; viewState: string } | { estadoHttp: number } | null> {
   const resposta = await fetch(PAGINA_CONSULTA, {
     headers: { 'User-Agent': USER_AGENT },
     signal: AbortSignal.timeout(TIMEOUT_MS),
-    ...(dispatcher ? { dispatcher } as any : {}),
+    dispatcher,
   });
-  if (!resposta.ok) return null;
+  if (!resposta.ok) return { estadoHttp: resposta.status };
 
   const cookiesBrutos = typeof (resposta.headers as any).getSetCookie === 'function'
     ? (resposta.headers as any).getSetCookie()
@@ -93,10 +126,32 @@ export async function consultarNif(nifBruto: string): Promise<ResultadoConsultaN
   const nif = (nifBruto || '').trim().toUpperCase();
   if (!nif) return { encontrado: false, mensagem: 'NIF vazio' };
 
-  try {
+  // O portal da AGT corta ligacoes de vez em quando (ECONNRESET): uma
+  // segunda tentativa resolve quase sempre.
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      return await consultarNifUmaVez(nif);
+    } catch (error) {
+      if (tentativa < 2) continue;
+      logger.warn('Falha na consulta de NIF à AGT (não bloqueante, o utilizador pode preencher manualmente):', error);
+      return { encontrado: false, mensagem: 'Não foi possível consultar a AGT neste momento. Pode continuar manualmente.' };
+    }
+  }
+}
+
+async function consultarNifUmaVez(nif: string): Promise<ResultadoConsultaNif> {
+  {
     const sessao = await obterSessaoEViewState();
     if (!sessao) {
       return { encontrado: false, mensagem: 'Não foi possível iniciar sessão no Portal do Contribuinte (AGT)' };
+    }
+    if ('estadoHttp' in sessao) {
+      return {
+        encontrado: false,
+        mensagem: sessao.estadoHttp >= 500
+          ? `O Portal do Contribuinte (AGT) está indisponível neste momento (erro ${sessao.estadoHttp}). Tente mais tarde`
+          : `O Portal do Contribuinte (AGT) respondeu com estado ${sessao.estadoHttp}`,
+      };
     }
 
     const corpo = new URLSearchParams({
@@ -122,7 +177,7 @@ export async function consultarNif(nifBruto: string): Promise<ResultadoConsultaN
       },
       body: corpo.toString(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      ...(dispatcher ? { dispatcher } as any : {}),
+      dispatcher,
     });
 
     if (!resposta.ok) {
@@ -143,8 +198,5 @@ export async function consultarNif(nifBruto: string): Promise<ResultadoConsultaN
       encontrado: true,
       dados: { nif: nifDevolvido || nif, nome, tipo, estado, inadimplente, regime_iva: regimeIva, residente },
     };
-  } catch (error) {
-    logger.warn('Falha na consulta de NIF à AGT (não bloqueante, o utilizador pode preencher manualmente):', error);
-    return { encontrado: false, mensagem: 'Não foi possível consultar a AGT neste momento. Pode continuar manualmente.' };
   }
 }
