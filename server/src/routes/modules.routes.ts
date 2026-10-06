@@ -16,6 +16,7 @@ import { HistoryService } from '../services/history.service';
 import { montarFacturaDaOrdem, montarDocumentoOrdemCompra, garantirOrdemCompraDaFactura } from '../services/procurement-factura.service';
 import logger from '../config/logger';
 import { auditService } from '../services/audit.service';
+import { procurarFacturasDuplicadas } from '../services/factura-duplicados.service';
 import prisma from '../config/database';
 
 const router = Router();
@@ -437,7 +438,25 @@ function registerCrud(config: ModuleConfig) {
 
   const requireLicense = requireLicenseModule(config.permissionModule);
 
-  router.post(config.path, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.create(req, res, next, config));
+  router.post(config.path, requireAuth as any, requireLicense as any, async (req, res, next) => {
+    // Factura com o mesmo NIF e numero do fornecedor de outra ja registada:
+    // so passa com confirmacao explicita (evita pagar a mesma factura duas vezes).
+    if (config.model === 'factura' && !req.body?.confirmar_duplicado) {
+      try {
+        const duplicados = await procurarFacturasDuplicadas(String(req.body?.nif || ''), String(req.body?.numero_fornecedor || ''));
+        if (duplicados.length) {
+          return res.status(409).json({
+            error: 'FACTURA_DUPLICADA',
+            message: `Já existe a factura ${duplicados.map((d) => d.numero || d.id).join(', ')} com o mesmo NIF e número do fornecedor (${req.body.numero_fornecedor}).`,
+            duplicados,
+          });
+        }
+      } catch (error) {
+        return next(error);
+      }
+    }
+    return ModuleRoutesHelper.create(req as any, res, next, config);
+  });
   router.get(config.path, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
   router.get(`${config.path}/list`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.list(req, res, next, config));
   router.get(`${config.path}/stats/geral`, requireAuth as any, requireLicense as any, async (req, res, next) => {

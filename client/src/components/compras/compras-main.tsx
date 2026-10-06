@@ -286,12 +286,19 @@ export function ComprasMain() {
       if (aGravarFactura) return;
       setAGravarFactura(true);
       try {
-        const res = await fetch(`${API_BASE_URL}/facturas`, {
+        const enviar = (corpo: Partial<Factura> & { confirmar_duplicado?: boolean }) => fetch(`${API_BASE_URL}/facturas`, {
           method: 'POST',
           headers: getAuthHeaders(),
-          body: JSON.stringify(dados),
+          body: JSON.stringify(corpo),
         });
-        const body = await res.json().catch(() => ({}));
+        let res = await enviar(dados);
+        let body = await res.json().catch(() => ({}));
+        // Mesmo NIF + numero do fornecedor de uma factura ja registada: so com confirmacao.
+        if (res.status === 409 && body.error === 'FACTURA_DUPLICADA') {
+          if (!window.confirm(`${body.message}\n\nRegistar mesmo assim?`)) return;
+          res = await enviar({ ...dados, confirmar_duplicado: true });
+          body = await res.json().catch(() => ({}));
+        }
         if (!res.ok) throw new Error(body.message || body.error || 'Erro ao registar a factura');
         const numero = body.factura?.numero || body.data?.numero || '';
         toast.success(`Factura ${numero} registada. Segue o processo em Gestão de Pagamento (Pendentes).`);

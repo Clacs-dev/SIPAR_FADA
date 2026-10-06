@@ -15,6 +15,9 @@ import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL } from "@/services/api";
 import { NifLookupField, DadosAgtDoNif } from "../shared/nif-lookup-field";
+import {
+  ModoRegisto, RespostaExtraccao, SeletorModoRegisto, ZonaPdf, PainelRevisaoExtraccao, useEstadoExtraccao, extrairFicheiro,
+} from "./extraccao-pdf";
 import type { DadosNif } from "../../utils/nif-lookup";
 
 interface DadosBancariosFornecedor {
@@ -53,6 +56,14 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const [nifAdHoc, setNifAdHoc] = useState('');
   const [nomeAdHoc, setNomeAdHoc] = useState('');
   const [dadosAgtAdHoc, setDadosAgtAdHoc] = useState<DadosNif | null>(null);
+  // Modo de registo (so na Nova Factura): Manual, Pesquisa AGT ou Automatico (PDF).
+  const [modo, setModo] = useState<ModoRegisto>('manual');
+  const { estado: estadoExtraccao, setEstado: setEstadoExtraccao } = useEstadoExtraccao();
+  const [extraccao, setExtraccao] = useState<{ resposta: RespostaExtraccao; indice: number; ficheiro: File; pdfUrl: string } | null>(null);
+  const [aTentarIa, setATentarIa] = useState(false);
+  // O que a extraccao preencheu - para a Auditoria saber o que o utilizador corrigiu.
+  const [preenchidoPelaExtraccao, setPreenchidoPelaExtraccao] = useState<Record<string, string> | null>(null);
+  const [bancoExtraido, setBancoExtraido] = useState<RespostaExtraccao['documentos'][number]['banco'] | null>(null);
   const [formData, setFormData] = useState({
     fornecedor_id: factura?.fornecedor_id || '',
     numero_fornecedor: factura?.numero_fornecedor || '',
@@ -339,7 +350,150 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       valor_final: totals.valor_final,
       anexos: anexos,
       status: 'pendente', // Status correto do sistema
+      // Registo automatico: modo usado e o que o utilizador corrigiu (Auditoria).
+      ...(!factura ? { modo_registo: modo } : {}),
+      ...(extraccao && preenchidoPelaExtraccao ? {
+        extraccao: {
+          motor: extraccao.resposta.motor,
+          ficheiro: extraccao.resposta.anexo?.nome,
+          documento: extraccao.resposta.documentos[extraccao.indice]?.campos.numero_fornecedor,
+          campos_corrigidos: Object.keys(preenchidoPelaExtraccao).filter((k) => preenchidoPelaExtraccao[k] !== valorParaComparar(k)),
+        },
+      } : {}),
+      // Fornecedor fora da lista: as coordenadas bancarias lidas do documento vao na factura.
+      ...(fornecedorNaoListado && bancoExtraido ? {
+        banco_nome: bancoExtraido.banco_nome || undefined,
+        banco_titular: bancoExtraido.banco_titular || undefined,
+        banco_iban: bancoExtraido.banco_iban || undefined,
+        banco_nib: bancoExtraido.banco_nib || undefined,
+        banco_swift: bancoExtraido.banco_swift || undefined,
+      } : {}),
+    } as Partial<Factura>);
+  };
+
+  // ------------------------------------------------ registo automatico (PDF)
+
+  const valorParaComparar = (campo: string): string => {
+    if (campo === 'itens') return JSON.stringify(itens.map((i) => [i.descricao, i.quantidade, i.preco_unitario, i.iva]));
+    if (campo === 'fornecedor') return fornecedorNaoListado ? `${nifAdHoc}|${nomeAdHoc}` : formData.fornecedor_id;
+    return String((formData as any)[campo] ?? '');
+  };
+
+  /** Preenche o formulario com um dos documentos extraidos (nada e gravado). */
+  const aplicarDocumento = (resposta: RespostaExtraccao, indice: number) => {
+    const doc = resposta.documentos[indice];
+    if (!doc) return;
+    const c = doc.campos;
+    // Fornecedor: o cadastrado com o mesmo NIF, senao "fora da lista" com NIF + nome (da AGT, se encontrado).
+    const cadastrado = resposta.fornecedor && fornecedores.find((f) => f.id === resposta.fornecedor!.id)
+      || fornecedores.find((f) => c.fornecedor_nif && (f.nif || '').replace(/\s/g, '') === c.fornecedor_nif);
+    const novoForm = {
+      ...formData,
+      fornecedor_id: cadastrado ? cadastrado.id : '',
+      numero_fornecedor: c.numero_fornecedor || formData.numero_fornecedor,
+      tipo: (c.tipo || formData.tipo) as FacturaTipo | '',
+      tipo_documento: c.tipo_documento === 'factura_proforma' ? 'factura_proforma' as const : 'factura' as const,
+      data_emissao: c.data_emissao || formData.data_emissao,
+      data_vencimento: c.data_vencimento || c.data_emissao || formData.data_vencimento,
+      moeda: c.moeda || formData.moeda,
+      condicoes_pagamento: c.condicoes_pagamento || formData.condicoes_pagamento,
+      descricao: c.descricao || formData.descricao,
+    };
+    setFormData(novoForm);
+    let nifNovo = nifAdHoc, nomeNovo = nomeAdHoc;
+    if (cadastrado) {
+      setFornecedorNaoListado(false);
+    } else {
+      setFornecedorNaoListado(true);
+      nifNovo = c.fornecedor_nif;
+      nomeNovo = (resposta.agt?.encontrado && resposta.agt.dados?.nome) || c.fornecedor_nome;
+      setNifAdHoc(nifNovo);
+      setNomeAdHoc(nomeNovo);
+      setDadosAgtAdHoc(resposta.agt?.encontrado ? resposta.agt.dados : null);
+    }
+    const servico = c.tipo === 'servico';
+    const novosItens: ItemFactura[] = doc.itens.length
+      ? doc.itens.map((i, n) => {
+          const fiscal = calcularFiscal(i.quantidade * i.preco_unitario, i.iva, false);
+          return {
+            id: `${Date.now()}-${n}`,
+            descricao: i.descricao,
+            quantidade: i.quantidade,
+            preco_unitario: i.preco_unitario,
+            tipo_operacao: servico ? 'servico' : 'produto',
+            iva: fiscal.taxa_iva,
+            aplica_retencao: false,
+            valor_retencao: fiscal.valor_retencao,
+            total: fiscal.valor_final,
+          } as ItemFactura;
+        })
+      : itens;
+    setItens(novosItens);
+    setBancoExtraido(doc.banco);
+    // Fornecedor cadastrado sem conta: propoe a conta lida do documento (o utilizador confirma em "Guardar conta").
+    if (cadastrado && (doc.banco.banco_iban || doc.banco.banco_nib)) {
+      setNovaContaBancaria((atual) => ({
+        ...atual,
+        banco_nome: doc.banco.banco_nome || atual.banco_nome,
+        banco_titular: doc.banco.banco_titular || atual.banco_titular,
+        banco_iban: doc.banco.banco_iban ? formatarIban(doc.banco.banco_iban) : atual.banco_iban,
+        banco_nib: doc.banco.banco_nib ? formatarNib(doc.banco.banco_nib) : atual.banco_nib,
+        banco_swift: doc.banco.banco_swift || atual.banco_swift,
+      }));
+    }
+    setPreenchidoPelaExtraccao({
+      numero_fornecedor: novoForm.numero_fornecedor, tipo: String(novoForm.tipo), tipo_documento: novoForm.tipo_documento,
+      data_emissao: novoForm.data_emissao, data_vencimento: novoForm.data_vencimento, moeda: novoForm.moeda,
+      condicoes_pagamento: novoForm.condicoes_pagamento, descricao: novoForm.descricao,
+      itens: JSON.stringify(novosItens.map((i) => [i.descricao, i.quantidade, i.preco_unitario, i.iva])),
+      fornecedor: cadastrado ? cadastrado.id : `${nifNovo}|${nomeNovo}`,
     });
+  };
+
+  const aoExtrair = (resposta: RespostaExtraccao, ficheiro: File) => {
+    // O PDF fica anexado (substitui o de uma leitura anterior).
+    const anteriorId = extraccao?.resposta.anexo?.id;
+    setInitialFiles([
+      ...files.filter((f) => f.id !== anteriorId),
+      { id: resposta.anexo.id, name: resposta.anexo.nome, size: resposta.anexo.tamanho, url: resposta.anexo.url, tipo: resposta.anexo.tipo },
+    ]);
+    if (extraccao?.pdfUrl) URL.revokeObjectURL(extraccao.pdfUrl);
+    const indice = resposta.principal >= 0 ? resposta.principal : 0;
+    setExtraccao({ resposta, indice, ficheiro, pdfUrl: URL.createObjectURL(ficheiro) });
+    setEstadoExtraccao(resposta.estado);
+    if (resposta.documentos.length) {
+      aplicarDocumento(resposta, indice);
+      toast.success('Dados lidos do documento. Reveja antes de registar.');
+    } else {
+      toast.warning('Não foi possível ler os dados - preencha manualmente. O PDF ficou anexado.');
+    }
+  };
+
+  const tentarComIa = async () => {
+    if (!extraccao) return;
+    setATentarIa(true);
+    try {
+      aoExtrair(await extrairFicheiro(accessToken, extraccao.ficheiro, 'ia'), extraccao.ficheiro);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'A leitura com IA falhou.');
+    } finally {
+      setATentarIa(false);
+    }
+  };
+
+  const mudarModo = (novo: ModoRegisto) => {
+    setModo(novo);
+    if (novo === 'agt') { setFornecedorNaoListado(true); handleChange('fornecedor_id', ''); }
+    if (novo === 'manual' && !extraccao) setFornecedorNaoListado(false);
+  };
+
+  useEffect(() => () => { if (extraccao?.pdfUrl) URL.revokeObjectURL(extraccao.pdfUrl); }, [extraccao?.pdfUrl]);
+
+  /** Destaque nos campos lidos com pouca certeza (ou obrigatorios em falta) apos a extraccao. */
+  const destaque = (campo: string, vazio = false): string => {
+    if (!extraccao || !extraccao.resposta.documentos.length) return '';
+    const conf = extraccao.resposta.documentos[extraccao.indice]?.confianca?.[campo];
+    return vazio || conf === 'baixa' || conf === 'media' ? 'ring-2 ring-amber-400 ring-offset-1' : '';
   };
 
   const handleUpload = async (fileList: FileList) => {
@@ -391,6 +545,48 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
           Cancelar
         </Button>
       </div>
+
+      {!factura && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Como quer registar a factura?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <SeletorModoRegisto modo={modo} onChange={mudarModo} estado={estadoExtraccao} />
+            {modo === 'automatico' && (
+              extraccao ? (
+                <div className="space-y-2">
+                  <PainelRevisaoExtraccao
+                    resposta={extraccao.resposta}
+                    indice={extraccao.indice}
+                    onEscolherDocumento={(i) => { setExtraccao({ ...extraccao, indice: i }); aplicarDocumento(extraccao.resposta, i); }}
+                    onTentarComIa={extraccao.resposta.motor !== 'ia' && extraccao.resposta.estado?.ia ? tentarComIa : undefined}
+                    aTentarIa={aTentarIa}
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setExtraccao(null)}>
+                    Ler outro documento
+                  </Button>
+                </div>
+              ) : (
+                <ZonaPdf onExtraido={aoExtrair} estado={estadoExtraccao} />
+              )
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Com um PDF lido: o documento ao lado do formulario, para comparar. */}
+      <div className={extraccao ? 'grid gap-6 xl:grid-cols-2 items-start' : ''}>
+        {extraccao && (
+          <div className="xl:sticky xl:top-4 rounded-lg border overflow-hidden bg-white h-[70vh] xl:h-[calc(100vh-2rem)]">
+            {extraccao.ficheiro.type === 'application/pdf' ? (
+              <iframe src={extraccao.pdfUrl} title="Documento lido" className="w-full h-full border-0" />
+            ) : (
+              <img src={extraccao.pdfUrl} alt="Documento lido" className="w-full h-full object-contain" />
+            )}
+          </div>
+        )}
+        <div className="space-y-6 min-w-0">
 
       {/* Informações do Fornecedor */}
       <Card>
@@ -461,12 +657,24 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
               <Label htmlFor="numero_fornecedor">Nº Factura Fornecedor *</Label>
               <Input
                 id="numero_fornecedor"
+                className={destaque('numero_fornecedor', !formData.numero_fornecedor)}
                 placeholder="Ex: FT2026/001"
                 value={formData.numero_fornecedor}
                 onChange={(e) => handleChange('numero_fornecedor', e.target.value)}
               />
             </div>
           </div>
+
+          {fornecedorNaoListado && bancoExtraido && (bancoExtraido.banco_iban || bancoExtraido.banco_nib) && (
+            <div className={`p-3 rounded-lg border text-sm space-y-1 ${destaque('banco_iban')}`}>
+              <p className="font-medium">Coordenadas bancárias lidas do documento</p>
+              {bancoExtraido.banco_nome && <p><strong>Banco:</strong> {bancoExtraido.banco_nome}</p>}
+              {bancoExtraido.banco_titular && <p><strong>Titular:</strong> {bancoExtraido.banco_titular}</p>}
+              {bancoExtraido.banco_iban && <p><strong>IBAN:</strong> {formatarIban(bancoExtraido.banco_iban)}</p>}
+              {bancoExtraido.banco_nib && <p><strong>NIB:</strong> {formatarNib(bancoExtraido.banco_nib)}</p>}
+              <p className="text-xs text-muted-foreground">Ficam registadas na factura. Confirme-as com o documento ao lado.</p>
+            </div>
+          )}
 
           {fornecedorNaoListado && (
             <p className="text-xs text-muted-foreground">
@@ -516,6 +724,17 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                   </div>
                 ) : (
                   <p className="text-sm text-destructive">Este fornecedor ainda não tem dados bancários guardados. Não é possível gravar a factura sem isso.</p>
+                )}
+                {dadosBancariosFornecedor && bancoExtraido?.banco_iban && dadosBancariosFornecedor.banco_iban
+                  && dadosBancariosFornecedor.banco_iban.replace(/\s/g, '') !== bancoExtraido.banco_iban && (
+                  <p className="text-xs mt-1" style={{ color: 'var(--tone-warn)' }}>
+                    O IBAN do documento ({formatarIban(bancoExtraido.banco_iban)}) é diferente do guardado para este fornecedor. Confirme antes de registar.
+                  </p>
+                )}
+                {!dadosBancariosFornecedor && bancoExtraido && (bancoExtraido.banco_iban || bancoExtraido.banco_nib) && !addContaBancariaOpen && (
+                  <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => setAddContaBancariaOpen(true)}>
+                    Usar a conta lida do documento
+                  </Button>
                 )}
 
                 {addContaBancariaOpen && (
@@ -581,7 +800,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
             <Label htmlFor="tipo">Tipo *</Label>
             <select
               id="tipo"
-              className="w-full px-3 py-2 border border-input rounded-md bg-background"
+              className={`w-full px-3 py-2 border border-input rounded-md bg-background ${destaque('tipo', !formData.tipo)}`}
               value={formData.tipo}
               onChange={(e) => handleChange('tipo', e.target.value)}
               required
@@ -624,6 +843,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
               <Label htmlFor="data_emissao">Data de Emissão *</Label>
               <Input
                 id="data_emissao"
+                className={destaque('data_emissao', !formData.data_emissao)}
                 type="date"
                 value={formData.data_emissao}
                 onChange={(e) => handleChange('data_emissao', e.target.value)}
@@ -634,6 +854,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
               <Label htmlFor="data_vencimento">Data de Vencimento *</Label>
               <Input
                 id="data_vencimento"
+                className={destaque('data_vencimento', !formData.data_vencimento)}
                 type="date"
                 value={formData.data_vencimento}
                 onChange={(e) => handleChange('data_vencimento', e.target.value)}
@@ -865,6 +1086,9 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
           />
         </CardContent>
       </Card>
+
+        </div>
+      </div>
 
       {/* Botões de Ação */}
       <div className="flex justify-end gap-2">
