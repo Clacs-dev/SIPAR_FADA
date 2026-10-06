@@ -70,6 +70,15 @@ const MODULES: { value: string; label: string; restricted?: boolean; actions?: s
     actions: ['approve'],
     grupo: i === 0 ? 'Gestão de Pagamento — acções no fluxo da factura (Aprovar = pode executar)' : undefined,
   })),
+  // Registo automatico de facturas (PDF): "Criar" = pode usar. O NUMERO de
+  // extraccoes com IA define-se utilizador a utilizador (Gestao de Utilizadores).
+  {
+    value: 'invoice_extraction_rules',
+    label: 'Extracção do PDF sem IA (regras locais, sem custos)',
+    actions: ['create'],
+    grupo: 'Registo automático de facturas (Criar = pode usar · limite de IA: em cada utilizador)',
+  },
+  { value: 'invoice_extraction_ai', label: 'Extracção do PDF com IA (paga por uso)', actions: ['create'] },
   { value: 'documents', label: 'Documentos' },
   { value: 'messages', label: 'Mensagens' },
   { value: 'notifications', label: 'Notificações' },

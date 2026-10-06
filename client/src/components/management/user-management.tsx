@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../ui/alert-dialog";
-import { Search, Plus, Edit, Trash2, User, Settings, Users, Check, X, Clock } from "lucide-react";
+import { Search, Plus, Edit, Trash2, User, Settings, Users, Check, X, Clock, Sparkles } from "lucide-react";
+import { LimiteExtraccaoIaDialog } from "./limite-extraccao-ia-dialog";
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
 import { apiClient } from "../../utils/api-client";
@@ -54,6 +55,7 @@ const getRoleLabel = (departments: DepartmentLike[], role: string) => {
 };
 
 export function UserManagement() {
+  const [limiteIaDe, setLimiteIaDe] = useState<{ id: string; name: string } | null>(null);
   const { accessToken, user: currentUser } = useAuth();
   const { departments } = useDepartments();
   const [searchTerm, setSearchTerm] = useState("");
@@ -571,6 +573,14 @@ export function UserManagement() {
                       <Button size="sm" variant="outline">
                         <Edit className="h-4 w-4" />
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title="Extracções de facturas com IA (limite)"
+                        onClick={() => setLimiteIaDe({ id: user.id, name: user.name })}
+                      >
+                        <Sparkles className="h-4 w-4" />
+                      </Button>
                       
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -706,6 +716,7 @@ export function UserManagement() {
           </CardContent>
         </Card>
       </div>
+      <LimiteExtraccaoIaDialog utilizador={limiteIaDe} onClose={() => setLimiteIaDe(null)} />
     </div>
   );
 }

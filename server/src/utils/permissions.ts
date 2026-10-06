@@ -63,6 +63,10 @@ export const MODULES = {
   PAGAMENTOS_ACCAO_APROVAR_DSG: 'pagamentos_accao_aprovar_dsg',
   PAGAMENTOS_ACCAO_AUTORIZAR: 'pagamentos_accao_autorizar',
   PAGAMENTOS_ACCAO_PAGAR: 'pagamentos_accao_pagar',
+  // Registo automatico de facturas a partir do PDF (accao "create" = pode usar):
+  // sem IA (regras locais) e com IA (limite por role em extraccao-regras.service.ts).
+  EXTRACCAO_FACTURA_REGRAS: 'invoice_extraction_rules',
+  EXTRACCAO_FACTURA_IA: 'invoice_extraction_ai',
 } as const;
 
 /** Modulo de permissao exigido para cada mudanca de estado da factura. */

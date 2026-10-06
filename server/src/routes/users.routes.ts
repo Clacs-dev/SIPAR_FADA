@@ -5,6 +5,7 @@ import { AuthenticatedRequest, requireAuth, requireSystemAdmin } from '../middle
 import prisma from '../config/database';
 import bcrypt from 'bcryptjs';
 import { auditService } from '../services/audit.service';
+import { contarExtraccoesIa, definirLimiteDoUtilizador, obterLimiteDoUtilizador } from '../services/extraccao-regras.service';
 
 const router = Router();
 router.use(requireLicenseModule('users'));
@@ -267,6 +268,36 @@ router.put('/:userId', requireAuth as any, requireSystemAdmin as any, async (req
 });
 
 // ATUALIZAR STATUS DO UTILIZADOR (Apenas Administrador do Sistema)
+// LIMITE DE EXTRACCOES DE FACTURAS COM IA DO UTILIZADOR (Administrador do Sistema)
+// limite null = sem limite, 0 = nenhuma; periodo "mensal" | "total".
+router.get('/:userId/limite-extraccao-ia', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const alvo = await prisma.user.findUnique({ where: { id: req.params.userId }, select: { id: true } });
+    if (!alvo) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+    const limite = await obterLimiteDoUtilizador(alvo.id);
+    const usadas = await contarExtraccoesIa(alvo.id, limite.periodo);
+    return res.status(200).json({ success: true, ...limite, usadas });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/:userId/limite-extraccao-ia', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const alvo = await prisma.user.findUnique({ where: { id: req.params.userId }, select: { id: true, email: true } });
+    if (!alvo) return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+    const limite = await definirLimiteDoUtilizador(alvo.id, req.body, { id: req.user!.id, name: req.user!.name });
+    await auditService.logAction('user_limite_extraccao_ia_updated', 'info', { alvoId: alvo.id, alvoEmail: alvo.email, ...limite }, {
+      userId: req.user!.id, userEmail: req.user!.email, userRole: req.user!.role,
+      resource: 'user', resourceId: alvo.id, success: true,
+    });
+    const usadas = await contarExtraccoesIa(alvo.id, limite.periodo);
+    return res.status(200).json({ success: true, ...limite, usadas });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put('/:userId/status', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;

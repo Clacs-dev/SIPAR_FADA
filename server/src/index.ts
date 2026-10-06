@@ -43,6 +43,7 @@ import licenseRoutes from './routes/license.routes';
 import meetingIntegrationsRoutes from './routes/meeting-integrations.routes';
 import nifRoutes from './routes/nif.routes';
 import mapaActividadesRoutes from './routes/mapa-actividades.routes';
+import extraccaoFacturasRoutes from './routes/extraccao-facturas.routes';
 import { licenseService } from './services/license.service';
 import { sincronizarRbac } from './services/rbac-sync.service';
 import { migrarNumeracaoAutorizacaoDespesas } from './services/autorizacao-despesas-migracao.service';
@@ -172,6 +173,7 @@ const registerRoutes = (prefix: string) => {
   app.use(`${prefix}/meeting-integrations`, meetingIntegrationsRoutes);
   app.use(`${prefix}/nif`, nifRoutes);
   app.use(`${prefix}/mapa-actividades`, mapaActividadesRoutes);
+  app.use(`${prefix}/extraccao-facturas`, extraccaoFacturasRoutes);
   app.use(`${prefix}/phase4`, phase4Routes);
   app.use(`${prefix}/compras-avancadas`, phase4Routes);
   app.use(`${prefix}/orcamentos`, phase4Routes);

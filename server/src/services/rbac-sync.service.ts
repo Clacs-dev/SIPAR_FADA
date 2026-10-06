@@ -32,6 +32,7 @@ export const DSG_TECNICO_PERMISSIONS: { module: string; actions: string[] }[] = 
 const MARCADOR_ACTIVITY_MAP = 'rbac.migracao.activity_map.v1';
 const MARCADOR_SEPARADORES = 'rbac.migracao.separadores_pagamento.v1';
 const MARCADOR_ACCOES = 'rbac.migracao.accoes_factura.v1';
+const MARCADOR_EXTRACCAO = 'rbac.migracao.extraccao_factura.v1';
 
 // Quem fazia cada passo antes de passar a ser controlado pela matriz
 // (antes estava fixo no ecra: Compras valida, gabinetes autorizam,
@@ -139,6 +140,28 @@ async function migrarAccoesFactura() {
   return concedidos;
 }
 
+/**
+ * Registo automatico de facturas: uma unica vez, quem ja cria facturas recebe
+ * a extraccao SEM IA (regras locais, sem custos nem envio de dados). A
+ * extraccao COM IA nao e concedida a ninguem por omissao - tem custos e envia
+ * o documento a um servico externo: o Administrador do Sistema activa-a na
+ * matriz e define o limite por role.
+ */
+async function migrarExtraccaoFactura() {
+  const feito = await prisma.systemSetting.findUnique({ where: { key: MARCADOR_EXTRACCAO } });
+  if (feito) return 0;
+  const roles = await prisma.role.findMany({ where: { deletedAt: null }, include: { permissoes: true } });
+  let concedidos = 0;
+  for (const role of roles) {
+    if (['externo', 'publico', 'admin_sistema'].includes(role.slug)) continue;
+    if (!role.permissoes.some((p) => p.module === MODULES.INVOICES && p.action === A.CREATE)) continue;
+    await garantirPermissao(role.id, MODULES.EXTRACCAO_FACTURA_REGRAS, A.CREATE);
+    concedidos += 1;
+  }
+  await prisma.systemSetting.create({ data: { key: MARCADOR_EXTRACCAO, value: new Date().toISOString(), updatedByName: 'sistema' } });
+  return concedidos;
+}
+
 export async function sincronizarRbac() {
   const criado = await garantirRoleDsgTecnico();
   if (criado) logger.info('[RBAC] Role "dsg_tecnico" (DSG Técnico) criado com as permissões por omissão.');
@@ -148,4 +171,6 @@ export async function sincronizarRbac() {
   if (s > 0) logger.info(`[RBAC] Separadores da Gestão de Pagamento e Mapa de Impostos concedidos a ${s} role(s) que já os viam.`);
   const a = await migrarAccoesFactura();
   if (a > 0) logger.info(`[RBAC] Passos do fluxo da factura (Aprovar-DSG, Autorizar, Pagamento) concedidos a ${a} role(s).`);
+  const e = await migrarExtraccaoFactura();
+  if (e > 0) logger.info(`[RBAC] Registo automático de facturas (sem IA) concedido a ${e} role(s) que já criam facturas.`);
 }
