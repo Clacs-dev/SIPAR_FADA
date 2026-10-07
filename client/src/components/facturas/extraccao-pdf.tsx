@@ -1,12 +1,12 @@
 /**
- * Registo automatico de facturas (Nova Factura): seletor de modo, zona para
+ * Registo automatico de facturas (Nova Factura): botao de IA, zona para
  * largar/escolher/colar o PDF e painel de revisao do que foi extraido.
  * O servidor (POST /extraccao-facturas/extrair) le o documento e devolve os
  * campos; NADA e gravado ate o utilizador clicar em Registar no formulario.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, FileSearch, Keyboard, Loader2, Search, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles, Upload } from "lucide-react";
 import { Button } from "../ui/button";
 import { API_BASE_URL } from "@/services/api";
 import { useAuth } from "../auth/auth-context";
@@ -83,37 +83,26 @@ function textoRestantes(e: EstadoExtraccao | null): string {
   return `${e.restantes} extracção(ões) com IA ${e.periodo === 'total' ? 'restante(s)' : 'restante(s) este mês'}`;
 }
 
-// ------------------------------------------------------------ seletor de modo
+// ------------------------------------------------------------ botao de IA
 
-export function SeletorModoRegisto({ modo, onChange, estado }: { modo: ModoRegisto; onChange: (m: ModoRegisto) => void; estado: EstadoExtraccao | null }) {
-  const automaticoDisponivel = !!estado && (estado.regras || estado.ia);
-  const opcoes: { id: ModoRegisto; titulo: string; texto: string; icone: JSX.Element; visivel: boolean }[] = [
-    { id: 'manual', titulo: 'Manual', texto: 'Preencher todos os campos', icone: <Keyboard className="h-4 w-4" />, visivel: true },
-    { id: 'agt', titulo: 'Pesquisa AGT', texto: 'Dados do fornecedor pelo NIF', icone: <Search className="h-4 w-4" />, visivel: true },
-    {
-      id: 'automatico',
-      titulo: 'Automático (PDF)',
-      texto: estado?.ia ? `Ler o PDF · ${textoRestantes(estado)}` : 'Ler os dados do PDF da factura',
-      icone: <FileSearch className="h-4 w-4" />,
-      visivel: automaticoDisponivel,
-    },
-  ];
+/** Icone no canto do cartao do fornecedor: abre/fecha a leitura automatica do PDF. */
+export function BotaoLeituraPdf({ aberto, onClick, estado }: { aberto: boolean; onClick: () => void; estado: EstadoExtraccao | null }) {
+  if (!estado || !(estado.regras || estado.ia)) return null;
+  const dica = aberto
+    ? 'Fechar a leitura automática do PDF'
+    : `Preencher a partir do PDF da factura${estado.ia ? ` · ${textoRestantes(estado)}` : ''}`;
   return (
-    <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Modo de registo">
-      {opcoes.filter((o) => o.visivel).map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          role="radio"
-          aria-checked={modo === o.id}
-          onClick={() => onChange(o.id)}
-          className={`text-left rounded-lg border p-3 transition-colors ${modo === o.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'border-border hover:bg-muted/50'}`}
-        >
-          <span className="flex items-center gap-2 font-medium text-sm">{o.icone}{o.titulo}</span>
-          <span className="block text-xs text-muted-foreground mt-1">{o.texto}</span>
-        </button>
-      ))}
-    </div>
+    <Button
+      type="button"
+      variant={aberto ? 'default' : 'outline'}
+      size="icon"
+      onClick={onClick}
+      title={dica}
+      aria-label={dica}
+      aria-pressed={aberto}
+    >
+      <Sparkles className="h-4 w-4" />
+    </Button>
   );
 }
 

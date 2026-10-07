@@ -16,7 +16,7 @@ import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL } from "@/services/api";
 import { NifLookupField, DadosAgtDoNif } from "../shared/nif-lookup-field";
 import {
-  ModoRegisto, RespostaExtraccao, SeletorModoRegisto, ZonaPdf, PainelRevisaoExtraccao, useEstadoExtraccao, extrairFicheiro,
+  ModoRegisto, RespostaExtraccao, BotaoLeituraPdf, ZonaPdf, PainelRevisaoExtraccao, useEstadoExtraccao, extrairFicheiro,
 } from "./extraccao-pdf";
 import type { DadosNif } from "../../utils/nif-lookup";
 
@@ -56,8 +56,8 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const [nifAdHoc, setNifAdHoc] = useState('');
   const [nomeAdHoc, setNomeAdHoc] = useState('');
   const [dadosAgtAdHoc, setDadosAgtAdHoc] = useState<DadosNif | null>(null);
-  // Modo de registo (so na Nova Factura): Manual, Pesquisa AGT ou Automatico (PDF).
-  const [modo, setModo] = useState<ModoRegisto>('manual');
+  // Leitura automatica do PDF (so na Nova Factura): aberta pelo icone de IA no cartao do fornecedor.
+  const [leituraPdfAberta, setLeituraPdfAberta] = useState(false);
   const { estado: estadoExtraccao, setEstado: setEstadoExtraccao } = useEstadoExtraccao();
   const [extraccao, setExtraccao] = useState<{ resposta: RespostaExtraccao; indice: number; ficheiro: File; pdfUrl: string } | null>(null);
   const [aTentarIa, setATentarIa] = useState(false);
@@ -351,7 +351,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       anexos: anexos,
       status: 'pendente', // Status correto do sistema
       // Registo automatico: modo usado e o que o utilizador corrigiu (Auditoria).
-      ...(!factura ? { modo_registo: modo } : {}),
+      ...(!factura ? { modo_registo: modoRegisto } : {}),
       ...(extraccao && preenchidoPelaExtraccao ? {
         extraccao: {
           motor: extraccao.resposta.motor,
@@ -481,11 +481,8 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
     }
   };
 
-  const mudarModo = (novo: ModoRegisto) => {
-    setModo(novo);
-    if (novo === 'agt') { setFornecedorNaoListado(true); handleChange('fornecedor_id', ''); }
-    if (novo === 'manual' && !extraccao) setFornecedorNaoListado(false);
-  };
+  // Modo usado (Auditoria): PDF lido, fornecedor pesquisado na AGT pelo NIF, ou manual.
+  const modoRegisto: ModoRegisto = extraccao ? 'automatico' : fornecedorNaoListado ? 'agt' : 'manual';
 
   useEffect(() => () => { if (extraccao?.pdfUrl) URL.revokeObjectURL(extraccao.pdfUrl); }, [extraccao?.pdfUrl]);
 
@@ -546,35 +543,6 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         </Button>
       </div>
 
-      {!factura && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Como quer registar a factura?</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <SeletorModoRegisto modo={modo} onChange={mudarModo} estado={estadoExtraccao} />
-            {modo === 'automatico' && (
-              extraccao ? (
-                <div className="space-y-2">
-                  <PainelRevisaoExtraccao
-                    resposta={extraccao.resposta}
-                    indice={extraccao.indice}
-                    onEscolherDocumento={(i) => { setExtraccao({ ...extraccao, indice: i }); aplicarDocumento(extraccao.resposta, i); }}
-                    onTentarComIa={extraccao.resposta.motor !== 'ia' && extraccao.resposta.estado?.ia ? tentarComIa : undefined}
-                    aTentarIa={aTentarIa}
-                  />
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setExtraccao(null)}>
-                    Ler outro documento
-                  </Button>
-                </div>
-              ) : (
-                <ZonaPdf onExtraido={aoExtrair} estado={estadoExtraccao} />
-              )
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       {/* Com um PDF lido: o documento ao lado do formulario, para comparar. */}
       <div className={extraccao ? 'grid gap-6 xl:grid-cols-2 items-start' : ''}>
         {extraccao && (
@@ -590,10 +558,31 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
 
       {/* Informações do Fornecedor */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>Informações do Fornecedor</CardTitle>
+          {!factura && (
+            <BotaoLeituraPdf aberto={leituraPdfAberta} onClick={() => setLeituraPdfAberta((v) => !v)} estado={estadoExtraccao} />
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
+          {!factura && leituraPdfAberta && (
+            extraccao ? (
+              <div className="space-y-2">
+                <PainelRevisaoExtraccao
+                  resposta={extraccao.resposta}
+                  indice={extraccao.indice}
+                  onEscolherDocumento={(i) => { setExtraccao({ ...extraccao, indice: i }); aplicarDocumento(extraccao.resposta, i); }}
+                  onTentarComIa={extraccao.resposta.motor !== 'ia' && extraccao.resposta.estado?.ia ? tentarComIa : undefined}
+                  aTentarIa={aTentarIa}
+                />
+                <Button type="button" variant="ghost" size="sm" onClick={() => setExtraccao(null)}>
+                  Ler outro documento
+                </Button>
+              </div>
+            ) : (
+              <ZonaPdf onExtraido={aoExtrair} estado={estadoExtraccao} />
+            )
+          )}
           <button
             type="button"
             className="text-xs text-primary hover:underline"
