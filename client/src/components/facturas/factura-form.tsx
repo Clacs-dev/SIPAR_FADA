@@ -58,7 +58,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const [dadosAgtAdHoc, setDadosAgtAdHoc] = useState<DadosNif | null>(null);
   // Leitura automatica do PDF (so na Nova Factura): aberta pelo icone de IA no cartao do fornecedor.
   const [leituraPdfAberta, setLeituraPdfAberta] = useState(false);
-  const { estado: estadoExtraccao, setEstado: setEstadoExtraccao } = useEstadoExtraccao();
+  const { estado: estadoExtraccao, setEstado: setEstadoExtraccao, erro: erroEstadoExtraccao } = useEstadoExtraccao();
   const [extraccao, setExtraccao] = useState<{ resposta: RespostaExtraccao; indice: number; ficheiro: File; pdfUrl: string } | null>(null);
   const [aTentarIa, setATentarIa] = useState(false);
   // O que a extraccao preencheu - para a Auditoria saber o que o utilizador corrigiu.
@@ -561,7 +561,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>Informações do Fornecedor</CardTitle>
           {!factura && (
-            <BotaoLeituraPdf aberto={leituraPdfAberta} onClick={() => setLeituraPdfAberta((v) => !v)} estado={estadoExtraccao} />
+            <BotaoLeituraPdf aberto={leituraPdfAberta} onClick={() => setLeituraPdfAberta((v) => !v)} estado={estadoExtraccao} erro={erroEstadoExtraccao} />
           )}
         </CardHeader>
         <CardContent className="space-y-4">

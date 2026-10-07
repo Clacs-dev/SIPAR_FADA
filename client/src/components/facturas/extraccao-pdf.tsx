@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Sparkles, Upload } from "lucide-react";
 import { Button } from "../ui/button";
+import { toast } from "sonner@2.0.3";
 import { API_BASE_URL } from "@/services/api";
 import { useAuth } from "../auth/auth-context";
 
@@ -66,15 +67,22 @@ const REGISTAVEIS = ['factura', 'factura_recibo', 'factura_proforma'];
 export function useEstadoExtraccao() {
   const { accessToken } = useAuth();
   const [estado, setEstado] = useState<EstadoExtraccao | null>(null);
+  // Porque o estado nao chegou (ex.: servidor sem a rota, 404) - mostrado no icone de IA.
+  const [erro, setErro] = useState<string | null>(null);
   const recarregar = useCallback(() => {
     if (!accessToken) return;
     fetch(`${API_BASE_URL}/extraccao-facturas/estado`, { headers: { Authorization: `Bearer ${accessToken}` } })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body) => setEstado(body))
-      .catch(() => setEstado(null));
+      .then(async (res) => {
+        if (res.ok) { setEstado(await res.json()); setErro(null); return; }
+        setEstado(null);
+        setErro(res.status === 404
+          ? 'O servidor ainda não tem o registo automático de facturas. Actualize o servidor para a versão mais recente.'
+          : `O servidor não respondeu ao pedido do registo automático (estado HTTP ${res.status}).`);
+      })
+      .catch(() => { setEstado(null); setErro('Sem ligação ao servidor para o registo automático.'); });
   }, [accessToken]);
   useEffect(() => { recarregar(); }, [recarregar]);
-  return { estado, setEstado, recarregar };
+  return { estado, setEstado, erro, recarregar };
 }
 
 function textoRestantes(e: EstadoExtraccao | null): string {
@@ -86,7 +94,15 @@ function textoRestantes(e: EstadoExtraccao | null): string {
 // ------------------------------------------------------------ botao de IA
 
 /** Icone no canto do cartao do fornecedor: abre/fecha a leitura automatica do PDF. */
-export function BotaoLeituraPdf({ aberto, onClick, estado }: { aberto: boolean; onClick: () => void; estado: EstadoExtraccao | null }) {
+export function BotaoLeituraPdf({ aberto, onClick, estado, erro }: { aberto: boolean; onClick: () => void; estado: EstadoExtraccao | null; erro?: string | null }) {
+  // Servidor sem a funcionalidade ou inacessivel: o icone fica visivel e explica porque.
+  if (!estado && erro) {
+    return (
+      <Button type="button" variant="outline" size="icon" className="opacity-50" title={erro} aria-label={erro} onClick={() => toast.error(erro)}>
+        <Sparkles className="h-4 w-4" />
+      </Button>
+    );
+  }
   if (!estado || !(estado.regras || estado.ia)) return null;
   const dica = aberto
     ? 'Fechar a leitura automática do PDF'
