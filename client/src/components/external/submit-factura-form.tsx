@@ -65,6 +65,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
     bankAccountHolder: user?.bankAccountHolder || user?.name || '',
     bankIban: user?.bankIban || '',
     bankNib: user?.bankNib || '',
+    bankAccountNumber: user?.bankAccountNumber || '',
     bankSwift: user?.bankSwift || '',
     bankCity: user?.bankCity || '',
     bankCountry: user?.bankCountry || 'Angola',
@@ -86,6 +87,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
       bankAccountHolder: conta.bankAccountHolder || '',
       bankIban: conta.bankIban || '',
       bankNib: conta.bankNib || '',
+      bankAccountNumber: conta.bankAccountNumber || '',
       bankSwift: conta.bankSwift || '',
       bankCity: conta.bankCity || '',
       bankCountry: conta.bankCountry || 'Angola',
@@ -324,6 +326,7 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
         banco_titular: dadosBancarios.bankAccountHolder,
         banco_iban: dadosBancarios.bankIban,
         banco_nib: dadosBancarios.bankNib,
+        banco_numero_conta: dadosBancarios.bankAccountNumber,
         banco_swift: dadosBancarios.bankSwift,
         banco_cidade: dadosBancarios.bankCity,
         banco_pais: dadosBancarios.bankCountry,
@@ -569,6 +572,16 @@ export function SubmitFacturaForm({ onCancel, onSuccess }: SubmitFacturaFormProp
                 onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankNib: formatarNib(e.target.value) })}
               />
               {erroNib && <p className="text-xs text-destructive">{erroNib}</p>}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bankAccountNumber">Número de Conta</Label>
+              <Input
+                id="bankAccountNumber"
+                placeholder="Ex: 215995391019"
+                value={dadosBancarios.bankAccountNumber}
+                maxLength={40}
+                onChange={(e) => setDadosBancarios({ ...dadosBancarios, bankAccountNumber: e.target.value })}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="bankSwift">Código SWIFT/BIC</Label>

@@ -4,6 +4,7 @@ export type FacturaStatus =
   | 'rascunho'
   | 'registada'
   | 'pendente'
+  | 'validado_chefe_dsg'
   | 'validado'
   | 'aprovado'
   | 'rejeitado'
@@ -114,6 +115,7 @@ export interface Factura {
   banco_titular?: string;
   banco_iban?: string;
   banco_nib?: string;
+  banco_numero_conta?: string;
   banco_swift?: string;
   banco_cidade?: string;
   banco_pais?: string;
@@ -148,6 +150,11 @@ export interface Factura {
   };
 
   // Validação e aprovação
+  validado_chefe_dsg_por_id?: string;
+  validado_chefe_dsg_por_nome?: string;
+  validado_chefe_dsg_at?: string;
+  validacao_chefe_dsg_comentario?: string;
+
   validado_por_id?: string;
   validado_por_nome?: string;
   validado_at?: string;
@@ -258,6 +265,7 @@ export interface OrdemPagamentoInterna {
   conta_debito?: string;
   banco_nome?: string;
   banco_iban?: string;
+  banco_numero_conta?: string | null;
   banco_cidade?: string;
   banco_pais?: string;
   paid_at?: string;

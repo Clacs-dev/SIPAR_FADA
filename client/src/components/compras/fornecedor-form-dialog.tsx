@@ -79,6 +79,7 @@ export function FornecedorFormDialog({
   const [bancoTitular, setBancoTitular] = useState("");
   const [bancoIban, setBancoIban] = useState("");
   const [bancoNib, setBancoNib] = useState("");
+  const [bancoNumeroConta, setBancoNumeroConta] = useState("");
   const [bancoSwift, setBancoSwift] = useState("");
   const [bancoCidade, setBancoCidade] = useState("");
   const [bancoPais, setBancoPais] = useState("Angola");
@@ -112,6 +113,7 @@ export function FornecedorFormDialog({
       setBancoTitular(fornecedor.banco_titular || "");
       setBancoIban(formatarIban(fornecedor.banco_iban || ""));
       setBancoNib(formatarNib(fornecedor.banco_nib || ""));
+      setBancoNumeroConta(fornecedor.banco_numero_conta || "");
       setBancoSwift(fornecedor.banco_swift || "");
       setBancoCidade(fornecedor.banco_cidade || "");
       setBancoPais(fornecedor.banco_pais || "Angola");
@@ -182,6 +184,7 @@ export function FornecedorFormDialog({
       banco_titular: bancoTitular.trim() || undefined,
       banco_iban: bancoIban.trim() || undefined,
       banco_nib: bancoNib.trim() || undefined,
+      banco_numero_conta: bancoNumeroConta.trim() || undefined,
       banco_swift: bancoSwift.trim() || undefined,
       banco_cidade: bancoCidade.trim() || undefined,
       banco_pais: bancoPais.trim() || undefined,
@@ -224,6 +227,7 @@ export function FornecedorFormDialog({
       setBancoTitular("");
       setBancoIban("");
       setBancoNib("");
+      setBancoNumeroConta("");
       setBancoSwift("");
       setBancoCidade("");
       setBancoPais("Angola");
@@ -747,6 +751,16 @@ export function FornecedorFormDialog({
                   placeholder="0055 0000 2159 9539 1019 3"
                 />
                 {validarNib(bancoNib) && <p className="text-xs text-destructive">{validarNib(bancoNib)}</p>}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="banco-numero-conta">Número de Conta</Label>
+                <Input
+                  id="banco-numero-conta"
+                  value={bancoNumeroConta}
+                  maxLength={40}
+                  onChange={(e) => setBancoNumeroConta(e.target.value)}
+                  placeholder="Ex: 215995391019"
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="banco-swift">Código SWIFT/BIC</Label>

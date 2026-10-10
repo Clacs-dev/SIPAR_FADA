@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "../ui/alert-dialog";
-import { Search, Plus, Edit, Trash2, User, Settings, Users, Check, X, Clock, Sparkles } from "lucide-react";
+import { Search, Plus, Edit, Trash2, User, Settings, Users, Check, X, Clock, Sparkles, Power, RotateCcw } from "lucide-react";
 import { LimiteExtraccaoIaDialog } from "./limite-extraccao-ia-dialog";
 import { toast } from "sonner@2.0.3";
 import { useAuth } from "../auth/auth-context";
@@ -40,6 +40,7 @@ const LEGACY_ROLE_OPTIONS = [
 // Department). As permissoes de cada um gerem-se em "Roles e Permissoes".
 const SPECIAL_ROLE_OPTIONS = [
   { value: 'dsg_tecnico', label: 'DSG Técnico (submete em nome dos fornecedores)' },
+  { value: 'chefe_dsg', label: 'Chefe de Departamento DSG (valida facturas pendentes)' },
 ];
 
 const isDepartmentRole = (departments: DepartmentLike[], role: string) => departments.some((department) => department.slug === role);
@@ -63,6 +64,10 @@ export function UserManagement() {
   const [users, setUsers] = useState<UserData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearingDemo, setIsClearingDemo] = useState(false);
+  // Edicao de um utilizador existente (senha vazia = manter a actual).
+  const [editando, setEditando] = useState<UserData | null>(null);
+  const [editForm, setEditForm] = useState({ name: '', email: '', password: '', phone: '', organization: '', position: '', role: '' });
+  const [aGravarEdicao, setAGravarEdicao] = useState(false);
   const [newUser, setNewUser] = useState({
     name: '',
     email: '',
@@ -223,17 +228,75 @@ export function UserManagement() {
     }
   };
 
-  const handleDeleteUser = async (userId: string, userName: string) => {
+  const abrirEdicao = (u: UserData) => {
+    setEditando(u);
+    setEditForm({
+      name: u.name || '',
+      email: u.email || '',
+      password: '',
+      phone: u.phone || '',
+      organization: u.organization || '',
+      position: u.position || '',
+      role: u.role || '',
+    });
+  };
+
+  const handleGuardarEdicao = async () => {
+    if (!editando) return;
+    if (!editForm.name.trim() || !editForm.email.trim()) {
+      toast.error('Nome e e-mail são obrigatórios');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editForm.email.trim())) {
+      toast.error('Por favor, insira um email válido');
+      return;
+    }
+    if (editForm.password && editForm.password.length < 6) {
+      toast.error('A senha deve ter no mínimo 6 caracteres');
+      return;
+    }
+    setAGravarEdicao(true);
     try {
-      // Utilizadores nunca sao eliminados fisicamente (dezenas de tabelas
-      // referenciam createdById em todo o sistema) - "Excluir" desativa a
-      // conta, impedindo login, sem apagar o historico associado.
-      await apiClient.updateUserStatus(accessToken!, userId, 'inactive');
-      toast.success(`Utilizador ${userName} desativado com sucesso`);
+      await apiClient.updateUser(accessToken!, editando.id, {
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+        ...(editForm.password ? { password: editForm.password } : {}),
+        phone: editForm.phone,
+        organization: editForm.organization,
+        position: editForm.position,
+        ...(editForm.role ? { role: editForm.role } : {}),
+      });
+      toast.success(`Utilizador ${editForm.name} actualizado`);
+      setEditando(null);
       loadUsers();
     } catch (error: any) {
-      console.error('Error deactivating user:', error);
-      toast.error(error.message || 'Erro ao desativar utilizador');
+      toast.error(error.message || 'Erro ao actualizar utilizador');
+    } finally {
+      setAGravarEdicao(false);
+    }
+  };
+
+  // Desactivar / reactivar: a conta deixa (ou volta) a poder iniciar sessão.
+  const handleAlterarEstado = async (u: UserData, status: 'active' | 'inactive') => {
+    try {
+      await apiClient.updateUserStatus(accessToken!, u.id, status);
+      toast.success(status === 'active' ? `Utilizador ${u.name} reactivado` : `Utilizador ${u.name} desactivado`);
+      loadUsers();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao alterar o estado do utilizador');
+    }
+  };
+
+  // Eliminar de vez (o servidor recusa a própria conta, o último admin e
+  // quem organizou reuniões internas - nesses casos, desactivar).
+  const handleDeleteUser = async (userId: string, userName: string) => {
+    try {
+      await apiClient.deleteUser(accessToken!, userId);
+      toast.success(`Utilizador ${userName} eliminado`);
+      loadUsers();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error(error.message || 'Erro ao eliminar utilizador');
     }
   };
 
@@ -570,9 +633,30 @@ export function UserManagement() {
                   <TableCell>{user.last_login || 'N/A'}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline">
+                      <Button size="sm" variant="outline" title="Editar (nome, e-mail, senha, papel...)" onClick={() => abrirEdicao(user)}>
                         <Edit className="h-4 w-4" />
                       </Button>
+                      {user.status === 'active' ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title="Desactivar (deixa de poder iniciar sessão)"
+                          onClick={() => handleAlterarEstado(user, 'inactive')}
+                          disabled={user.id === currentUser?.id}
+                        >
+                          <Power className="h-4 w-4" />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title="Reactivar a conta"
+                          style={{ color: 'var(--tone-success)' }}
+                          onClick={() => handleAlterarEstado(user, 'active')}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
@@ -584,17 +668,18 @@ export function UserManagement() {
                       
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive">
+                          <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" title="Eliminar de vez" disabled={user.id === currentUser?.id}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Desativar utilizador</AlertDialogTitle>
+                            <AlertDialogTitle>Eliminar utilizador</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Tem a certeza que deseja desativar o utilizador <strong>{user.name}</strong>?
-                              A conta deixa de conseguir iniciar sessão, mas todo o histórico associado (registos criados,
-                              assinaturas, auditoria) é mantido. Pode reativar a conta a qualquer momento.
+                              Tem a certeza que deseja eliminar <strong>{user.name}</strong> ({user.email})? A conta é apagada
+                              de vez e não pode ser recuperada. Os documentos que criou mantêm-se com o nome dele; as suas
+                              sessões, mensagens e notificações são removidas. Se só quer impedir o acesso, use
+                              «Desactivar» (pode reactivar depois).
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
@@ -603,7 +688,7 @@ export function UserManagement() {
                               onClick={() => handleDeleteUser(user.id, user.name)}
                               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
-                              Excluir
+                              Eliminar
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
@@ -717,6 +802,94 @@ export function UserManagement() {
         </Card>
       </div>
       <LimiteExtraccaoIaDialog utilizador={limiteIaDe} onClose={() => setLimiteIaDe(null)} />
+
+      {/* Editar utilizador */}
+      <Dialog open={!!editando} onOpenChange={(aberto) => { if (!aberto) setEditando(null); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Editar Utilizador</DialogTitle>
+            <DialogDescription>
+              Altere os dados de {editando?.name}. Deixe a senha em branco para manter a actual. Mudar o e-mail ou a
+              senha termina as sessões abertas deste utilizador.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Nome Completo *</Label>
+                <Input id="edit-name" value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">E-mail (login) *</Label>
+                <Input id="edit-email" type="email" value={editForm.email} onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="edit-password">Nova Senha</Label>
+                <Input
+                  id="edit-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+                  placeholder="Em branco = manter a actual (mín. 6)"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Papel no Sistema</Label>
+                <Select value={editForm.role} onValueChange={(value) => setEditForm((p) => ({ ...p, role: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o papel" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Papéis clássicos</SelectLabel>
+                      {LEGACY_ROLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectGroup>
+                      <SelectLabel>Perfis especiais</SelectLabel>
+                      {SPECIAL_ROLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                    {getGroupedDepartmentOptions(departments).map((group) => (
+                      <SelectGroup key={`edit-role-${group.label}`}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.options.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.icon} {option.label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Telefone</Label>
+                <Input id="edit-phone" type="tel" value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-organization">Organização</Label>
+                <Input id="edit-organization" value={editForm.organization} onChange={(e) => setEditForm((p) => ({ ...p, organization: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-position">Cargo</Label>
+                <Input id="edit-position" value={editForm.position} onChange={(e) => setEditForm((p) => ({ ...p, position: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setEditando(null)} disabled={aGravarEdicao}>Cancelar</Button>
+            <Button onClick={handleGuardarEdicao} disabled={aGravarEdicao}>
+              {aGravarEdicao ? 'A guardar...' : 'Guardar alterações'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

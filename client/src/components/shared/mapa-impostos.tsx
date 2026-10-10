@@ -63,6 +63,7 @@ const STATUS_LABELS: Record<string, string> = {
   rascunho: 'Rascunho',
   registada: 'Registada',
   pendente: 'Pendente',
+  validado_chefe_dsg: 'Validado Chefe DSG',
   validado: 'Aprovado-DSG',
   aprovado: 'Autorização de Despesas',
   submetido_ao_banco: 'Submetido ao Banco',
@@ -70,7 +71,7 @@ const STATUS_LABELS: Record<string, string> = {
   rejeitado: 'Rejeitado',
   cancelado: 'Cancelado',
 };
-const STATUS_ORDENADOS = ['pendente', 'validado', 'aprovado', 'submetido_ao_banco', 'pago', 'rejeitado', 'cancelado', 'rascunho', 'registada'];
+const STATUS_ORDENADOS = ['pendente', 'validado_chefe_dsg', 'validado', 'aprovado', 'submetido_ao_banco', 'pago', 'rejeitado', 'cancelado', 'rascunho', 'registada'];
 
 export function MapaImpostos({ contexto = 'financeiro', onOpenFactura }: MapaImpostosProps) {
   const [loading, setLoading] = useState(true);

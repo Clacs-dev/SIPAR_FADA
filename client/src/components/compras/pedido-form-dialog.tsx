@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Save, Plus, Trash2, Package } from "lucide-react";
+import { Save, Plus, Trash2, Package, Upload, X, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -12,7 +12,11 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { toast } from "sonner@2.0.3";
-import type { ItemPedido, PedidoCompra, PrioridadePedido, TipoItem } from "./types";
+import type { AnexoPedido, ItemPedido, PedidoCompra, PrioridadePedido, TipoItem } from "./types";
+import api from "../../services/api";
+import { AnexosPedidoLista, formatarTamanhoAnexo } from "./anexos-pedido";
+
+const MAX_ANEXO_BYTES = 10 * 1024 * 1024;
 import { useCategorias } from "../../hooks/use-categorias";
 
 interface PedidoFormDialogProps {
@@ -37,6 +41,9 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
   const [prazoDesejado, setPrazoDesejado] = useState("");
   const [localEntrega, setLocalEntrega] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  // Anexos: os ja gravados no pedido (edicao) e os novos ficheiros por enviar.
+  const [anexosGuardados, setAnexosGuardados] = useState<AnexoPedido[]>([]);
+  const [novosAnexos, setNovosAnexos] = useState<File[]>([]);
   
   // Itens do pedido
   const [itens, setItens] = useState<Partial<ItemPedido>[]>([
@@ -63,6 +70,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
     setPrazoDesejado((pedido as any).prazo_entrega_desejado || "");
     setLocalEntrega((pedido as any).local_entrega || "");
     setObservacoes((pedido as any).observacoes || "");
+    setAnexosGuardados(Array.isArray(pedido.anexos) ? pedido.anexos : []);
     if (Array.isArray(pedido.itens) && pedido.itens.length > 0) {
       setItens(pedido.itens.map((item: any) => ({ ...item })));
     }
@@ -132,7 +140,30 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
     }
 
     setLoading(true);
-    
+
+    // Os ficheiros vao primeiro para o storage; o pedido grava so a referencia.
+    let anexosEnviados: AnexoPedido[] = [];
+    try {
+      anexosEnviados = await Promise.all(novosAnexos.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("module", "procurement_pedido");
+        const result = await api.upload<{ file: { id: string; name: string; size: number; url: string; tipo: string } }>("/storage/upload", formData);
+        return {
+          id: result.file.id,
+          nome: result.file.name,
+          tipo: result.file.tipo,
+          tamanho: result.file.size,
+          url: result.file.url,
+          uploaded_at: new Date().toISOString(),
+        };
+      }));
+    } catch (error: any) {
+      toast.error("Erro ao enviar anexos: " + (error?.message || "tente novamente"));
+      setLoading(false);
+      return;
+    }
+
     const data = {
       titulo: titulo.trim(),
       descricao: descricao.trim(),
@@ -143,6 +174,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
       prazo_entrega_desejado: prazoDesejado || undefined,
       local_entrega: localEntrega.trim(),
       observacoes: observacoes.trim() || undefined,
+      anexos: [...anexosGuardados, ...anexosEnviados],
       itens: itens.map(item => ({
         descricao: item.descricao!.trim(),
         tipo: item.tipo || "material",
@@ -176,6 +208,8 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
       setPrazoDesejado("");
       setLocalEntrega("");
       setObservacoes("");
+      setAnexosGuardados([]);
+      setNovosAnexos([]);
       setItens([{
         descricao: "",
         tipo: "material",
@@ -319,6 +353,79 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
             </div>
           </div>
 
+          {/* Anexos (imagens/documentos) - seguem tambem no e-mail aos fornecedores */}
+          <div className="space-y-3">
+            <div>
+              <Label>Anexos (opcional)</Label>
+              <p className="text-sm text-muted-foreground">
+                Imagens ou documentos do pedido (ex: fotografia, ficha técnica, caderno de encargos). Ao publicar,
+                são enviados aos fornecedores por e-mail. Máx. 10 MB por ficheiro.
+              </p>
+            </div>
+            <label
+              htmlFor="pedido-anexos"
+              className="border-2 border-dashed rounded-lg p-4 flex flex-col items-center gap-1 text-center cursor-pointer hover:border-primary transition-colors"
+            >
+              <Upload className="h-6 w-6 text-muted-foreground" />
+              <span className="text-sm font-medium text-primary">Clique para escolher ficheiros</span>
+              <span className="text-xs text-muted-foreground">PDF, Word, Excel, imagens</span>
+            </label>
+            <Input
+              id="pedido-anexos"
+              type="file"
+              multiple
+              className="hidden"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp"
+              onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                const grandes = files.filter((f) => f.size > MAX_ANEXO_BYTES);
+                if (grandes.length) toast.error(`Ficheiro(s) acima de 10 MB ignorado(s): ${grandes.map((f) => f.name).join(", ")}`);
+                setNovosAnexos((prev) => [...prev, ...files.filter((f) => f.size <= MAX_ANEXO_BYTES)]);
+                e.target.value = "";
+              }}
+            />
+            {anexosGuardados.length > 0 && (
+              <div className="space-y-2">
+                <AnexosPedidoLista anexos={anexosGuardados} titulo="Já anexados" />
+                <div className="flex flex-wrap gap-2">
+                  {anexosGuardados.map((a) => (
+                    <Button
+                      key={a.id}
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="text-tone-danger"
+                      onClick={() => setAnexosGuardados((prev) => prev.filter((x) => x.id !== a.id))}
+                    >
+                      <X className="h-3.5 w-3.5 mr-1" /> Remover {a.nome}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {novosAnexos.length > 0 && (
+              <div className="space-y-2">
+                {novosAnexos.map((file, idx) => (
+                  <div key={`${file.name}-${idx}`} className="flex items-center justify-between border rounded-lg p-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className="h-4 w-4 shrink-0" style={{ color: "var(--tone-info)" }} />
+                      <span className="text-sm truncate">{file.name}</span>
+                      <span className="text-xs text-muted-foreground">{formatarTamanhoAnexo(file.size)}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setNovosAnexos((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Itens do Pedido */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -433,7 +540,7 @@ export function PedidoFormDialog({ open, onClose, onSubmit, pedido }: PedidoForm
               <ul className="list-disc list-inside space-y-1 text-blue-800">
                 <li>Verifique se todos os itens estão completos e corretos</li>
                 <li>O pedido ficará com status "Criado" até ser publicado</li>
-                <li>Após publicar, os fornecedores serão notificados por email</li>
+                <li>Após publicar, os fornecedores serão notificados por email (com os anexos do pedido)</li>
               </ul>
             </div>
           </div>

@@ -223,6 +223,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
         case 'rascunho':
           registadas++;
           break;
+        case 'validado_chefe_dsg':
         case 'validado':
           em_validacao++;
           break;
@@ -278,6 +279,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     const badges = {
       rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
       pendente: { label: 'Pendente', color: 'var(--tone-info)' },
+      validado_chefe_dsg: { label: 'Validado Chefe DSG', color: 'var(--tone-accent)' },
       validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
       aprovado: { label: 'Autorização de Despesas', color: 'var(--tone-success)' },
       submetido_ao_banco: { label: 'Submetido ao Banco', color: 'var(--tone-gold)' },
@@ -309,6 +311,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     return true;
   });
   const pendentesFacturas = facturas.filter(f => f.status === 'pendente');
+  const validadosChefeDsgFacturas = facturas.filter(f => f.status === 'validado_chefe_dsg');
   const validadosFacturas = facturas.filter(f => f.status === 'validado');
   const aprovadasFacturas = facturas.filter(f => f.status === 'aprovado');
   const submetidoBancoFacturas = facturas.filter(f => f.status === 'submetido_ao_banco');
@@ -321,6 +324,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
   // separador.
   const todasPag = useClientPagination(filteredFacturas);
   const pendentesPag = useClientPagination(pendentesFacturas);
+  const validadosChefeDsgPag = useClientPagination(validadosChefeDsgFacturas);
   const validadosPag = useClientPagination(validadosFacturas);
   const aprovadasPag = useClientPagination(aprovadasFacturas);
   const submetidoBancoPag = useClientPagination(submetidoBancoFacturas);
@@ -389,6 +393,40 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     } catch (err) {
  console.error('Erro ao guardar factura:', err);
       setError(err instanceof Error ? err.message : 'Erro ao guardar factura');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Validacao do Chefe DSG (Pendente -> Validado Chefe DSG).
+  const handleValidarChefe = async (comentario: string) => {
+    if (!accessToken || !selectedFactura) {
+      setError('Não foi possível autenticar ou factura não selecionada.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/facturas/${selectedFactura.id}/validar-chefe-dsg`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comentario }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || 'Erro ao validar factura');
+      }
+      const facturasResponse = await fetch(`${API_BASE_URL}/facturas?all=true`, {
+        headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      });
+      if (facturasResponse.ok) {
+        const facturasData = await facturasResponse.json();
+        setFacturas(facturasData.facturas || []);
+      }
+      setView('list');
+      setSelectedFactura(null);
+      toast.success('Factura validada pelo Chefe DSG. Segue para o Aprovar-DSG.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao validar factura');
     } finally {
       setLoading(false);
     }
@@ -824,6 +862,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
   // Definir permissões
   // Cada passo do fluxo segue a matriz de Roles e Permissões
   // ("Gestão de Pagamento — acções no fluxo da factura"), para qualquer role.
+  const canValidarChefe = pode('pagamentos_accao_validar_chefe_dsg', 'approve'); // Validar Chefe DSG
   const canValidate = pode('pagamentos_accao_aprovar_dsg', 'approve'); // Aprovar-DSG
   const canApprove = pode('pagamentos_accao_autorizar', 'approve');    // Autorizar / Rejeitar
   const canPay = pode('pagamentos_accao_pagar', 'approve');            // OP, banco, pago
@@ -837,11 +876,11 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     ['rascunho', 'registada', 'pendente'].includes(f.status)
     && !(f as any).validado_at && !(f as any).aprovado_at && !(f as any).rejeitado_at
     && !f.numero_ordem_pagamento;
-  // Com "Editar"/"Eliminar" na matriz: qualquer factura ainda sem acção;
-  // com "Editar/Eliminar próprios": só as suas.
+  // Com "Editar"/"Eliminar" na matriz (ou o passo Validar Chefe DSG): qualquer
+  // factura ainda sem acção; com "Editar/Eliminar próprios": só as suas.
   const podeAlterarPropria = (f: Factura | null, accao: 'update' | 'delete') =>
     !!f && !!user && facturaSemAccao(f)
-    && (pode('invoices', accao) || (f.created_by_id === user.id && pode('invoices', `${accao}_own`)));
+    && (pode('invoices', accao) || canValidarChefe || (f.created_by_id === user.id && pode('invoices', `${accao}_own`)));
 
   const handleAnularOuEliminar = async (accao: 'anular' | 'eliminar', alvo: Factura | null = selectedFactura) => {
     if (!accessToken || !alvo) return;
@@ -904,6 +943,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
     return (
       <FacturaDetails
         factura={selectedFactura}
+        canValidarChefe={canValidarChefe}
         canValidate={canValidate}
         canApprove={canApprove}
         canPay={canPay}
@@ -917,6 +957,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
         podeEliminar={podeAlterarPropria(selectedFactura, 'delete')}
         onAnular={() => handleAnularOuEliminar('anular')}
         onEliminar={() => handleAnularOuEliminar('eliminar')}
+        onValidarChefe={handleValidarChefe}
         onValidate={handleValidate}
         onApprove={handleApprove}
         onReject={handleReject}
@@ -1004,6 +1045,12 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                     Pendentes ({facturas.filter(f => f.status === 'pendente').length})
                   </TabsTrigger>
                 )}
+                {ver('validados_chefe_dsg') && (
+                  <TabsTrigger value="validados_chefe_dsg">
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Validados Chefe DSG ({validadosChefeDsgFacturas.length})
+                  </TabsTrigger>
+                )}
                 {ver('validados') && (
                   <TabsTrigger value="validados">
                     <CheckCircle className="mr-2 h-4 w-4" />
@@ -1062,6 +1109,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                       <option value="">Todos os estados</option>
                       <option value="rascunho">Rascunho</option>
                       <option value="pendente">Pendente</option>
+                      <option value="validado_chefe_dsg">Validado Chefe DSG</option>
                       <option value="validado">Aprovado-DSG</option>
                       <option value="aprovado">Autorização de Despesas</option>
                       <option value="submetido_ao_banco">Submetido ao Banco</option>
@@ -1187,6 +1235,7 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                           <p className="text-2xl font-bold text-primary">
                             {formatCurrency(factura.total, factura.moeda)}
                           </p>
+                          {renderAccoesRapidas(factura)}
                         </div>
                       </div>
                     </CardHeader>
@@ -1195,6 +1244,54 @@ export function FacturasMain({ initialFacturaId, onInitialFacturaHandled }: Fact
                 )}
               </div>
               <PaginationBar pagination={pendentesPag.pagination} onPageChange={pendentesPag.setPage} />
+            </TabsContent>
+
+            {/* Validados Chefe DSG */}
+            <TabsContent value="validados_chefe_dsg" className="space-y-4">
+              <div className="grid gap-4">
+                {validadosChefeDsgFacturas.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-12 text-center">
+                      <CheckCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                      <p className="text-muted-foreground">Nenhuma factura validada pelo Chefe DSG</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  validadosChefeDsgPag.pageItems.map((factura) => (
+                    <Card
+                      key={factura.id}
+                      className="hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedFactura(factura);
+                        setView('details');
+                      }}
+                    >
+                      <CardHeader>
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">{factura.numero}</Badge>
+                              {getStatusBadge(factura.status)}
+                              {renderAnexosBadge(factura)}
+                            </div>
+                            <CardTitle className="text-lg">{factura.descricao}</CardTitle>
+                            <p className="text-sm text-muted-foreground mt-2">
+                              {getFornecedorNome(factura)} •{' '}
+                              Validado por {factura.validado_chefe_dsg_por_nome || 'N/A'}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-primary">
+                              {formatCurrency(factura.total, factura.moeda)}
+                            </p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  ))
+                )}
+              </div>
+              <PaginationBar pagination={validadosChefeDsgPag.pagination} onPageChange={validadosChefeDsgPag.setPage} />
             </TabsContent>
 
             {/* Validados */}

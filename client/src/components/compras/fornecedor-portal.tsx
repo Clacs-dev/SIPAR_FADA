@@ -18,6 +18,7 @@ import { ptBR } from "date-fns/locale";
 import { useProcurement } from "../../hooks/use-procurement";
 import { CotacaoFormDialog } from "./cotacao-form-dialog";
 import { PedidoItensDialog } from "./pedido-itens-dialog";
+import { AnexosPedidoLista } from "./anexos-pedido";
 import { MinhaCotacaoDetailsDialog } from "./minha-cotacao-details-dialog";
 import type { PedidoCompra, CotacaoFornecedor } from "./types";
 import { toast } from "sonner";
@@ -336,6 +337,12 @@ export function FornecedorPortal({ fornecedorId, fornecedorNome }: FornecedorPor
                         <span className="text-muted-foreground">Local de Entrega:</span>
                         <p className="font-medium">{pedido.local_entrega}</p>
                       </div>
+
+                      {Array.isArray(pedido.anexos) && pedido.anexos.length > 0 && (
+                        <div className="mt-3">
+                          <AnexosPedidoLista anexos={pedido.anexos} titulo="Documentos do pedido" />
+                        </div>
+                      )}
                     </div>
 
                     {/* Ações */}

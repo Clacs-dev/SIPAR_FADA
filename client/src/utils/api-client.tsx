@@ -42,6 +42,21 @@ export class ApiClientAdapter {
   }
 
   /**
+   * Editar utilizador (nome, e-mail, nova senha, telefone, organização,
+   * cargo, papel). Senha vazia = manter a actual.
+   */
+  async updateUser(accessToken: string, userId: string, userData: any): Promise<any> {
+    return api.put(`/users/${userId}`, userData);
+  }
+
+  /**
+   * Eliminar utilizador de vez (o histórico que criou mantém-se).
+   */
+  async deleteUser(accessToken: string, userId: string): Promise<any> {
+    return api.delete(`/users/${userId}`);
+  }
+
+  /**
    * Criar novo usuário (compatibilidade)
    */
   async createUser(accessToken: string, userData: any): Promise<any> {

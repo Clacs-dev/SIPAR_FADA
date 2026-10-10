@@ -17,6 +17,7 @@ export const SEPARADORES_PAGAMENTO: SeparadorPagamento[] = [
   { tab: 'dashboard', module: 'pagamentos_dashboard', label: 'Dashboard' },
   { tab: 'todas', module: 'pagamentos_todas', label: 'Todas' },
   { tab: 'pendentes', module: 'pagamentos_pendentes', label: 'Pendentes' },
+  { tab: 'validados_chefe_dsg', module: 'pagamentos_validados_chefe_dsg', label: 'Validados Chefe DSG' },
   { tab: 'validados', module: 'pagamentos_aprovados_dsg', label: 'Aprovados-DSG' },
   { tab: 'aprovadas', module: 'pagamentos_autorizacao_despesas', label: 'Autorização de Despesas' },
   { tab: 'ordens_pagamento', module: 'pagamentos_ordens_fornecedor', label: 'Ordens de Pagamento Fornecedor' },
@@ -36,7 +37,8 @@ export const MODULO_DO_SEPARADOR: Record<string, string> = Object.fromEntries(
  * Manter igual a PASSO_DA_FACTURA em server/src/utils/permissions.ts.
  */
 export const ACCOES_PAGAMENTO = [
-  { module: 'pagamentos_accao_aprovar_dsg', label: 'Aprovar factura pendente (Aprovar-DSG)' },
+  { module: 'pagamentos_accao_validar_chefe_dsg', label: 'Validar factura pendente - Chefe DSG (validar, rejeitar, editar, eliminar)' },
+  { module: 'pagamentos_accao_aprovar_dsg', label: 'Aprovar factura validada pelo Chefe DSG (Aprovar-DSG)' },
   { module: 'pagamentos_accao_autorizar', label: 'Autorizar despesa (Autorização de Despesas / rejeitar)' },
   { module: 'pagamentos_accao_pagar', label: 'Pagamento (Ordem de Pagamento, submeter ao banco, marcar pago)' },
 ];

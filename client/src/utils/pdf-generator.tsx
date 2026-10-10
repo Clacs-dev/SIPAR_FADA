@@ -350,6 +350,7 @@ export function gerarPDFFactura(factura: any): void {
   y = pdf.addInfoField('Número', factura.numero, y);
   y = pdf.addInfoField('Fornecedor', fornecedorNome, y);
   if (factura.banco_iban) y = pdf.addInfoField('IBAN', factura.banco_iban, y);
+  if (factura.banco_numero_conta) y = pdf.addInfoField('Número de Conta', factura.banco_numero_conta, y);
   if (factura.data_emissao) y = pdf.addInfoField('Data de Emissão', new Date(factura.data_emissao).toLocaleDateString('pt-PT'), y);
   if (factura.data_vencimento) y = pdf.addInfoField('Data de Vencimento', new Date(factura.data_vencimento).toLocaleDateString('pt-PT'), y);
   y = pdf.addInfoField('Valor Total', `${valorTotal.toLocaleString('pt-PT')} ${moeda}`, y);
@@ -513,6 +514,7 @@ interface OrdemPagamentoData {
   fornecedor: string; // Nome do beneficiario ("a favor de") - fornecedor externo ou destinatario interno
   bancoNome?: string;
   bancoIban?: string;
+  bancoNumeroConta?: string | null;
   bancoCidade?: string;
   bancoPais?: string;
   data?: string; // ISO
@@ -593,6 +595,7 @@ export function gerarPDFOrdemPagamento(op: OrdemPagamentoData): jsPDF {
   const bullets = [
     `Banco: ${op.bancoNome || '—'};`,
     `IBAN: ${op.bancoIban || '—'};`,
+    ...(op.bancoNumeroConta ? [`Número de Conta: ${op.bancoNumeroConta};`] : []),
     `Cidade/País: ${op.bancoCidade || '—'} / ${op.bancoPais || '—'}.`,
   ];
   for (const bullet of bullets) {

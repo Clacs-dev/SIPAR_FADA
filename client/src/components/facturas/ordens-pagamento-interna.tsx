@@ -63,13 +63,14 @@ interface FormState {
   conta_debito: string;
   banco_nome: string;
   banco_iban: string;
+  banco_numero_conta: string;
   banco_cidade: string;
   banco_pais: string;
 }
 
 const FORM_INICIAL: FormState = {
   descricao: '', valor: '', moeda: 'AOA', destinatario: '',
-  numero_despacho: '', conta_debito: '', banco_nome: '', banco_iban: '', banco_cidade: '', banco_pais: '',
+  numero_despacho: '', conta_debito: '', banco_nome: '', banco_iban: '', banco_numero_conta: '', banco_cidade: '', banco_pais: '',
 };
 
 interface OrdensPagamentoInternaProps {
@@ -128,6 +129,7 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
       conta_debito: ordem.conta_debito || '',
       banco_nome: ordem.banco_nome || '',
       banco_iban: ordem.banco_iban || '',
+      banco_numero_conta: ordem.banco_numero_conta || '',
       banco_cidade: ordem.banco_cidade || '',
       banco_pais: ordem.banco_pais || '',
     });
@@ -150,6 +152,7 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
         conta_debito: form.conta_debito.trim() || undefined,
         banco_nome: form.banco_nome.trim() || undefined,
         banco_iban: form.banco_iban.trim() || undefined,
+        banco_numero_conta: form.banco_numero_conta.trim() || undefined,
         banco_cidade: form.banco_cidade.trim() || undefined,
         banco_pais: form.banco_pais.trim() || undefined,
       };
@@ -353,6 +356,7 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
         fornecedor: selecionada.destinatario,
         bancoNome: selecionada.banco_nome,
         bancoIban: selecionada.banco_iban,
+        bancoNumeroConta: selecionada.banco_numero_conta,
         bancoCidade: selecionada.banco_cidade,
         bancoPais: selecionada.banco_pais,
         data: selecionada.created_at,
@@ -499,6 +503,14 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
                   <p className="text-xs text-destructive">{validarIban(form.banco_iban)}</p>
                 )}
               </div>
+              <div className="space-y-2">
+                <Label>Número de Conta</Label>
+                <Input
+                  value={form.banco_numero_conta}
+                  maxLength={40}
+                  onChange={(e) => setForm({ ...form, banco_numero_conta: e.target.value })}
+                />
+              </div>
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -561,6 +573,7 @@ export function OrdensPagamentoInterna({ userRole }: OrdensPagamentoInternaProps
                   <div>
                     <p className="text-muted-foreground">Banco</p>
                     <p className="font-medium">{selecionada.banco_nome} {selecionada.banco_iban ? `- ${selecionada.banco_iban}` : ''}</p>
+                    {selecionada.banco_numero_conta && <p className="text-xs text-muted-foreground">Conta n.º {selecionada.banco_numero_conta}</p>}
                   </div>
                 )}
               </div>

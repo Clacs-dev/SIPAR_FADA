@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Bell, MessageSquare, Calendar, Mail, Receipt, Share2, UserCog } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "../ui/popover";
 import { useAuth } from "../auth/auth-context";
 import { API_BASE_URL, getAuthHeaders } from "@/services/api";
+import { tocarSomNotificacao } from "../../utils/notification-sound";
 
 interface AppNotification {
   id: string;
@@ -55,6 +56,9 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (tab: string) =>
   const { user, accessToken } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
+  // IDs ja vistos: na primeira carga so se memorizam; nas seguintes, uma
+  // notificacao nova por ler (ex: factura submetida) toca um som.
+  const vistas = useRef<Set<string> | null>(null);
 
   const load = useCallback(async () => {
     if (!user?.email || !accessToken) return;
@@ -64,16 +68,23 @@ export function NotificationBell({ onNavigate }: { onNavigate?: (tab: string) =>
       });
       if (res.ok) {
         const json = await res.json();
-        setNotifications(json.notifications || []);
+        const lista: AppNotification[] = json.notifications || [];
+        const novas = vistas.current ? lista.filter((n) => !n.read && !vistas.current!.has(n.id)) : [];
+        vistas.current = new Set(lista.map((n) => n.id));
+        if (novas.length > 0) tocarSomNotificacao();
+        setNotifications(lista);
       }
     } catch {
       // silencioso — o sino simplesmente fica vazio se a rede falhar
     }
   }, [user?.email, accessToken]);
 
+  // Outro utilizador na mesma sessao: recomeca sem tocar pelas antigas.
+  useEffect(() => { vistas.current = null; }, [user?.email]);
+
   useEffect(() => {
     load();
-    const interval = setInterval(load, 45000);
+    const interval = setInterval(load, 20000);
     return () => clearInterval(interval);
   }, [load]);
 

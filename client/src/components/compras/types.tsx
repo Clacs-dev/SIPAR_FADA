@@ -104,6 +104,16 @@ export interface CotacaoFornecedor {
 /**
  * PEDIDO DE COMPRA PRINCIPAL
  */
+/** Imagem/documento anexado a um pedido de procurement (enviado tambem aos fornecedores). */
+export interface AnexoPedido {
+  id: string;
+  nome: string;
+  tipo?: string;
+  tamanho?: number;
+  url: string;
+  uploaded_at?: string;
+}
+
 export interface PedidoCompra {
   id: string;
   numero: string; // PED/2025/01/0001
@@ -120,7 +130,12 @@ export interface PedidoCompra {
   prazo_entrega_desejado?: string;
   local_entrega: string;
   observacoes?: string;
-  
+  anexos?: AnexoPedido[];
+  // Quem publicou o pedido (responsavel indicado aos fornecedores nos e-mails)
+  publicado_em?: string;
+  publicado_por_nome?: string;
+  publicado_por_email?: string;
+
   // Status e workflow
   status: StatusPedidoCompra;
   
@@ -214,6 +229,7 @@ export interface Fornecedor {
   banco_titular?: string;
   banco_iban?: string;
   banco_nib?: string;
+  banco_numero_conta?: string;
   banco_swift?: string;
   banco_cidade?: string;
   banco_pais?: string;

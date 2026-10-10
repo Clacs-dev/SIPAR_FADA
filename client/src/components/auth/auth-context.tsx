@@ -50,6 +50,7 @@ export interface User {
   bankAccountHolder?: string;
   bankIban?: string;
   bankNib?: string;
+  bankAccountNumber?: string;
   bankSwift?: string;
   bankCity?: string;
   bankCountry?: string;
@@ -64,6 +65,7 @@ export interface BankAccount {
   bankAccountHolder?: string | null;
   bankIban?: string | null;
   bankNib?: string | null;
+  bankAccountNumber?: string | null;
   bankSwift?: string | null;
   bankCity?: string | null;
   bankCountry?: string | null;

@@ -24,6 +24,7 @@ interface DadosBancariosFornecedor {
   banco_nome?: string | null;
   banco_iban?: string | null;
   banco_nib?: string | null;
+  banco_numero_conta?: string | null;
   banco_swift?: string | null;
   banco_titular?: string | null;
   banco_cidade?: string | null;
@@ -46,7 +47,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
   const [addContaBancariaOpen, setAddContaBancariaOpen] = useState(false);
   const [savingContaBancaria, setSavingContaBancaria] = useState(false);
   const [novaContaBancaria, setNovaContaBancaria] = useState({
-    banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola',
+    banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_numero_conta: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola',
   });
   // Fornecedor ainda não cadastrado na plataforma: em vez de escolher da
   // lista, digita-se o NIF (consulta a AGT para preencher o nome) e o nome
@@ -261,7 +262,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
       }
       await recarregarDadosBancarios();
       setAddContaBancariaOpen(false);
-      setNovaContaBancaria({ banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola' });
+      setNovaContaBancaria({ banco_nome: '', banco_titular: '', banco_iban: '', banco_nib: '', banco_numero_conta: '', banco_swift: '', banco_cidade: '', banco_pais: 'Angola' });
       toast.success('Conta bancária guardada.');
     } catch (err) {
  console.error('Erro ao guardar conta bancária do fornecedor:', err);
@@ -709,6 +710,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                     {dadosBancariosFornecedor.banco_titular && <p><strong>Titular:</strong> {dadosBancariosFornecedor.banco_titular}</p>}
                     {dadosBancariosFornecedor.banco_iban && <p><strong>IBAN:</strong> {dadosBancariosFornecedor.banco_iban}</p>}
                     {dadosBancariosFornecedor.banco_nib && <p><strong>NIB:</strong> {dadosBancariosFornecedor.banco_nib}</p>}
+                    {dadosBancariosFornecedor.banco_numero_conta && <p><strong>Número de Conta:</strong> {dadosBancariosFornecedor.banco_numero_conta}</p>}
                     {dadosBancariosFornecedor.banco_swift && <p><strong>SWIFT:</strong> {dadosBancariosFornecedor.banco_swift}</p>}
                   </div>
                 ) : (
@@ -755,6 +757,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
                           <p className="text-xs text-destructive">{validarNib(novaContaBancaria.banco_nib)}</p>
                         )}
                       </div>
+                      <Input placeholder="Número de Conta" maxLength={40} value={novaContaBancaria.banco_numero_conta} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_numero_conta: e.target.value })} />
                       <Input placeholder="SWIFT/BIC" value={novaContaBancaria.banco_swift} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_swift: e.target.value })} />
                       <Input placeholder="Cidade" value={novaContaBancaria.banco_cidade} onChange={(e) => setNovaContaBancaria({ ...novaContaBancaria, banco_cidade: e.target.value })} />
                     </div>
@@ -1030,7 +1033,7 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
         </CardContent>
       </Card>
 
-      {/* Descrição e Observações */}
+      {/* Descrição e Critério de Adjudicação */}
       <Card>
         <CardHeader>
           <CardTitle>Informações Adicionais</CardTitle>
@@ -1047,10 +1050,11 @@ export function FacturaForm({ factura, fornecedores, onSave, onCancel }: Factura
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="observacoes">Observações</Label>
+            {/* Gravado no mesmo campo "observacoes" (dados antigos continuam visiveis). */}
+            <Label htmlFor="observacoes">Critério de Adjudicação</Label>
             <Textarea
               id="observacoes"
-              placeholder="Observações ou notas adicionais..."
+              placeholder="Critério usado na adjudicação (ex: menor preço, melhor prazo de entrega, qualidade técnica)..."
               rows={3}
               value={formData.observacoes}
               onChange={(e) => handleChange('observacoes', e.target.value)}

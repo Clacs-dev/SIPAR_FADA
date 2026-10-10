@@ -38,6 +38,7 @@ import {
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { PedidoCompra, Cotacao } from "./types";
+import { AnexosPedidoLista } from "./anexos-pedido";
 import { apiClient } from "../../utils/api-client";
 
 interface PedidoDetailsDialogProps {
@@ -252,6 +253,13 @@ export function PedidoDetailsDialog({
                       <h4 className="text-sm font-semibold text-muted-foreground mb-1">Observações</h4>
                       <p className="text-sm">{pedido.observacoes}</p>
                     </div>
+                  </>
+                )}
+
+                {Array.isArray(pedido.anexos) && pedido.anexos.length > 0 && (
+                  <>
+                    <Separator />
+                    <AnexosPedidoLista anexos={pedido.anexos} />
                   </>
                 )}
               </CardContent>

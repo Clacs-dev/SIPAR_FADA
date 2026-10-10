@@ -40,6 +40,8 @@ import { toast } from "sonner@2.0.3";
 
 interface FacturaDetailsProps {
   factura: Factura;
+  /** Validar Chefe DSG: valida, rejeita, edita ou elimina as facturas Pendentes. */
+  canValidarChefe?: boolean;
   canValidate?: boolean;
   canApprove: boolean;
   canPay: boolean;
@@ -51,6 +53,7 @@ interface FacturaDetailsProps {
   podeEliminar?: boolean;
   onAnular?: () => void;
   onEliminar?: () => void;
+  onValidarChefe?: (comentario: string) => void;
   onValidate?: (comentario: string) => void;
   onApprove: (comentario: string) => void;
   onReject: (motivo: string) => void;
@@ -68,6 +71,7 @@ const PAPEIS_ASSINATURA: { papel: 'presidente' | 'administrador'; label: string;
 
 export function FacturaDetails({
   factura,
+  canValidarChefe = false,
   canValidate,
   canApprove,
   canPay,
@@ -78,6 +82,7 @@ export function FacturaDetails({
   podeEliminar = false,
   onAnular,
   onEliminar,
+  onValidarChefe,
   onValidate,
   onApprove,
   onReject,
@@ -87,6 +92,7 @@ export function FacturaDetails({
   onAssinarOrdemPagamento
 }: FacturaDetailsProps) {
   const { user, accessToken, refreshUser } = useAuth();
+  const [showValidarChefeForm, setShowValidarChefeForm] = useState(false);
   const [showValidateForm, setShowValidateForm] = useState(false);
   const [showApproveForm, setShowApproveForm] = useState(false);
   const [showRejectForm, setShowRejectForm] = useState(false);
@@ -106,6 +112,11 @@ export function FacturaDetails({
   const [referenciaSubmissao, setReferenciaSubmissao] = useState('');
 
   const podeGerirOrdemPagamento = canApprove || canPay;
+  // Estados em que a factura aguarda a validacao do Chefe DSG.
+  const aguardaChefeDsg = ['rascunho', 'registada', 'pendente'].includes(factura.status);
+  const podeRejeitar = (canValidarChefe && aguardaChefeDsg)
+    || (!!canValidate && factura.status === 'validado_chefe_dsg')
+    || (canApprove && factura.status === 'validado');
   const assinaturas = factura.ordem_pagamento?.assinaturas || [];
   // Regras: Aprovar-DSG e Autorizar assinam a Autorizacao de Despesas com a
   // assinatura de quem decide (sem assinatura nao se aprova); so se submete ao
@@ -185,6 +196,7 @@ export function FacturaDetails({
         fornecedor: fornecedorNomeExibicao || factura.banco_titular || 'Fornecedor',
         bancoNome: factura.banco_nome,
         bancoIban: factura.banco_iban,
+        bancoNumeroConta: factura.banco_numero_conta,
         bancoCidade: factura.ordem_pagamento?.banco_destino_cidade || factura.banco_cidade,
         bancoPais: factura.ordem_pagamento?.banco_destino_pais || factura.banco_pais,
         data: factura.ordem_pagamento?.gerada_em,
@@ -204,6 +216,7 @@ export function FacturaDetails({
       registada: { label: 'Registada', color: 'var(--tone-info)' },
       rascunho: { label: 'Rascunho', color: 'var(--tone-neutral)' },
       pendente: { label: 'Pendente', color: 'var(--tone-info)' },
+      validado_chefe_dsg: { label: 'Validado Chefe DSG', color: 'var(--tone-accent)' },
       validado: { label: 'Aprovado-DSG', color: 'var(--tone-info)' },
       em_validacao: { label: 'Em Aprovação-DSG', color: 'var(--tone-info)' },
       aprovada: { label: 'Aprovada', color: 'var(--tone-success)' },
@@ -233,7 +246,7 @@ export function FacturaDetails({
       .then((data) => {
         if (cancelado || !data) return;
         const rotulos: Record<string, string> = {
-          pendente: 'Registada', validado: 'Aprovado-DSG', aprovado: 'Aprovada', rejeitado: 'Rejeitada',
+          pendente: 'Registada', validado_chefe_dsg: 'Validado Chefe DSG', validado: 'Aprovado-DSG', aprovado: 'Aprovada', rejeitado: 'Rejeitada',
           submetido_ao_banco: 'Submetida ao banco', pago: 'Paga', cancelado: 'Cancelada',
         };
         setHistoricoServidor((data.history || []).map((h: any) => ({
@@ -259,6 +272,7 @@ export function FacturaDetails({
   const historicoReconstruido = (): HistoricoFactura[] => {
     const eventos: Array<[string | undefined, string, string | undefined, string | undefined]> = [
       [factura.created_at, 'Factura registada', factura.created_by_name, undefined],
+      [factura.validado_chefe_dsg_at, 'Validado Chefe DSG', factura.validado_chefe_dsg_por_nome, factura.validacao_chefe_dsg_comentario],
       [factura.validado_at, 'Aprovado-DSG', factura.validado_por_nome, factura.validacao_comentario],
       [factura.aprovado_at, 'Aprovada', factura.aprovado_por_nome, factura.aprovacao_comentario],
       [factura.rejeitado_at, 'Rejeitada', factura.rejeitado_por_nome, factura.rejeicao_motivo],
@@ -343,28 +357,36 @@ export function FacturaDetails({
     ordem_compra: 'Autorização de Despesas',
   };
 
+  // O comentario e opcional na validacao/aprovacao (antes, sem comentario, o
+  // "Confirmar" nao fazia nada e parecia que o botao nao funcionava).
+  const handleValidarChefe = () => {
+    if (!onValidarChefe) return;
+    onValidarChefe(comentario.trim());
+    setComentario('');
+    setShowValidarChefeForm(false);
+  };
+
   const handleValidate = () => {
-    if (comentario.trim() && onValidate) {
-      onValidate(comentario);
-      setComentario('');
-      setShowValidateForm(false);
-    }
+    if (!onValidate) return;
+    onValidate(comentario.trim());
+    setComentario('');
+    setShowValidateForm(false);
   };
 
   const handleApprove = () => {
-    if (comentario.trim()) {
-      onApprove(comentario);
-      setComentario('');
-      setShowApproveForm(false);
-    }
+    onApprove(comentario.trim());
+    setComentario('');
+    setShowApproveForm(false);
   };
 
   const handleReject = () => {
-    if (motivo.trim()) {
-      onReject(motivo);
-      setMotivo('');
-      setShowRejectForm(false);
+    if (!motivo.trim()) {
+      toast.error('Indique o motivo da rejeição.');
+      return;
     }
+    onReject(motivo);
+    setMotivo('');
+    setShowRejectForm(false);
   };
 
   const handlePay = () => {
@@ -403,23 +425,28 @@ export function FacturaDetails({
           </div>
         </div>
         <div className="flex gap-2">
-          {/* DEBUG INFO */}
- {console.log('DEBUG Factura Details:', { 
-            canValidate, 
-            canApprove, 
-            canPay, 
-            status: factura.status,
-            userRole 
-          })}
-          
-          {/* Botão Aprovar-DSG (Compras) - sempre visível se tiver permissão */}
+          {/* Botão Validar (Chefe DSG) - sempre visível se tiver permissão */}
+          {canValidarChefe && (
+            <Button
+              className="text-white hover:opacity-90"
+              style={{ backgroundColor: 'var(--tone-info)' }}
+              onClick={() => setShowValidarChefeForm(true)}
+              disabled={!aguardaChefeDsg}
+              title={!aguardaChefeDsg ? 'Só para facturas «Pendente»' : 'Validar a factura (Chefe DSG)'}
+            >
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Validar (Chefe DSG)
+            </Button>
+          )}
+
+          {/* Botão Aprovar-DSG - sempre visível se tiver permissão */}
           {canValidate && (
             <Button
               className="text-white hover:opacity-90"
               style={{ backgroundColor: 'var(--tone-accent)' }}
               onClick={() => setShowValidateForm(true)}
-              disabled={factura.status !== 'pendente' || !temAssinatura}
-              title={factura.status !== 'pendente' ? 'Só para facturas «Pendente»' : !temAssinatura ? AVISO_SEM_ASSINATURA : 'Aprovar-DSG factura (assina a Autorização de Despesas)'}
+              disabled={factura.status !== 'validado_chefe_dsg' || !temAssinatura}
+              title={factura.status !== 'validado_chefe_dsg' ? 'Disponível depois da validação do Chefe DSG (a factura tem de estar «Validado Chefe DSG»)' : !temAssinatura ? AVISO_SEM_ASSINATURA : 'Aprovar-DSG factura (assina a Autorização de Despesas)'}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Aprovar-DSG
@@ -535,7 +562,8 @@ export function FacturaDetails({
           se este utilizador o pode fazer - explica porque um botao esta inactivo. */}
       {(() => {
         const etapas = [
-          { estados: ['rascunho', 'registada', 'pendente'], titulo: 'Pendente', accao: 'Aprovar-DSG (aprovar a factura pendente)', permissao: 'Aprovar factura pendente (Aprovar-DSG)', pode: !!canValidate },
+          { estados: ['rascunho', 'registada', 'pendente'], titulo: 'Pendente', accao: 'Validação do Chefe DSG (validar, rejeitar, editar ou eliminar)', permissao: 'Validar factura pendente - Chefe DSG', pode: canValidarChefe },
+          { estados: ['validado_chefe_dsg'], titulo: 'Validado Chefe DSG', accao: 'Aprovar-DSG (ou rejeitar)', permissao: 'Aprovar factura validada pelo Chefe DSG (Aprovar-DSG)', pode: !!canValidate },
           { estados: ['validado'], titulo: 'Aprovado-DSG', accao: 'Autorizar a despesa (ou rejeitar)', permissao: 'Autorizar despesa', pode: canApprove },
           { estados: ['aprovado'], titulo: 'Autorização de Despesas', accao: 'Gerar a Ordem de Pagamento, recolher as assinaturas do Presidente e do Administrador e submeter ao banco', permissao: 'Pagamento', pode: canPay },
           { estados: ['submetido_ao_banco'], titulo: 'Submetido ao Banco', accao: 'Marcar como pago (com comprovativo)', permissao: 'Pagamento', pode: canPay },
@@ -583,7 +611,7 @@ export function FacturaDetails({
               </div>
               {etapa.accao ? (
                 <>
-                {etapa.pode && (factura.status === 'pendente' || factura.status === 'validado') && !temAssinatura && (
+                {etapa.pode && (factura.status === 'validado_chefe_dsg' || factura.status === 'validado') && !temAssinatura && (
                   <p className="text-sm" style={{ color: 'var(--tone-warn)' }}>{AVISO_SEM_ASSINATURA}</p>
                 )}
                 {factura.status === 'aprovado' && factura.numero_ordem_pagamento && (
@@ -754,7 +782,7 @@ export function FacturaDetails({
 
               {factura.observacoes && (
                 <div>
-                  <p className="text-sm text-muted-foreground mb-2">Observações</p>
+                  <p className="text-sm text-muted-foreground mb-2">Critério de Adjudicação</p>
                   <div className="p-3 bg-accent rounded-lg">
                     <p className="text-sm">{factura.observacoes}</p>
                   </div>
@@ -841,6 +869,12 @@ export function FacturaDetails({
                   <div>
                     <p className="text-sm text-muted-foreground">NIB</p>
                     <p className="font-medium font-mono">{factura.banco_nib}</p>
+                  </div>
+                )}
+                {factura.banco_numero_conta && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Número de Conta</p>
+                    <p className="font-medium font-mono">{factura.banco_numero_conta}</p>
                   </div>
                 )}
                 {factura.banco_swift && (
@@ -957,8 +991,35 @@ export function FacturaDetails({
               <CardTitle>Ações</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              {/* Validar (Chefe DSG) */}
+              {canValidarChefe && aguardaChefeDsg && !showValidarChefeForm && (
+                <Button className="w-full" onClick={() => setShowValidarChefeForm(true)}>
+                  <CheckCircle className="mr-2 h-4 w-4" />
+                  Validar Factura (Chefe DSG)
+                </Button>
+              )}
+
+              {showValidarChefeForm && (
+                <div className="space-y-3 p-3 border border-border rounded-lg">
+                  <Textarea
+                    placeholder="Comentário da validação (opcional)..."
+                    rows={3}
+                    value={comentario}
+                    onChange={(e) => setComentario(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setShowValidarChefeForm(false)}>
+                      Cancelar
+                    </Button>
+                    <Button size="sm" onClick={handleValidarChefe}>
+                      Confirmar
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Aprovar-DSG */}
-              {canValidate && factura.status === 'pendente' && !showValidateForm && (
+              {canValidate && factura.status === 'validado_chefe_dsg' && !showValidateForm && (
                 <>
                   <Button className="w-full" onClick={() => setShowValidateForm(true)} disabled={!temAssinatura} title={!temAssinatura ? AVISO_SEM_ASSINATURA : undefined}>
                     <CheckCircle className="mr-2 h-4 w-4" />
@@ -971,7 +1032,7 @@ export function FacturaDetails({
               {showValidateForm && (
                 <div className="space-y-3 p-3 border border-border rounded-lg">
                   <Textarea
-                    placeholder="Comentário de aprovação (DSG)..."
+                    placeholder="Comentário de aprovação (DSG, opcional)..."
                     rows={3}
                     value={comentario}
                     onChange={(e) => setComentario(e.target.value)}
@@ -1001,7 +1062,7 @@ export function FacturaDetails({
               {showApproveForm && (
                 <div className="space-y-3 p-3 border border-border rounded-lg">
                   <Textarea
-                    placeholder="Comentário de aprovação..."
+                    placeholder="Comentário de aprovação (opcional)..."
                     rows={3}
                     value={comentario}
                     onChange={(e) => setComentario(e.target.value)}
@@ -1018,7 +1079,7 @@ export function FacturaDetails({
               )}
 
               {/* Rejeitar */}
-              {canApprove && factura.status === 'validado' && !showRejectForm && (
+              {podeRejeitar && !showRejectForm && (
                 <Button 
                   className="w-full" 
                   variant="outline"
@@ -1291,6 +1352,33 @@ export function FacturaDetails({
                       {gerandoPdfOp ? 'A gerar...' : 'Ver Ordem de Pagamento Fornecedor'}
                     </Button>
                   </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Informações da Validação do Chefe DSG */}
+          {factura.validado_chefe_dsg_at && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Validação Chefe DSG</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div>
+                  <p className="text-sm text-muted-foreground">Validado por</p>
+                  <p className="font-medium">{factura.validado_chefe_dsg_por_nome}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Data</p>
+                  <p className="font-medium">
+                    {new Date(factura.validado_chefe_dsg_at).toLocaleString('pt-PT')}
+                  </p>
+                </div>
+                {factura.validacao_chefe_dsg_comentario && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Comentário</p>
+                    <p className="text-sm">{factura.validacao_chefe_dsg_comentario}</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
