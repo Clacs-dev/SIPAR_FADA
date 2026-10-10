@@ -67,7 +67,7 @@ router.get('/stats', requireAuth as any, async (_req: AuthenticatedRequest, res:
     const facturasStats = {
       total: facturas.length,
       pendentes: facturas.filter((f) => f.status === 'pendente' || f.status === 'rascunho').length,
-      emValidacao: facturas.filter((f) => f.status === 'validado').length,
+      emValidacao: facturas.filter((f) => f.status === 'validado' || f.status === 'validado_chefe_dsg').length,
       aprovadas: facturas.filter((f) => f.status === 'aprovado' || f.status === 'submetido_ao_banco').length,
       pagas: facturas.filter((f) => f.status === 'pago').length,
       rejeitadas: facturas.filter((f) => f.status === 'rejeitado' || f.status === 'cancelado').length,

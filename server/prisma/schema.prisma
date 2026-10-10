@@ -31,12 +31,13 @@ model User {
   bankAccountHolder String?
   bankIban          String?
   bankNib           String?
+  bankAccountNumber String?
   bankSwift         String?
   bankCity          String?
   bankCountry       String?
   // Varias coordenadas bancarias guardadas (fornecedor externo escolhe qual
   // usar em cada factura) - JSON: Array<{ id, label, bankName,
-  // bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry }>.
+  // bankAccountHolder, bankIban, bankNib, bankAccountNumber, bankSwift, bankCity, bankCountry }>.
   // Os campos bank* simples acima continuam a representar "a activa", lida
   // por todo o resto do sistema (ex: Ordem de Pagamento).
   bankAccounts      String    @default("[]")
@@ -408,6 +409,7 @@ model InternalPaymentOrder {
   contaDebito    String?
   bancoNome      String?
   bancoIban      String?
+  bancoNumeroConta String?
   bancoCidade    String?
   bancoPais      String?
   paidAt         DateTime?

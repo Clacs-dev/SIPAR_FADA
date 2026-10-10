@@ -51,6 +51,7 @@ export const MODULES = {
   PAGAMENTOS_DASHBOARD: 'pagamentos_dashboard',
   PAGAMENTOS_TODAS: 'pagamentos_todas',
   PAGAMENTOS_PENDENTES: 'pagamentos_pendentes',
+  PAGAMENTOS_VALIDADOS_CHEFE_DSG: 'pagamentos_validados_chefe_dsg',
   PAGAMENTOS_APROVADOS_DSG: 'pagamentos_aprovados_dsg',
   PAGAMENTOS_AUTORIZACAO_DESPESAS: 'pagamentos_autorizacao_despesas',
   PAGAMENTOS_ORDENS_FORNECEDOR: 'pagamentos_ordens_fornecedor',
@@ -58,8 +59,10 @@ export const MODULES = {
   PAGAMENTOS_SUBMETIDO_BANCO: 'pagamentos_submetido_banco',
   PAGAMENTOS_PAGOS: 'pagamentos_pagos',
   // Passos do fluxo da factura (accao "approve" = pode executar o passo):
+  //   Validar Chefe DSG (validar/rejeitar/editar/eliminar a pendente) |
   //   Aprovar-DSG (validar) | Autorizar Despesas (autorizar/rejeitar) |
   //   Pagamento (gerar Ordem de Pagamento, submeter ao banco, marcar pago).
+  PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG: 'pagamentos_accao_validar_chefe_dsg',
   PAGAMENTOS_ACCAO_APROVAR_DSG: 'pagamentos_accao_aprovar_dsg',
   PAGAMENTOS_ACCAO_AUTORIZAR: 'pagamentos_accao_autorizar',
   PAGAMENTOS_ACCAO_PAGAR: 'pagamentos_accao_pagar',
@@ -71,9 +74,10 @@ export const MODULES = {
 
 /** Modulo de permissao exigido para cada mudanca de estado da factura. */
 export const PASSO_DA_FACTURA: Record<string, string[]> = {
+  validado_chefe_dsg: [MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG],
   validado: [MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG],
   aprovado: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR],
-  rejeitado: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR, MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG],
+  rejeitado: [MODULES.PAGAMENTOS_ACCAO_AUTORIZAR, MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG, MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG],
   submetido_ao_banco: [MODULES.PAGAMENTOS_ACCAO_PAGAR],
   pago: [MODULES.PAGAMENTOS_ACCAO_PAGAR],
 };
@@ -83,6 +87,7 @@ export const MODULOS_SEPARADORES_PAGAMENTO = [
   MODULES.PAGAMENTOS_DASHBOARD,
   MODULES.PAGAMENTOS_TODAS,
   MODULES.PAGAMENTOS_PENDENTES,
+  MODULES.PAGAMENTOS_VALIDADOS_CHEFE_DSG,
   MODULES.PAGAMENTOS_APROVADOS_DSG,
   MODULES.PAGAMENTOS_AUTORIZACAO_DESPESAS,
   MODULES.PAGAMENTOS_ORDENS_FORNECEDOR,

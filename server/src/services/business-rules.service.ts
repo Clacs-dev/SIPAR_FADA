@@ -32,19 +32,24 @@ const RULES: Record<string, ModuleRules> = {
     },
   },
   factura: {
-    statuses: ['rascunho', 'pendente', 'validado', 'aprovado', 'rejeitado', 'pago', 'submetido_ao_banco', 'cancelado', 'arquivado'],
+    statuses: ['rascunho', 'pendente', 'validado_chefe_dsg', 'validado', 'aprovado', 'rejeitado', 'pago', 'submetido_ao_banco', 'cancelado', 'arquivado'],
     initialStatus: 'pendente',
     terminalStatuses: ['pago', 'rejeitado', 'cancelado', 'arquivado'],
     aliases: {
       validate: 'validado',
       validada: 'validado',
+      validar_chefe_dsg: 'validado_chefe_dsg',
+      validado_chefe: 'validado_chefe_dsg',
       pay: 'pago',
       paid: 'pago',
       submetido_banco: 'submetido_ao_banco',
     },
     transitions: {
-      rascunho: ['pendente', 'validado', 'aprovado', 'rejeitado', 'cancelado', 'arquivado'],
-      pendente: ['validado', 'aprovado', 'rejeitado', 'cancelado', 'arquivado'],
+      // Pendente -> Validado Chefe DSG -> Aprovado-DSG -> Autorizacao de
+      // Despesas: nenhum passo pode ser saltado.
+      rascunho: ['pendente', 'validado_chefe_dsg', 'rejeitado', 'cancelado', 'arquivado'],
+      pendente: ['validado_chefe_dsg', 'rejeitado', 'cancelado', 'arquivado'],
+      validado_chefe_dsg: ['validado', 'rejeitado', 'cancelado', 'arquivado'],
       validado: ['aprovado', 'rejeitado', 'cancelado', 'arquivado'],
       // "aprovado" tem sempre de passar por "submetido_ao_banco" antes de "pago" -
       // a Ordem de Pagamento tem de ser submetida ao banco, nunca marcada como
@@ -59,6 +64,7 @@ const RULES: Record<string, ModuleRules> = {
     requiredByStatus: {
       rascunho: ['fornecedor'],
       pendente: ['fornecedor', 'valor'],
+      validado_chefe_dsg: ['fornecedor', 'valor'],
       validado: ['fornecedor', 'valor', 'numero'],
       aprovado: ['fornecedor', 'valor'],
       pago: ['fornecedor', 'valor'],

@@ -490,7 +490,7 @@ export class AuthController {
         return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
       }
 
-      const { bankName, bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry, signatureImage } = req.body;
+      const { bankName, bankAccountHolder, bankIban, bankNib, bankAccountNumber, bankSwift, bankCity, bankCountry, signatureImage } = req.body;
       const erroConta = validarIban(bankIban) || validarNib(bankNib);
       if (erroConta) return res.status(400).json({ error: 'VALIDATION_ERROR', message: erroConta });
 
@@ -499,6 +499,7 @@ export class AuthController {
         bankAccountHolder: bankAccountHolder?.trim() || null,
         bankIban: bankIban?.trim() || null,
         bankNib: bankNib?.trim() || null,
+        bankAccountNumber: bankAccountNumber?.trim() || null,
         bankSwift: bankSwift?.trim() || null,
         bankCity: bankCity?.trim() || null,
         bankCountry: bankCountry?.trim() || null,
@@ -554,7 +555,7 @@ export class AuthController {
       if (!req.user) {
         return res.status(401).json({ error: 'UNAUTHORIZED', message: 'Não autenticado' });
       }
-      const { label, bankName, bankAccountHolder, bankIban, bankNib, bankSwift, bankCity, bankCountry, tornarActiva } = req.body;
+      const { label, bankName, bankAccountHolder, bankIban, bankNib, bankAccountNumber, bankSwift, bankCity, bankCountry, tornarActiva } = req.body;
       if (!bankIban?.trim() && !bankNib?.trim()) {
         return res.status(400).json({ error: 'BAD_REQUEST', message: 'Indique o IBAN ou o NIB da conta' });
       }
@@ -572,6 +573,7 @@ export class AuthController {
         bankAccountHolder: bankAccountHolder?.trim() || null,
         bankIban: bankIban?.trim() || null,
         bankNib: bankNib?.trim() || null,
+        bankAccountNumber: bankAccountNumber?.trim() || null,
         bankSwift: bankSwift?.trim() || null,
         bankCity: bankCity?.trim() || null,
         bankCountry: bankCountry?.trim() || null,
@@ -585,6 +587,7 @@ export class AuthController {
           bankAccountHolder: novaConta.bankAccountHolder,
           bankIban: novaConta.bankIban,
           bankNib: novaConta.bankNib,
+          bankAccountNumber: novaConta.bankAccountNumber,
           bankSwift: novaConta.bankSwift,
           bankCity: novaConta.bankCity,
           bankCountry: novaConta.bankCountry,
@@ -623,6 +626,7 @@ export class AuthController {
           bankAccountHolder: conta.bankAccountHolder,
           bankIban: conta.bankIban,
           bankNib: conta.bankNib,
+          bankAccountNumber: conta.bankAccountNumber || null,
           bankSwift: conta.bankSwift,
           bankCity: conta.bankCity,
           bankCountry: conta.bankCountry,

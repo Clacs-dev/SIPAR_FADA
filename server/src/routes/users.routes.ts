@@ -196,11 +196,33 @@ router.post('/create', requireAuth as any, requireSystemAdmin as any, async (req
 router.put('/:userId', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { userId } = req.params;
-    const { name, role, departmentId, position } = req.body;
+    const { name, role, departmentId, position, email, password, phone, organization } = req.body;
 
     const existingUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!existingUser) {
       return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+    }
+
+    // Trocar o e-mail (login): formato valido e sem duplicados.
+    let normalizedEmail: string | undefined;
+    if (typeof email === 'string' && email.trim() && email.trim().toLowerCase() !== existingUser.email) {
+      normalizedEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: 'E-mail inválido' });
+      }
+      const outro = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+      if (outro) {
+        return res.status(409).json({ error: 'EMAIL_DUPLICADO', message: 'Este e-mail já está registado no sistema' });
+      }
+    }
+
+    // Nova senha definida pelo administrador (vazio = manter a actual).
+    let hashedPassword: string | undefined;
+    if (typeof password === 'string' && password.length > 0) {
+      if (password.length < 6) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: 'A senha deve ter no mínimo 6 caracteres' });
+      }
+      hashedPassword = await bcrypt.hash(password, 10);
     }
 
     if (role) {
@@ -230,14 +252,23 @@ router.put('/:userId', requireAuth as any, requireSystemAdmin as any, async (req
         ...(role !== undefined ? { role } : {}),
         ...(departmentId !== undefined ? { departmentId: departmentId || null, department: departmentNome } : {}),
         ...(position !== undefined ? { position: position.trim() } : {}),
+        ...(phone !== undefined ? { phone: String(phone).trim() } : {}),
+        ...(organization !== undefined ? { organization: String(organization).trim() } : {}),
+        ...(normalizedEmail ? { email: normalizedEmail } : {}),
+        ...(hashedPassword ? { password: hashedPassword } : {}),
       },
       include: { departmentRef: true },
     });
 
+    // Credenciais alteradas: termina as sessoes abertas desse utilizador.
+    if (normalizedEmail || hashedPassword) {
+      await prisma.userSession.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }).catch(() => null);
+    }
+
     await auditService.logAction(
       'user_updated_by_system_admin',
       'info',
-      { targetUserId: userId, changes: { role, departmentId, position, name } },
+      { targetUserId: userId, changes: { role, departmentId, position, name, phone, organization, email: normalizedEmail, passwordChanged: !!hashedPassword } },
       {
         userId: req.user!.id,
         userEmail: req.user!.email,
@@ -259,6 +290,8 @@ router.put('/:userId', requireAuth as any, requireSystemAdmin as any, async (req
         department_id: updated.departmentId,
         department_nome: updated.departmentRef?.nome || null,
         position: updated.position,
+        phone: updated.phone,
+        organization: updated.organization,
         status: updated.status,
       },
     });
@@ -339,6 +372,58 @@ router.put('/:userId/status', requireAuth as any, requireSystemAdmin as any, asy
     );
 
     return res.status(200).json({ success: true, user: updated });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ELIMINAR UTILIZADOR (Apenas Administrador do Sistema)
+// Apaga a conta de vez. Os documentos que criou ficam (createdById passa a
+// null, o nome continua gravado em createdByName); as sessoes, mensagens e
+// notificacoes dele sao removidas. Se organizou reunioes internas, recusa-se
+// (seriam apagadas em cascata) - nesse caso deve ser desactivado.
+router.delete('/:userId', requireAuth as any, requireSystemAdmin as any, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { userId } = req.params;
+    if (userId === req.user!.id) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'Não pode eliminar a sua própria conta.' });
+    }
+    const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+    if (!existingUser) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Utilizador não encontrado' });
+    }
+    if (existingUser.role === 'admin_sistema') {
+      const outrosAdmins = await prisma.user.count({ where: { role: 'admin_sistema', status: 'active', id: { not: userId } } });
+      if (outrosAdmins === 0) {
+        return res.status(400).json({ error: 'BAD_REQUEST', message: 'Não pode eliminar o último Administrador do Sistema activo.' });
+      }
+    }
+    const reunioes = await prisma.internalMeeting.count({ where: { organizerId: userId } });
+    if (reunioes > 0) {
+      return res.status(409).json({
+        error: 'TEM_REUNIOES',
+        message: `Este utilizador organizou ${reunioes} reunião(ões) interna(s), que seriam apagadas com ele. Desactive a conta em vez de a eliminar.`,
+      });
+    }
+
+    await prisma.user.delete({ where: { id: userId } });
+
+    await auditService.logAction(
+      'user_deleted_by_system_admin',
+      'warning',
+      { targetUserId: userId, email: existingUser.email, name: existingUser.name, role: existingUser.role },
+      {
+        userId: req.user!.id,
+        userEmail: req.user!.email,
+        userRole: req.user!.role,
+        ipAddress: req.ip || 'unknown',
+        success: true,
+        resource: 'user',
+        resourceId: userId,
+      }
+    );
+
+    return res.status(200).json({ success: true, message: 'Utilizador eliminado' });
   } catch (error) {
     next(error);
   }

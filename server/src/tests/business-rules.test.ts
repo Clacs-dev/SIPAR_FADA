@@ -3,12 +3,21 @@ import assert from 'node:assert/strict';
 import { BusinessRulesService } from '../services/business-rules.service';
 
 test('facturas seguem transicao valida ate pagamento', () => {
-  assert.equal(BusinessRulesService.validateTransition('factura', 'pendente', 'validado').allowed, true);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'pendente', 'validado_chefe_dsg').allowed, true);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'validado_chefe_dsg', 'validado').allowed, true);
   assert.equal(BusinessRulesService.validateTransition('factura', 'validado', 'aprovado').allowed, true);
   // "aprovado" tem de passar por "submetido_ao_banco" antes de "pago" - ver
   // teste dedicado abaixo para esta invariante financeira.
   assert.equal(BusinessRulesService.validateTransition('factura', 'aprovado', 'submetido_ao_banco').allowed, true);
   assert.equal(BusinessRulesService.validateTransition('factura', 'submetido_ao_banco', 'pago').allowed, true);
+});
+
+test('factura pendente tem de passar pela validacao do Chefe DSG antes do Aprovar-DSG', () => {
+  assert.equal(BusinessRulesService.validateTransition('factura', 'pendente', 'validado').allowed, false);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'pendente', 'aprovado').allowed, false);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'validado_chefe_dsg', 'aprovado').allowed, false);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'pendente', 'rejeitado').allowed, true);
+  assert.equal(BusinessRulesService.validateTransition('factura', 'validado_chefe_dsg', 'rejeitado').allowed, true);
 });
 
 test('facturas bloqueiam transicao invalida', () => {

@@ -20,6 +20,18 @@ export class StorageService {
   }
 
   /**
+   * Caminho no disco de um ficheiro carregado (aceita o id/nome do ficheiro ou
+   * o URL ".../uploads/<nome>"). null se nao existir.
+   */
+  static caminhoDoUpload(idOuUrl: string | null | undefined): string | null {
+    if (!idOuUrl) return null;
+    const nome = path.basename(String(idOuUrl).split('?')[0]);
+    if (!nome || nome === '.' || nome === '..') return null;
+    const filePath = path.join(UPLOAD_DIR, nome);
+    return fs.existsSync(filePath) ? filePath : null;
+  }
+
+  /**
    * Remove um ficheiro da pasta de uploads local
    */
   static async deleteFile(fileName: string): Promise<boolean> {

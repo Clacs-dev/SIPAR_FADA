@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { emailService } from './email.service';
 import logger from '../config/logger';
+import type { ContactoResponsavel } from './email-templates';
 
 export interface SystemNotification {
   id: string;
@@ -20,7 +21,9 @@ export class NotificationService {
     type: string,
     message: string,
     resourceId?: string,
-    metadata?: any
+    metadata?: any,
+    // E-mail para fornecedores: responsavel a quem devem enviar a factura/responder.
+    contacto?: ContactoResponsavel | null
   ): Promise<SystemNotification> {
     const id = `notification_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const user = await prisma.user.findUnique({ where: { email } }).catch(() => null);
@@ -55,6 +58,7 @@ export class NotificationService {
       await emailService.sendEmail({
         to: email,
         subject: `Notificacao SIPAR20: ${message.substring(0, 40)}`,
+        contacto,
         html: `
           <h3>Nova Notificacao SIPAR20</h3>
           <p>${message}</p>

@@ -2,6 +2,45 @@
 // modules.routes.ts para separar geracao de conteudo de e-mail da logica de
 // rota (ARCH-08 da auditoria de producao).
 
+export interface ContactoResponsavel {
+  nome: string;
+  email: string;
+}
+
+function escaparHtml(valor: string) {
+  return String(valor).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
+/**
+ * Aviso acrescentado aos e-mails enviados a fornecedores: a mensagem e gerada
+ * pelo sistema (nao se responde para o remetente) e a factura/cotacao ou
+ * qualquer duvida seguem para o utilizador responsavel (quem publicou o
+ * pedido ou executou a accao).
+ */
+export function avisoContactoResponsavelHtml(contacto: ContactoResponsavel) {
+  const nome = escaparHtml(contacto.nome);
+  const email = escaparHtml(contacto.email);
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 24px auto 0; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+      <div style="background: #fff7ed; border: 1px solid #fdba74; border-radius: 8px; padding: 14px;">
+        <p style="margin: 0 0 8px; font-size: 13px; color: #9a3412;">
+          <strong>Este e-mail é gerado automaticamente pelo sistema SIPAR-FADA.</strong>
+          Não responda para o endereço de envio deste e-mail.
+        </p>
+        <p style="margin: 0 0 10px; font-size: 13px; color: #1e293b;">
+          Submeta ou envie a sua factura/cotação e qualquer esclarecimento <strong>apenas</strong> para o
+          responsável por este pedido:
+          <br /><strong>${nome}</strong> — <a href="mailto:${email}" style="color: #2563eb;">${email}</a>
+        </p>
+        <p style="margin: 0; font-size: 13px; color: #b91c1c; background: #fee2e2; border-radius: 6px; padding: 8px;">
+          <strong>Atenção:</strong> cotações ou facturas enviadas em resposta ao e-mail do sistema, ou para
+          qualquer outro endereço que não o do responsável acima, <strong>não serão consideradas válidas</strong>.
+        </p>
+      </div>
+    </div>
+  `;
+}
+
 export function fornecedorCredentialsEmailHtml(nome: string, email: string, password: string) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto;">
@@ -26,7 +65,14 @@ export function fornecedorCredentialsEmailHtml(nome: string, email: string, pass
   `;
 }
 
-export function cotacaoConviteEmailHtml(nomeFornecedor: string, descricao: string, numero: string, valorEstimado?: number, categoria?: string | null) {
+export interface AnexoEmail {
+  nome: string;
+  url?: string;
+  /** false = demasiado grande para seguir no e-mail (vai so a ligacao). */
+  anexado: boolean;
+}
+
+export function cotacaoConviteEmailHtml(nomeFornecedor: string, descricao: string, numero: string, valorEstimado?: number, categoria?: string | null, anexos: AnexoEmail[] = []) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto;">
       <h2 style="color: #1e293b;">Novo pedido de cotação - FADA</h2>
@@ -41,6 +87,13 @@ export function cotacaoConviteEmailHtml(nomeFornecedor: string, descricao: strin
         <p style="margin: 4px 0;"><strong>Descrição:</strong> ${descricao}</p>
         ${valorEstimado ? `<p style="margin: 4px 0;"><strong>Valor estimado:</strong> ${valorEstimado.toLocaleString('pt-PT')} AOA</p>` : ''}
       </div>
+      ${anexos.length ? `
+      <div style="margin: 0 0 20px;">
+        <p style="margin: 0 0 6px;"><strong>Documentos do pedido:</strong></p>
+        <ul style="margin: 0; padding-left: 20px;">
+          ${anexos.map((a) => `<li>${escaparHtml(a.nome)}${a.anexado ? ' <span style="color:#64748b;">(em anexo)</span>' : a.url ? ` — <a href="${escaparHtml(a.url)}" style="color:#2563eb;">descarregar</a>` : ''}</li>`).join('')}
+        </ul>
+      </div>` : ''}
       <p>
         Aceda ao Portal de Fornecedores com as suas credenciais habituais para submeter a sua
         proposta de cotação para este pedido.

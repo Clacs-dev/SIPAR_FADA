@@ -9,7 +9,9 @@ import { requireAuth, AuthenticatedRequest } from '../middlewares/auth';
 import { requireLicenseModule } from '../middlewares/license';
 import { MeetingLinkService } from '../services/meeting-link.service';
 import { emailService } from '../services/email.service';
-import { fornecedorCredentialsEmailHtml, cotacaoConviteEmailHtml, actaAprovadaEmailHtml } from '../services/email-templates';
+import { fornecedorCredentialsEmailHtml, cotacaoConviteEmailHtml, actaAprovadaEmailHtml, type ContactoResponsavel, type AnexoEmail } from '../services/email-templates';
+import fs from 'fs';
+import { StorageService } from '../services/storage.service';
 import { notifications } from '../services/notification.service';
 import { SequenceService } from '../services/sequence.service';
 import { HistoryService } from '../services/history.service';
@@ -45,7 +47,40 @@ function generateTempPassword(): string {
  * submeter facturas/cotações, criando-a se necessário e enviando as credenciais por e-mail.
  * Reutiliza a conta existente se já houver um utilizador com o mesmo e-mail.
  */
-async function ensureFornecedorAccount(fornecedorId: string, nome: string, email?: string | null) {
+// Tecto do total de anexos por e-mail (o Gmail aceita ate 25 MB, ja com a
+// codificacao base64). Acima disto os ficheiros seguem so como ligacao.
+const MAX_ANEXOS_EMAIL_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Anexos de um documento (ex: pedido de procurement) prontos para o e-mail:
+ * os que cabem no tecto seguem como ficheiro; os restantes (ou ja inexistentes
+ * no disco) aparecem so com a ligacao para descarregar.
+ */
+function anexosParaEmail(anexos: any[]): { attachments: { filename: string; path: string; contentType?: string }[]; lista: AnexoEmail[] } {
+  const attachments: { filename: string; path: string; contentType?: string }[] = [];
+  const lista: AnexoEmail[] = [];
+  let total = 0;
+  for (const anexo of Array.isArray(anexos) ? anexos : []) {
+    const nome = anexo?.nome || anexo?.name || 'anexo';
+    const caminho = StorageService.caminhoDoUpload(anexo?.id || anexo?.url);
+    const tamanho = caminho ? fs.statSync(caminho).size : 0;
+    if (caminho && total + tamanho <= MAX_ANEXOS_EMAIL_BYTES) {
+      total += tamanho;
+      attachments.push({ filename: nome, path: caminho, ...(anexo?.tipo ? { contentType: anexo.tipo } : {}) });
+      lista.push({ nome, url: anexo?.url, anexado: true });
+    } else {
+      lista.push({ nome, url: anexo?.url, anexado: false });
+    }
+  }
+  return { attachments, lista };
+}
+
+/** Utilizador autenticado como contacto responsavel nos e-mails ao fornecedor. */
+function contactoDe(user: any): ContactoResponsavel | null {
+  return user?.email ? { nome: user.name || user.email, email: user.email } : null;
+}
+
+async function ensureFornecedorAccount(fornecedorId: string, nome: string, email?: string | null, contacto?: ContactoResponsavel | null) {
   if (!email) return null;
 
   const normalizedEmail = email.toLowerCase().trim();
@@ -73,6 +108,7 @@ async function ensureFornecedorAccount(fornecedorId: string, nome: string, email
       to: normalizedEmail,
       subject: 'As suas credenciais de acesso ao Portal de Fornecedores - FADA',
       html: fornecedorCredentialsEmailHtml(nome || 'Fornecedor', normalizedEmail, tempPassword),
+      contacto,
     }).catch((error) => logger.error('Falha ao enviar e-mail de credenciais ao fornecedor:', error));
 
     return { userId: user.id, created: true };
@@ -705,7 +741,24 @@ function registerCrud(config: ModuleConfig) {
           if (!existing) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
           if (existing.createdById !== (req as any).user?.id || existing.status !== 'criado') return negarSemAccao(res);
         }
-        const updated = await prisma.procurement.update({ where: { id: req.params.pedidoId }, data: { status: 'aguardando_cotacoes' } });
+        // Quem publica fica como responsavel do pedido: os fornecedores recebem
+        // o nome e o e-mail dele para enviar a cotacao/factura.
+        const publicador = (req as any).user;
+        const actual = await prisma.procurement.findUnique({ where: { id: req.params.pedidoId } });
+        if (!actual) return res.status(404).json({ error: 'NOT_FOUND', message: 'Pedido de compra nao encontrado' });
+        const updated = await prisma.procurement.update({
+          where: { id: req.params.pedidoId },
+          data: {
+            status: 'aguardando_cotacoes',
+            data: stringify({
+              ...safeParse(actual.data, {}),
+              publicado_por_id: publicador?.id,
+              publicado_por_nome: publicador?.name,
+              publicado_por_email: publicador?.email,
+              publicado_em: new Date().toISOString(),
+            }),
+          },
+        });
         const pedidoData = safeParse(updated.data, {});
         const categoria = pedidoData.categoria;
 
@@ -718,12 +771,17 @@ function registerCrud(config: ModuleConfig) {
             })
           : todosFornecedores;
 
+        // Anexos do pedido (imagens/documentos) seguem tambem no convite.
+        const { attachments, lista: anexosLista } = anexosParaEmail(pedidoData.anexos);
+
         await Promise.all(fornecedores.map((fornecedor) => {
           if (!fornecedor.email) return Promise.resolve();
           return emailService.sendEmail({
             to: fornecedor.email,
             subject: `Novo pedido de cotação - ${updated.numero || updated.id}`,
-            html: cotacaoConviteEmailHtml(fornecedor.nome || 'Fornecedor', updated.descricao || 'Pedido de compra', updated.numero || updated.id, updated.valor || undefined, categoria),
+            html: cotacaoConviteEmailHtml(fornecedor.nome || 'Fornecedor', updated.descricao || 'Pedido de compra', updated.numero || updated.id, updated.valor || undefined, categoria, anexosLista),
+            contacto: contactoDe(publicador),
+            attachments,
           }).catch((error) => logger.error(`Falha ao enviar convite de cotacao a ${fornecedor.email}:`, error));
         }));
         return res.status(200).json({
@@ -1194,7 +1252,7 @@ function registerCrud(config: ModuleConfig) {
             createdByName: (req as any).user?.name,
           }
         });
-        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email);
+        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email, contactoDe((req as any).user));
         const updated = account ? await prisma.fornecedor.findUnique({ where: { id: record.id } }) : record;
         return res.status(201).json({ fornecedor: fornecedorToResource(updated || record) });
       } catch (error) {
@@ -1218,7 +1276,7 @@ function registerCrud(config: ModuleConfig) {
             createdByName: (req as any).user?.name,
           }
         });
-        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email);
+        const account = await ensureFornecedorAccount(record.id, record.nome || '', record.email, contactoDe((req as any).user));
         const updated = account ? await prisma.fornecedor.findUnique({ where: { id: record.id } }) : record;
         return res.status(201).json({ fornecedor: fornecedorToResource(updated || record) });
       } catch (error) {
@@ -1278,7 +1336,7 @@ function registerCrud(config: ModuleConfig) {
           });
         }
 
-        const campos = ['banco_nome', 'banco_titular', 'banco_iban', 'banco_nib', 'banco_swift', 'banco_cidade', 'banco_pais'];
+        const campos = ['banco_nome', 'banco_titular', 'banco_iban', 'banco_nib', 'banco_numero_conta', 'banco_swift', 'banco_cidade', 'banco_pais'];
         const novos: Record<string, string> = {};
         for (const c of campos) {
           const v = typeof req.body?.[c] === 'string' ? req.body[c].trim() : '';
@@ -1423,6 +1481,7 @@ function registerCrud(config: ModuleConfig) {
           to: normalizedEmail,
           subject: 'As suas credenciais de acesso ao Portal de Fornecedores - FADA',
           html: fornecedorCredentialsEmailHtml(fornecedor.nome || 'Fornecedor', normalizedEmail, tempPassword),
+          contacto: contactoDe((req as any).user),
         });
 
         return res.status(200).json({ success: true, message: 'Credenciais reenviadas por e-mail com sucesso.' });
@@ -1963,6 +2022,8 @@ function registerCrud(config: ModuleConfig) {
   router.post(`${config.path}/:id/cancel`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
   router.post(`${config.path}/:id/cancelar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.CANCELADO));
   router.post(`${config.path}/:id/concluir`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'concluido'));
+  // Factura: validacao do Chefe de Departamento DSG (Pendente -> Validado Chefe DSG).
+  router.post(`${config.path}/:id/validar-chefe-dsg`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado_chefe_dsg'));
   router.post(`${config.path}/:id/validate`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
   router.post(`${config.path}/:id/validar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, 'validado'));
   router.post(`${config.path}/:id/pagar`, requireAuth as any, requireLicense as any, (req, res, next) => ModuleRoutesHelper.setStatus(req, res, next, config, STATUS.PAGO));

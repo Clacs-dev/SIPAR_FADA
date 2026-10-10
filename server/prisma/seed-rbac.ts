@@ -51,13 +51,14 @@ const A = {
 
 // Separadores da Gestao de Pagamento + Mapa de Impostos (so "ver" = read_all).
 const SEPARADORES_PAGAMENTO = [
-  'pagamentos_dashboard', 'pagamentos_todas', 'pagamentos_pendentes', 'pagamentos_aprovados_dsg',
+  'pagamentos_dashboard', 'pagamentos_todas', 'pagamentos_pendentes', 'pagamentos_validados_chefe_dsg', 'pagamentos_aprovados_dsg',
   'pagamentos_autorizacao_despesas', 'pagamentos_ordens_fornecedor', 'pagamentos_ordens_interna',
   'pagamentos_submetido_banco', 'pagamentos_pagos', MODULES.TAX_MAP,
 ];
 const VER_SEPARADORES_PAGAMENTO: PermissionSpec[] = SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: ['read_all'] }));
 
 // Passos do fluxo da factura (accao approve = pode executar o passo).
+const PASSO_VALIDAR_CHEFE_DSG: PermissionSpec = { module: 'pagamentos_accao_validar_chefe_dsg', actions: ['approve'] };
 const PASSO_APROVAR_DSG: PermissionSpec = { module: 'pagamentos_accao_aprovar_dsg', actions: ['approve'] };
 const PASSO_AUTORIZAR: PermissionSpec = { module: 'pagamentos_accao_autorizar', actions: ['approve'] };
 const PASSO_PAGAR: PermissionSpec = { module: 'pagamentos_accao_pagar', actions: ['approve'] };
@@ -190,6 +191,18 @@ const DSG_TECNICO_PERMISSIONS: PermissionSpec[] = [
   { module: MODULES.SCHEDULE, actions: [A.READ_ALL] },
 ];
 
+// Chefe de Departamento DSG: valida (ou rejeita/edita/elimina) as facturas e
+// proformas Pendentes antes do Aprovar-DSG.
+// Manter igual a CHEFE_DSG_PERMISSIONS em src/services/rbac-sync.service.ts.
+const CHEFE_DSG_PERMISSIONS: PermissionSpec[] = [
+  PASSO_VALIDAR_CHEFE_DSG,
+  ...VER_SEPARADORES_PAGAMENTO,
+  { module: MODULES.INVOICES, actions: [A.READ_ALL] },
+  { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },
+  { module: MODULES.NOTIFICATIONS, actions: [A.READ_ALL] },
+  { module: MODULES.SCHEDULE, actions: [A.READ_ALL] },
+];
+
 const USUARIO_PERMISSIONS: PermissionSpec[] = [
   { module: MODULES.PRESENTATIONS, actions: [A.CREATE, A.READ_OWN, A.UPDATE] },
   { module: MODULES.AUDIENCES, actions: [A.CREATE, A.READ_OWN, A.UPDATE] },
@@ -253,6 +266,7 @@ const ROLE_LABELS: Record<string, string> = {
   operacional_frota: 'Operacional de Frota',
   compras: 'Procurement / Compras',
   dsg_tecnico: 'DSG Técnico',
+  chefe_dsg: 'Chefe de Departamento DSG',
   externo: 'Utilizador Externo',
   admin_sistema: 'Administrador do Sistema',
   publico: 'Submissão Pública (sem login)',
@@ -325,11 +339,12 @@ async function seedRoles() {
   for (const slug of COMPRAS_ROLES) await seedRole(slug, COMPRAS_PERMISSIONS, true);
   for (const slug of USUARIO_ROLES) await seedRole(slug, USUARIO_PERMISSIONS, true);
   await seedRole('dsg_tecnico', DSG_TECNICO_PERMISSIONS, true);
+  await seedRole('chefe_dsg', CHEFE_DSG_PERMISSIONS, true);
   await seedRole('admin_sistema', ADMIN_TECNICO_PERMISSIONS, true);
   await seedRole('publico', PUBLICO_PERMISSIONS, true);
 
   const total = EXECUTIVO_ROLES.length + ATENDENTE_ROLES.length + GERENTE_ROLES.length
-    + FINANCEIRO_ROLES.length + OPERADOR_ROLES.length + COMPRAS_ROLES.length + USUARIO_ROLES.length + 3;
+    + FINANCEIRO_ROLES.length + OPERADOR_ROLES.length + COMPRAS_ROLES.length + USUARIO_ROLES.length + 4;
  console.log(`[Seed RBAC] ${total} roles sincronizados (incluindo admin_sistema).`);
 }
 

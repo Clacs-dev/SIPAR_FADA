@@ -1,5 +1,5 @@
 import { Response, NextFunction } from 'express';
-import { facturaSemAccao, MENSAGEM_SEM_ACCAO, nivelDeAcesso } from './proprio-sem-accao';
+import { facturaSemAccao, MENSAGEM_SEM_ACCAO, nivelDeAcesso, temPermissao } from './proprio-sem-accao';
 import { AuthenticatedRequest } from '../middlewares/auth';
 import prisma from '../config/database';
 import { auditService } from '../services/audit.service';
@@ -170,6 +170,31 @@ function applyFieldAliases(model: string, body: Record<string, any>) {
  * propria factura, o Fornecedor ligado por id, e por fim o utilizador (externo) que
  * submeteu a factura.
  */
+/**
+ * Contacto que o fornecedor deve usar para a factura: quem publicou o pedido
+ * de procurement de origem (ou, sem isso, quem o criou); facturas sem pedido
+ * usam o utilizador que executou a accao.
+ */
+async function resolveContactoResponsavelFactura(record: any, user: { name?: string; email?: string } | null) {
+  const porDefeito = user?.email ? { nome: user.name || user.email, email: user.email } : null;
+  try {
+    if (!record?.purchaseOrderId) return porDefeito;
+    const ordem = await prisma.purchaseOrder.findUnique({ where: { id: record.purchaseOrderId } });
+    if (!ordem?.procurementId) return porDefeito;
+    const pedido = await prisma.procurement.findUnique({ where: { id: ordem.procurementId } });
+    if (!pedido) return porDefeito;
+    const dados = safeJsonParse(pedido.data, {});
+    if (dados.publicado_por_email) return { nome: dados.publicado_por_nome || dados.publicado_por_email, email: dados.publicado_por_email };
+    if (pedido.createdById) {
+      const autor = await prisma.user.findUnique({ where: { id: pedido.createdById }, select: { name: true, email: true } });
+      if (autor?.email) return { nome: autor.name, email: autor.email };
+    }
+  } catch (error) {
+    logger.warn('Falha ao resolver o contacto responsavel da factura:', error);
+  }
+  return porDefeito;
+}
+
 async function resolveFacturaFornecedorEmail(record: any): Promise<string | null> {
   const data = safeJsonParse(record.data, {});
   if (data.fornecedor_email) return data.fornecedor_email;
@@ -240,6 +265,7 @@ export async function resolveFornecedorBankInfo(record: any, data: any): Promise
   const banco_nome = fornecedorUser?.bankName || fornecedorData.banco_nome || null;
   const banco_iban = fornecedorUser?.bankIban || fornecedorData.banco_iban || fornecedorData.iban || null;
   const banco_nib = fornecedorUser?.bankNib || fornecedorData.banco_nib || null;
+  const banco_numero_conta = fornecedorUser?.bankAccountNumber || fornecedorData.banco_numero_conta || null;
   const banco_swift = fornecedorUser?.bankSwift || fornecedorData.banco_swift || null;
   const banco_cidade = fornecedorUser?.bankCity || fornecedorData.banco_cidade || null;
   const banco_pais = fornecedorUser?.bankCountry || fornecedorData.banco_pais || null;
@@ -253,6 +279,7 @@ export async function resolveFornecedorBankInfo(record: any, data: any): Promise
     banco_nome,
     banco_iban,
     banco_nib,
+    banco_numero_conta,
     banco_swift,
     banco_cidade,
     banco_pais,
@@ -281,6 +308,38 @@ export async function temAssinaturaDigitalizada(userId: string | undefined | nul
   if (!userId) return false;
   const u = await prisma.user.findUnique({ where: { id: userId }, select: { signatureImage: true } });
   return !!u?.signatureImage;
+}
+
+/**
+ * Avisa (sino + e-mail) quem pode executar o proximo passo da factura, segundo
+ * a matriz de Roles e Permissoes (ex: Validar Chefe DSG quando entra em
+ * Pendente). O cliente toca um som quando chega uma notificacao nova.
+ */
+export async function notificarProximoPassoFactura(
+  moduloDoPasso: string,
+  tipo: string,
+  mensagem: string,
+  facturaId: string,
+  excluirUserId?: string | null,
+) {
+  try {
+    const roles = await prisma.role.findMany({
+      where: { deletedAt: null, permissoes: { some: { module: moduloDoPasso, action: permissions.ACTIONS.APPROVE } } },
+      select: { slug: true },
+    });
+    if (roles.length === 0) return;
+    const destinatarios = await prisma.user.findMany({
+      where: { role: { in: roles.map((r) => r.slug) }, status: 'active' },
+      select: { id: true, email: true },
+    });
+    await Promise.all(
+      destinatarios
+        .filter((d) => d.email && d.id !== excluirUserId)
+        .map((d) => notifications.createNotification(d.email, tipo, mensagem, facturaId).catch(() => null)),
+    );
+  } catch (error) {
+    logger.warn(`Falha ao notificar o proximo passo da factura ${facturaId}:`, error);
+  }
 }
 
 export async function assinarAutorizacaoDespesasAutomaticamente(purchaseOrderId: string | null | undefined, papel: 'dsg' | 'pca', user: { id: string; name: string }) {
@@ -615,6 +674,12 @@ async function autorizarAlteracao(
 ): Promise<'total' | 'proprio' | false> {
   const acesso = await nivelDeAcesso(req, config.permissionModule, acaoTotal, acaoPropria);
   if (acesso === 'total') return 'total';
+  // Chefe DSG: edita, anula ou elimina qualquer factura ainda Pendente (sem
+  // accao), seja quem for o autor - os campos de decisao continuam vedados.
+  if (config.model === 'factura' && condicaoExtra && facturaSemAccao(existing)
+    && (await temPermissao(req, permissions.MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG, permissions.ACTIONS.APPROVE))) {
+    return 'proprio';
+  }
   if (acesso === null) {
     await validatePermission(req, res, config.permissionModule, acaoTotal);
     return false;
@@ -682,6 +747,16 @@ export class ModuleRoutesHelper {
             ).catch(() => null);
           }
         }
+      }
+
+      // Factura/proforma submetida: avisa quem a valida (Chefe DSG).
+      if (config.model === 'factura' && created.status === STATUS.PENDENTE) {
+        const createdData = safeJsonParse((created as any).data, {});
+        const tipoDoc = createdData.tipo_documento === 'factura_proforma' ? 'factura proforma' : 'factura';
+        const fornecedor = createdData.fornecedor_nome || (typeof createdData.fornecedor === 'string' ? createdData.fornecedor : createdData.fornecedor?.nome) || '';
+        await notificarProximoPassoFactura(permissions.MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG, 'factura_submetida',
+          `Nova ${tipoDoc} ${(created as any).numero || ''}${fornecedor ? ` de ${fornecedor}` : ''} submetida - aguarda validação do Chefe DSG.`.replace(/\s+/g, ' '),
+          created.id, user.id);
       }
 
       // Comunicacao interna: se for indicado um destinatario especifico (um
@@ -1032,7 +1107,9 @@ export class ModuleRoutesHelper {
       if (config.model === 'factura') {
         const agora = new Date().toISOString();
         const comentario = req.body?.comentario || req.body?.motivo || undefined;
-        if (nextStatus === 'validado') {
+        if (nextStatus === 'validado_chefe_dsg') {
+          Object.assign(auditoriaFactura, { validado_chefe_dsg_por_id: user.id, validado_chefe_dsg_por_nome: user.name, validado_chefe_dsg_at: agora, validacao_chefe_dsg_comentario: comentario });
+        } else if (nextStatus === 'validado') {
           Object.assign(auditoriaFactura, { validado_por_id: user.id, validado_por_nome: user.name, validado_at: agora, validacao_comentario: comentario });
         } else if (nextStatus === STATUS.APROVADO) {
           Object.assign(auditoriaFactura, { aprovado_por_id: user.id, aprovado_por_nome: user.name, aprovado_at: agora, aprovacao_comentario: comentario });
@@ -1098,6 +1175,21 @@ export class ModuleRoutesHelper {
         await assinarAutorizacaoDespesasAutomaticamente((updated as any).purchaseOrderId, 'pca', { id: user.id, name: user.name });
       }
 
+      // Avisa quem executa o passo seguinte do fluxo (som + sino no cliente).
+      if (config.model === 'factura') {
+        const numero = (updated as any).numero || req.params.id;
+        if (nextStatus === STATUS.PENDENTE) {
+          await notificarProximoPassoFactura(permissions.MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG, 'factura_submetida',
+            `A factura ${numero} foi submetida e aguarda validação do Chefe DSG.`, req.params.id, user.id);
+        } else if (nextStatus === 'validado_chefe_dsg') {
+          await notificarProximoPassoFactura(permissions.MODULES.PAGAMENTOS_ACCAO_APROVAR_DSG, 'factura_validada_chefe_dsg',
+            `A factura ${numero} foi validada pelo Chefe DSG (${user.name}) e aguarda o Aprovar-DSG.`, req.params.id, user.id);
+        } else if (nextStatus === 'validado') {
+          await notificarProximoPassoFactura(permissions.MODULES.PAGAMENTOS_ACCAO_AUTORIZAR, 'factura_aprovada_dsg',
+            `A factura ${numero} foi aprovada pela DSG e aguarda a Autorização de Despesas.`, req.params.id, user.id);
+        }
+      }
+
       // Notifica o fornecedor quando a factura avanca para submissao ao banco ou pagamento.
       if (config.model === 'factura' && (nextStatus === 'submetido_ao_banco' || nextStatus === STATUS.PAGO)) {
         const fornecedorEmail = await resolveFacturaFornecedorEmail(updated);
@@ -1110,7 +1202,9 @@ export class ModuleRoutesHelper {
             fornecedorEmail,
             nextStatus === STATUS.PAGO ? 'factura_paga' : 'factura_submetida_banco',
             mensagem,
-            req.params.id
+            req.params.id,
+            undefined,
+            await resolveContactoResponsavelFactura(updated, user),
           ).catch(() => null);
         }
       }

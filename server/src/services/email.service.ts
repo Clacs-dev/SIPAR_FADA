@@ -1,12 +1,22 @@
 import logger from '../config/logger';
 import nodemailer, { type Transporter } from 'nodemailer';
 import { SettingsService } from './settings.service';
+import { avisoContactoResponsavelHtml, type ContactoResponsavel } from './email-templates';
 
 export interface EmailOptions {
   to: string;
   subject: string;
   html: string;
   from?: string;
+  /**
+   * Utilizador responsavel (ex: quem publicou o pedido de procurement). O
+   * e-mail continua a sair do endereco do sistema, mas mostra o nome dele no
+   * remetente, responde-lhe (Reply-To) e leva o aviso "gerado pelo sistema -
+   * envie a factura para ...".
+   */
+  contacto?: ContactoResponsavel | null;
+  /** Ficheiros anexados (caminho no disco do servidor). */
+  attachments?: { filename: string; path: string; contentType?: string }[];
 }
 
 /**
@@ -59,7 +69,16 @@ export class EmailService {
    * Envia um e-mail transacional
    */
   static async sendEmail(options: EmailOptions): Promise<boolean> {
-    const fromAddress = options.from || this.resolveConfig().from;
+    let fromAddress = options.from || this.resolveConfig().from;
+    let html = options.html;
+    let replyTo: string | undefined;
+    const contacto = options.contacto?.email ? options.contacto : null;
+    if (contacto) {
+      html += avisoContactoResponsavelHtml(contacto);
+      replyTo = contacto.nome ? `"${contacto.nome.replace(/"/g, '')}" <${contacto.email}>` : contacto.email;
+      const enderecoSistema = /<([^>]+)>/.exec(fromAddress)?.[1] || fromAddress;
+      fromAddress = `"${(contacto.nome || 'FADA').replace(/"/g, '')} via SIPAR-FADA" <${enderecoSistema}>`;
+    }
     
     try {
       const transporter = this.getTransporter();
@@ -69,7 +88,9 @@ export class EmailService {
           from: fromAddress,
           to: options.to,
           subject: options.subject,
-          html: options.html,
+          html,
+          ...(replyTo ? { replyTo } : {}),
+          ...(options.attachments?.length ? { attachments: options.attachments } : {}),
         });
         logger.info(`[EmailService] E-mail enviado com sucesso para ${options.to}`);
         return true;
@@ -78,8 +99,10 @@ export class EmailService {
         logger.info('[EmailService] FALLBACK SIMULADO - CONTEUDO DO E-MAIL:');
         logger.info(`   De: ${fromAddress}`);
         logger.info(`   Para: ${options.to}`);
+        if (replyTo) logger.info(`   Responder a: ${replyTo}`);
+        if (options.attachments?.length) logger.info(`   Anexos: ${options.attachments.map((a) => a.filename).join(', ')}`);
         logger.info(`   Assunto: ${options.subject}`);
-        logger.info(`   Corpo HTML (Resumo): ${options.html.substring(0, 300)}...`);
+        logger.info(`   Corpo HTML (Resumo): ${html.substring(0, 300)}...`);
         return true;
       }
     } catch (error) {

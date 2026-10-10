@@ -29,10 +29,23 @@ export const DSG_TECNICO_PERMISSIONS: { module: string; actions: string[] }[] = 
   ...MODULOS_SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: [A.READ_ALL] })),
 ];
 
+// Chefe de Departamento DSG: valida (ou rejeita/edita/elimina) as facturas e
+// proformas Pendentes antes do Aprovar-DSG.
+// Manter igual a CHEFE_DSG_PERMISSIONS em prisma/seed-rbac.ts.
+export const CHEFE_DSG_PERMISSIONS: { module: string; actions: string[] }[] = [
+  { module: MODULES.INVOICES, actions: [A.READ_ALL] },
+  { module: MODULES.MESSAGES, actions: [A.CREATE, A.READ_ALL] },
+  { module: MODULES.NOTIFICATIONS, actions: [A.READ_ALL] },
+  { module: MODULES.SCHEDULE, actions: [A.READ_ALL] },
+  ...MODULOS_SEPARADORES_PAGAMENTO.map((module) => ({ module, actions: [A.READ_ALL] })),
+  { module: MODULES.PAGAMENTOS_ACCAO_VALIDAR_CHEFE_DSG, actions: [A.APPROVE] },
+];
+
 const MARCADOR_ACTIVITY_MAP = 'rbac.migracao.activity_map.v1';
 const MARCADOR_SEPARADORES = 'rbac.migracao.separadores_pagamento.v1';
 const MARCADOR_ACCOES = 'rbac.migracao.accoes_factura.v1';
 const MARCADOR_EXTRACCAO = 'rbac.migracao.extraccao_factura.v1';
+const MARCADOR_CHEFE_DSG = 'rbac.migracao.validados_chefe_dsg.v1';
 
 // Quem fazia cada passo antes de passar a ser controlado pela matriz
 // (antes estava fixo no ecra: Compras valida, gabinetes autorizam,
@@ -71,6 +84,41 @@ async function garantirRoleDsgTecnico() {
     for (const action of spec.actions) await garantirPermissao(role.id, spec.module, action);
   }
   return true;
+}
+
+async function garantirRoleChefeDsg() {
+  const existente = await prisma.role.findUnique({ where: { slug: 'chefe_dsg' } });
+  if (existente) return false;
+  const role = await prisma.role.create({
+    data: {
+      slug: 'chefe_dsg',
+      nome: 'Chefe de Departamento DSG',
+      descricao: 'Valida as facturas e proformas Pendentes (pode também rejeitar, editar ou eliminar) antes do Aprovar-DSG.',
+      sistema: true,
+    },
+  });
+  for (const spec of CHEFE_DSG_PERMISSIONS) {
+    for (const action of spec.actions) await garantirPermissao(role.id, spec.module, action);
+  }
+  return true;
+}
+
+/**
+ * Novo separador "Validados Chefe DSG" (entre Pendentes e Aprovados-DSG).
+ * Uma unica vez, mostra-o a quem ja via o separador Pendentes.
+ */
+async function migrarSeparadorChefeDsg() {
+  const feito = await prisma.systemSetting.findUnique({ where: { key: MARCADOR_CHEFE_DSG } });
+  if (feito) return 0;
+  const roles = await prisma.role.findMany({ where: { deletedAt: null }, include: { permissoes: true } });
+  let concedidos = 0;
+  for (const role of roles) {
+    if (!role.permissoes.some((p) => p.module === MODULES.PAGAMENTOS_PENDENTES && p.action === A.READ_ALL)) continue;
+    await garantirPermissao(role.id, MODULES.PAGAMENTOS_VALIDADOS_CHEFE_DSG, A.READ_ALL);
+    concedidos += 1;
+  }
+  await prisma.systemSetting.create({ data: { key: MARCADOR_CHEFE_DSG, value: new Date().toISOString(), updatedByName: 'sistema' } });
+  return concedidos;
 }
 
 async function migrarMapaActividades() {
@@ -171,6 +219,10 @@ export async function sincronizarRbac() {
   if (s > 0) logger.info(`[RBAC] Separadores da Gestão de Pagamento e Mapa de Impostos concedidos a ${s} role(s) que já os viam.`);
   const a = await migrarAccoesFactura();
   if (a > 0) logger.info(`[RBAC] Passos do fluxo da factura (Aprovar-DSG, Autorizar, Pagamento) concedidos a ${a} role(s).`);
+  const chefe = await garantirRoleChefeDsg();
+  if (chefe) logger.info('[RBAC] Role "chefe_dsg" (Chefe de Departamento DSG) criado com as permissões por omissão.');
+  const c = await migrarSeparadorChefeDsg();
+  if (c > 0) logger.info(`[RBAC] Separador "Validados Chefe DSG" concedido a ${c} role(s) que já viam os Pendentes.`);
   const e = await migrarExtraccaoFactura();
   if (e > 0) logger.info(`[RBAC] Registo automático de facturas (sem IA) concedido a ${e} role(s) que já criam facturas.`);
 }

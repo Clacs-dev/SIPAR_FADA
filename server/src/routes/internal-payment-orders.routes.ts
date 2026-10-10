@@ -51,6 +51,7 @@ function toResource(record: any) {
     conta_debito: record.contaDebito,
     banco_nome: record.bancoNome,
     banco_iban: record.bancoIban,
+    banco_numero_conta: record.bancoNumeroConta,
     banco_cidade: record.bancoCidade,
     banco_pais: record.bancoPais,
     paid_at: record.paidAt?.toISOString?.() || record.paidAt,
@@ -95,7 +96,7 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
       return res.status(403).json({ error: 'FORBIDDEN', message: 'Sem permissao para criar Ordens de Pagamento Interna' });
     }
 
-    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_cidade, banco_pais, anexos } = req.body;
+    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_numero_conta, banco_cidade, banco_pais, anexos } = req.body;
     if (!descricao || !String(descricao).trim()) {
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'Descricao e obrigatoria' });
     }
@@ -122,6 +123,7 @@ router.post('/', requireAuth as any, async (req: AuthenticatedRequest, res: Resp
         contaDebito: conta_debito || null,
         bancoNome: banco_nome || null,
         bancoIban: banco_iban || null,
+        bancoNumeroConta: banco_numero_conta || null,
         bancoCidade: banco_cidade || null,
         bancoPais: banco_pais || null,
         data: JSON.stringify({ assinaturas: [], anexos: Array.isArray(anexos) ? anexos : [] }),
@@ -153,7 +155,7 @@ router.put('/:id', requireAuth as any, async (req: AuthenticatedRequest, res: Re
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'So e possivel editar enquanto nenhuma assinatura tiver sido registada' });
     }
 
-    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_cidade, banco_pais } = req.body;
+    const { descricao, valor, moeda, destinatario, numero_despacho, conta_debito, banco_nome, banco_iban, banco_numero_conta, banco_cidade, banco_pais } = req.body;
 
     const ordem = await prisma.internalPaymentOrder.update({
       where: { id: existing.id },
@@ -166,6 +168,7 @@ router.put('/:id', requireAuth as any, async (req: AuthenticatedRequest, res: Re
         contaDebito: conta_debito !== undefined ? conta_debito : existing.contaDebito,
         bancoNome: banco_nome !== undefined ? banco_nome : existing.bancoNome,
         bancoIban: banco_iban !== undefined ? banco_iban : existing.bancoIban,
+        bancoNumeroConta: banco_numero_conta !== undefined ? banco_numero_conta : existing.bancoNumeroConta,
         bancoCidade: banco_cidade !== undefined ? banco_cidade : existing.bancoCidade,
         bancoPais: banco_pais !== undefined ? banco_pais : existing.bancoPais,
       }
